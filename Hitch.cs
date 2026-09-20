@@ -35,7 +35,7 @@ namespace StutterFix
         }
 
         private static readonly List<Rec> recs = new List<Rec>(512);
-        private static long lastHeap, lastNative;
+        private static long lastHeap, lastNative, lastGfx;
         private static int lastCollects;
         private static bool wasPlaying, reported;
         private static long lastStamp;
@@ -61,6 +61,15 @@ namespace StutterFix
             catch { return 0; }
         }
 
+        // 같은 작업량(필터 11개, 버퍼 35개)인데 어떤 프레임은 7ms, 어떤 프레임은 76ms다.
+        // 계산이 느린 것이 아니라 그 순간 그래픽 카드 쪽에 뭔가를 새로 잡는다는 뜻이다.
+        // 3440x1440 버퍼 하나가 20MB라, 새로 잡으면 이 숫자가 그만큼 뛴다.
+        private static long GfxMB()
+        {
+            try { return UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver() / 1048576; }
+            catch { return 0; }
+        }
+
         internal static void Tick(float dt, bool playing)
         {
             if (!Enabled) return;
@@ -72,6 +81,7 @@ namespace StutterFix
 
             long heap = GC.GetTotalMemory(false) / 1048576;
             long native = NativeMB();
+            long gfx = GfxMB();
             int collects = GC.CollectionCount(0);
 
             if (playing && !wasPlaying) Begin(heap);
@@ -108,8 +118,8 @@ namespace StutterFix
                     };
                     recs.Add(r);
                     Main.Entry.Logger.Log(string.Format(
-                        "[끊김] 타일 #{0}, {1:F1}초 | 프레임 {2:F0}ms | 힙 {3:+#;-#;0}MB | 네이티브 {4:+#;-#;0}MB | 정리 {5}회 | 할당 {6:F0}MB/s | 모드 {7}",
-                        r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top));
+                        "[끊김] 타일 #{0}, {1:F1}초 | 프레임 {2:F0}ms | 힙 {3:+#;-#;0}MB | 네이티브 {4:+#;-#;0}MB | 그래픽 {8:+#;-#;0}MB | 정리 {5}회 | 할당 {6:F0}MB/s | 모드 {7}",
+                        r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top, gfx - lastGfx));
                     Main.Entry.Logger.Log("[끊김]    직전 프레임 단계: " + PhaseWatch.TopOfLastFrame(3));
                     Main.Entry.Logger.Log("[끊김]    그리기: " + RenderWatch.Info());
                     Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(5) + " | " + EffectScan.FrameSummary() + " | 살아있는 애니메이션 " + ActiveTweens());
@@ -118,6 +128,7 @@ namespace StutterFix
 
             lastHeap = heap;
             lastNative = native;
+            lastGfx = gfx;
             lastCollects = collects;
             RenderWatch.EndFrame();
             SlowScan.Reset();   // 다음 프레임 몫만 모으도록 매번 비운다
