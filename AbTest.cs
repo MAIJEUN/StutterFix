@@ -56,7 +56,7 @@ namespace StutterFix
             if (phaseElapsed < PhaseSeconds) return;
 
             float fps = phaseFrames / phaseElapsed;
-            Main.Entry.Logger.Log($"[ab] {(paused ? "GC멈춤" : "GC정상")} 구간: {fps:F0} fps, 최악 {phaseWorst:F1}ms ({phaseFrames}프레임 / {phaseElapsed:F1}초)");
+            Main.Entry.Logger.Log($"[ab] {(paused ? "기능ON" : "기능OFF")} 구간: {fps:F0} fps, 최악 {phaseWorst:F1}ms ({phaseFrames}프레임 / {phaseElapsed:F1}초)");
 
             phaseElapsed = 0f;
             phaseFrames = 0;
@@ -71,7 +71,8 @@ namespace StutterFix
 
         // 판마다 편차가 커서 서로 다른 판을 비교하면 결론이 흔들린다.
         // 같은 판 안에서 기능을 켰다 껐다 하며 재면 그 편차가 사라진다.
-        private static void SafePause() { GcTest.SetPaused(true); }
-        private static void SafePlay() { GcTest.SetPaused(false); }
+        // A/B 대상: 곡 중 GC 멈춤 기능
+        private static void SafePause() { GcControl.Enabled = true; }
+        private static void SafePlay() { GcControl.Enabled = false; }
     }
 }
