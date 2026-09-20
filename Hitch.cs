@@ -44,6 +44,14 @@ namespace StutterFix
         internal static float AllocMBPerSec;
         internal static float PeakAllocMBPerSec;
 
+        // DOTween 의 정리 함수는 살아 있는 애니메이션 목록 전체를 훑는다.
+        // 목록이 길면 정리 한 번이 통째로 비싸지므로 그 길이를 같이 본다.
+        private static string ActiveTweens()
+        {
+            try { return DG.Tweening.DOTween.TotalActiveTweens() + "개(재생중 " + DG.Tweening.DOTween.TotalPlayingTweens() + ")"; }
+            catch { return "?" ; }
+        }
+
         private static long NativeMB()
         {
             try { return UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576; }
@@ -99,7 +107,7 @@ namespace StutterFix
                         "[끊김] 타일 #{0}, {1:F1}초 | 프레임 {2:F0}ms | 힙 {3:+#;-#;0}MB | 네이티브 {4:+#;-#;0}MB | 정리 {5}회 | 할당 {6:F0}MB/s | 모드 {7}",
                         r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top));
                     Main.Entry.Logger.Log("[끊김]    직전 프레임 단계: " + PhaseWatch.TopOfLastFrame(3));
-                    Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(5) + " | " + EffectScan.FrameSummary());
+                    Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(5) + " | " + EffectScan.FrameSummary() + " | 살아있는 애니메이션 " + ActiveTweens());
                 }
             }
 

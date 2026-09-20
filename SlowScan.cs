@@ -81,6 +81,13 @@ namespace StutterFix
                     new[] { "scrFloor", "SetTrackStyle" },
                     new[] { "scrFloor", "UpdateAngle" },
                     new[] { "scrFloor", "SetColor" },
+                    // 한 효과가 382ms를 쓰는데 타일 함수는 4815번뿐이었다. 타일 루프가 아니라는 뜻이다.
+                    // 남은 후보는 애니메이션 정리다. DOTween 의 Kill 은 살아 있는 애니메이션 목록 전체를
+                    // 훑기 때문에, 목록이 길어지면 한 번 부르는 데 드는 비용이 같이 커진다.
+                    new[] { "TweenExtensions", "Kill" },
+                    new[] { "DOTween", "Kill" },
+                    new[] { "TweenManager", "FilteredOperation" },
+                    new[] { "TweenManager", "Despawn" },
                 })
                 {
                     var t = AccessTools.TypeByName(target[0]);
