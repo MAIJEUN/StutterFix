@@ -96,8 +96,34 @@ namespace StutterFix
             useCount[name] = n + 1;
 
             // 처음 쓰는 효과인지 알아야 한다. 처음만 느리다면 미리 한 번 돌려두는 것으로 해결된다.
+            // 2400번째 사용에도 그대로 느린 것이 확인됐으므로, 이제는 무엇을 얼마나 건드리는지를 본다.
             if (ms >= LogOverMs)
-                Main.Entry.Logger.Log(string.Format("[효과] {0} {1:F0}ms ({2}번째 사용)", name, ms, n + 1));
+                Main.Entry.Logger.Log(string.Format("[효과] {0} {1:F0}ms ({2}번째 사용) {3}", name, ms, n + 1, Detail(__instance)));
+        }
+
+        // 효과가 몇 개의 타일을 건드리는지 본다.
+        // ffxRecolorFloorPlus.StartEffect 는 start~end 구간의 타일마다
+        // UpdateAngle / SetTrackStyle / ColorFloor 를 부르고 타일마다 애니메이션을 만든다.
+        // 구간이 넓으면 한 번 시작하는 데 수십 ms가 걸리는 것이 당연하다.
+        private static string Detail(object instance)
+        {
+            if (instance == null) return "";
+            try
+            {
+                var t = instance.GetType();
+                var start = AccessTools.Field(t, "start");
+                var end = AccessTools.Field(t, "end");
+                if (start == null || end == null) return "";
+                int s = Convert.ToInt32(start.GetValue(instance));
+                int e = Convert.ToInt32(end.GetValue(instance));
+
+                string extra = "";
+                var dur = AccessTools.Field(t, "colorAnimDuration") ?? AccessTools.Field(t, "duration");
+                if (dur != null) extra = ", 지속 " + Convert.ToDouble(dur.GetValue(instance)).ToString("F2");
+
+                return "타일 " + s + "~" + e + " (" + (e - s + 1) + "개)" + extra;
+            }
+            catch { return ""; }
         }
 
         internal static int ChecksThisFrame;
