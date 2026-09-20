@@ -20,6 +20,8 @@ namespace StutterFix
         private static string lastName;
         private static float sinceReport;
         private static int frames;
+        private static float sinceComp;
+        private static float runtime;
 
         internal static bool Running => installed;
         internal static string LastReport = "(측정 안 함)";
@@ -59,9 +61,12 @@ namespace StutterFix
             root.subSystemList = newTop.ToArray();
             PlayerLoop.SetPlayerLoop(root);
             installed = true;
+            runtime = 0f;
             lastStamp = Stopwatch.GetTimestamp();
             lastName = null;
             Main.Entry.Logger.Log("loop profiler installed");
+            SceneScan.ScanComponents();   // 켜는 즉시 한 번 집계
+            Profiler.Start();              // 함수별 측정도 같이 켠다
         }
 
         private static PlayerLoopSystem MakeMarker(string name)
@@ -94,12 +99,17 @@ namespace StutterFix
             installed = false;
             totals.Clear();
             lastName = null;
+            Profiler.Stop();
             Main.Entry.Logger.Log("loop profiler uninstalled");
         }
 
         internal static void Tick(float dt)
         {
             if (!installed) return;
+            // 켠 뒤 20초가 지나면 스스로 끈다. 수동으로 끄다 보면 보고 전에 종료되는 일이 잦았다.
+            runtime += dt;
+            if (runtime >= 20f) { Uninstall(); return; }
+
             frames++;
             sinceReport += dt;
             if (sinceReport < 1f) return;

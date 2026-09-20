@@ -64,6 +64,7 @@ namespace StutterFix
                 Main.Entry.Logger.Log("[scan] " + LastResult);
                 Main.Entry.Logger.Log("[scan] 많이 쓰인 텍스처: " + string.Join(", ", top));
                 ScanOthers();
+                ScanComponents();
             }
             catch (Exception ex)
             {
@@ -117,6 +118,50 @@ namespace StutterFix
             catch (Exception ex)
             {
                 Main.Entry.Logger.Error("scan2 failed: " + ex.Message);
+            }
+        }
+
+        // Update()를 가진 컴포넌트가 씬에 종류별로 몇 개나 있는지 센다.
+        // 엔진 단계 측정에서 ScriptRunBehaviourUpdate가 압도적으로 나왔기 때문에,
+        // 수가 많은 컴포넌트를 찾아 프로파일러 대상으로 삼기 위한 것이다.
+        internal static void ScanComponents()
+        {
+            try
+            {
+                var all = UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+                var counts = new Dictionary<string, int>();
+                var withUpdate = new Dictionary<string, int>();
+
+                foreach (var mb in all)
+                {
+                    if (mb == null || !mb.isActiveAndEnabled) continue;
+                    var t = mb.GetType();
+                    string n = t.Name;
+                    int c;
+                    counts.TryGetValue(n, out c);
+                    counts[n] = c + 1;
+
+                    var m = t.GetMethod("Update", System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);   // 상속받은 Update까지 포함
+                    if (m != null)
+                    {
+                        withUpdate.TryGetValue(n, out c);
+                        withUpdate[n] = c + 1;
+                    }
+                }
+
+                var top = counts.OrderByDescending(kv => kv.Value).Take(12)
+                    .Select(kv => $"{kv.Key} x{kv.Value}");
+                var topU = withUpdate.OrderByDescending(kv => kv.Value).Take(12)
+                    .Select(kv => $"{kv.Key} x{kv.Value}");
+
+                Main.Entry.Logger.Log($"[comp] 활성 컴포넌트 {all.Length}개 / 종류 {counts.Count}가지");
+                Main.Entry.Logger.Log("[comp] 많은 것: " + string.Join(", ", top));
+                Main.Entry.Logger.Log("[comp] Update 가진 것: " + string.Join(", ", topU));
+            }
+            catch (Exception ex)
+            {
+                Main.Entry.Logger.Error("comp scan failed: " + ex.Message);
             }
         }
     }

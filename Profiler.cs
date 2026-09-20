@@ -31,20 +31,25 @@ namespace StutterFix
 
         private static readonly string[][] Targets =
         {
-            // 타일 진입 / 이벤트 적용 계열 - 이번 조사의 주 대상
-            new[] { "scnGame", "ApplyEventsToFloors" },
-            new[] { "scnGame", "ApplyEvent" },
-            new[] { "scnGame", "PrepVfx" },
-            new[] { "scrPlanet", "MoveToNextFloor" },
-            new[] { "scrPlanet", "Update_RefreshAngles" },
-            new[] { "scrConductor", "PlayHitTimes" },
-            new[] { "scrPlayer", "Hit" },
-            new[] { "scrFloor", "UpdateIconSprite" },
+            // Update를 실제로 가진 컴포넌트들 - 엔진 측정에서 Update 단계가 68%로 나와 직접 확인한다
+            new[] { "BlendModeEffect", "Update" },
+            new[] { "scrFloor", "Update" },
+            new[] { "scrPlanet", "Update" },
+            new[] { "scrRing", "Update" },
+            new[] { "scrVfxPlus", "Update" },
+            new[] { "ffxPlusBase", "StartEffect" },
+            new[] { "scrFloor", "ColorFloor" },
+            new[] { "scrFloor", "SetTrackStyle" },
+            new[] { "scrFloor", "UpdateAngle" },
+            new[] { "ffxPlusBase", "IsAllowedByVisualSettings" },
             new[] { "scrVfxPlus", "MakeNewFilterDictionary" },
-            // 비교용 기준선
-            new[] { "scrDecorationManager", "LateUpdate" },
+            new[] { "scrHUDText", "Update" },
+            new[] { "PropertyControl_Text", "Update" },
+            new[] { "Updater", "Update" },
+            new[] { "Ticker", "Update" },
             new[] { "scrCamera", "Update" },
-            new[] { "DG.Tweening.Core.DOTweenComponent", "Update" },
+            new[] { "scrController", "Update" },
+            new[] { "scrConductor", "Update" },
         };
 
         internal static void Start()
@@ -72,6 +77,8 @@ namespace StutterFix
                                 prefix: new HarmonyMethod(typeof(Profiler), nameof(Pre)),
                                 postfix: new HarmonyMethod(typeof(Profiler), nameof(Post)));
                             patched++;
+                            if (t[1] == "ColorFloor" || t[1] == "StartEffect")
+                                Main.Entry.Logger.Log("[sig] " + method.DeclaringType.Name + "." + method.ToString());
                         }
                         catch (Exception ex)
                         {
@@ -103,10 +110,14 @@ namespace StutterFix
             __state = Stopwatch.GetTimestamp();
         }
 
-        public static void Post(MethodBase __originalMethod, long __state)
+        // ffxPlusBase.StartEffect 처럼 부모 클래스에 정의된 메서드는 어떤 자식 타입이 느린지 알아야 하므로
+        // 선언 타입 대신 실제 인스턴스 타입으로 집계한다.
+
+        public static void Post(MethodBase __originalMethod, object __instance, long __state)
         {
             long delta = Stopwatch.GetTimestamp() - __state;
-            string key = __originalMethod.DeclaringType.Name + "." + __originalMethod.Name;
+            string owner = __instance != null ? __instance.GetType().Name : __originalMethod.DeclaringType.Name;
+            string key = owner + "." + __originalMethod.Name;
             lock (gate)
             {
                 Stat s;

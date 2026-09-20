@@ -18,6 +18,8 @@
     <Compile Include="Culling.cs" />
     <Compile Include="AbTest.cs" />
     <Compile Include="LoopProfiler.cs" />
+    <Compile Include="ColorSkip.cs" />
+    <Compile Include="ColorDefer.cs" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -47,6 +49,14 @@
     </Reference>
     <Reference Include="UnityEngine.AnimationModule">
       <HintPath>$(GameManaged)\UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RDTools">
+      <HintPath>$(GameManaged)/RDTools.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManaged)/Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="DOTween">

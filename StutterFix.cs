@@ -124,6 +124,7 @@ namespace StutterFix
                 AbTest.Toggle();
             }
 
+            ColorDefer.Tick(dt);
             LoopProfiler.Tick(dt);
             AbTest.Tick(dt);
             Profiler.Tick(dt);
@@ -170,6 +171,27 @@ namespace StutterFix
             }
             GUILayout.Label("    켠 뒤 무거운 구간을 지나가면 함수별 소요 시간이 로그에 기록됩니다.");
             GUILayout.Label("    최근: " + Profiler.LastReport);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 화면 밖 타일 색칠 미루기 (실험) ──");
+            if (GUILayout.Button(ColorDefer.Enabled ? "미루기 끄기" : "미루기 켜기", GUILayout.Width(180)))
+            {
+                ColorDefer.Install();
+                ColorDefer.Enabled = !ColorDefer.Enabled;
+                if (!ColorDefer.Enabled) ColorDefer.FlushAll();
+            }
+            GUILayout.Label("    " + ColorDefer.Status);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 타일 색칠 중복 제거 (실험) ──");
+            if (GUILayout.Button(ColorSkip.Enabled ? "중복 검사 끄기" : "중복 검사 켜기", GUILayout.Width(180)))
+            {
+                ColorSkip.Install();
+                ColorSkip.Reset();
+                ColorSkip.Enabled = !ColorSkip.Enabled;
+            }
+            ColorSkip.CountOnly = GUILayout.Toggle(ColorSkip.CountOnly, "  세기만 하고 건너뛰지 않음");
+            GUILayout.Label("    " + ColorSkip.Status);
 
             GUILayout.Space(10);
             GUILayout.Label("── 엔진 단계별 측정 (F7) ──");
