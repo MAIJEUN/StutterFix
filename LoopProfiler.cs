@@ -14,6 +14,8 @@ namespace StutterFix
         private struct Marker { public string Name; }
 
         private static readonly Dictionary<string, long> totals = new Dictionary<string, long>();
+        private static readonly Dictionary<string, long> bytes = new Dictionary<string, long>();
+        private static long lastHeap;
         private static PlayerLoopSystem original;
         private static bool installed;
         private static long lastStamp;
@@ -65,8 +67,8 @@ namespace StutterFix
             lastStamp = Stopwatch.GetTimestamp();
             lastName = null;
             Main.Entry.Logger.Log("loop profiler installed");
-            SceneScan.ScanComponents();   // 켜는 즉시 한 번 집계
-            Profiler.Start();              // 함수별 측정도 같이 켠다
+            // 씬 집계와 함수별 시간 측정은 같이 켜지 않는다.
+            // 둘 다 자기가 메모리를 잡아서(문자열, 배열) 할당량 측정을 오염시킨다.
         }
 
         private static PlayerLoopSystem MakeMarker(string name)
@@ -78,18 +80,29 @@ namespace StutterFix
             };
         }
 
-        // 측정기가 호출될 때마다, 직전 측정기 이후 흐른 시간을 "직전 단계"의 몫으로 기록한다.
+        // 측정기가 호출될 때마다, 직전 측정기 이후 흐른 시간과 늘어난 힙을 "직전 단계"의 몫으로 기록한다.
+        //
+        // 할당량이 중요하다. Update 계열을 전부 뒤졌을 때 1722MB 중 64MB(3.7%)밖에 설명되지 않았다.
+        // 나머지는 Update 밖 - 코루틴이든 렌더링이든 - 어느 단계인지는 여기서만 알 수 있다.
         private static void Record(string name)
         {
             long now = Stopwatch.GetTimestamp();
+            long heap = GC.GetTotalMemory(false);
             if (lastName != null)
             {
-                long d = now - lastStamp;
                 long cur;
                 totals.TryGetValue(lastName, out cur);
-                totals[lastName] = cur + d;
+                totals[lastName] = cur + (now - lastStamp);
+
+                long grown = heap - lastHeap;
+                if (grown > 0)
+                {
+                    bytes.TryGetValue(lastName, out cur);
+                    bytes[lastName] = cur + grown;
+                }
             }
             lastStamp = now;
+            lastHeap = heap;
             lastName = name;
         }
 
@@ -98,8 +111,8 @@ namespace StutterFix
             PlayerLoop.SetPlayerLoop(original);
             installed = false;
             totals.Clear();
+            bytes.Clear();
             lastName = null;
-            Profiler.Stop();
             Main.Entry.Logger.Log("loop profiler uninstalled");
         }
 
@@ -108,7 +121,7 @@ namespace StutterFix
             if (!installed) return;
             // 켠 뒤 20초가 지나면 스스로 끈다. 수동으로 끄다 보면 보고 전에 종료되는 일이 잦았다.
             runtime += dt;
-            if (runtime >= 20f) { Uninstall(); return; }
+            if (runtime >= 15f) { Uninstall(); return; }
 
             frames++;
             sinceReport += dt;
@@ -127,14 +140,28 @@ namespace StutterFix
 
             list.Sort((a, b) => b.Value.CompareTo(a.Value));
             var parts = new List<string>();
-            for (int i = 0; i < list.Count && i < 12; i++)
-            {
+            for (int i = 0; i < list.Count && i < 10; i++)
                 parts.Add($"{list[i].Key} {list[i].Value:F0}ms/s");
-            }
 
-            LastReport = $"FPS {frames / window:F0} | " + string.Join(", ", parts);
+            var alloc = new List<KeyValuePair<string, double>>();
+            double totalMb = 0;
+            foreach (var kv in bytes)
+            {
+                double mb = kv.Value / 1048576.0 / window;
+                totalMb += mb;
+                if (mb >= 1.0) alloc.Add(new KeyValuePair<string, double>(kv.Key, mb));
+            }
+            bytes.Clear();
+
+            alloc.Sort((a, b) => b.Value.CompareTo(a.Value));
+            var allocParts = new List<string>();
+            for (int i = 0; i < alloc.Count && i < 8; i++)
+                allocParts.Add($"{alloc[i].Key} {alloc[i].Value:F0}MB/s");
+
+            LastReport = $"FPS {frames / window:F0} | 할당 {totalMb:F0}MB/s: " + string.Join(", ", allocParts.ToArray());
             frames = 0;
             Main.Entry.Logger.Log("[loop] " + LastReport);
+            Main.Entry.Logger.Log("[loop] 시간: " + string.Join(", ", parts.ToArray()));
         }
     }
 }
