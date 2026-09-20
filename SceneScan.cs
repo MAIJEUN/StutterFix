@@ -63,10 +63,60 @@ namespace StutterFix
 
                 Main.Entry.Logger.Log("[scan] " + LastResult);
                 Main.Entry.Logger.Log("[scan] 많이 쓰인 텍스처: " + string.Join(", ", top));
+                ScanOthers();
             }
             catch (Exception ex)
             {
                 Main.Entry.Logger.Error("scan failed: " + ex.Message);
+            }
+        }
+
+        // 스프라이트 말고 엔진이 직접 처리하는 것들(파티클, 애니메이터, UI, 메시)을 센다.
+        // 스크립트 프로파일러에도, 스프라이트 컬링에도 잡히지 않는 비용이라 따로 확인해야 한다.
+        internal static void ScanOthers()
+        {
+            try
+            {
+                var particles = UnityEngine.Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None);
+                int psActive = 0, psPlaying = 0, liveParticles = 0, maxParticles = 0;
+                foreach (var ps in particles)
+                {
+                    if (!ps.gameObject.activeInHierarchy) continue;
+                    psActive++;
+                    if (ps.isPlaying) psPlaying++;
+                    int n = ps.particleCount;
+                    liveParticles += n;
+                    if (n > maxParticles) maxParticles = n;
+                }
+
+                var animators = UnityEngine.Object.FindObjectsByType<Animator>(FindObjectsSortMode.None);
+                int animActive = 0;
+                foreach (var a in animators) if (a.isActiveAndEnabled) animActive++;
+
+                var meshes = UnityEngine.Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
+                int meshActive = 0, meshVisible = 0;
+                foreach (var m in meshes)
+                {
+                    if (!m.enabled || !m.gameObject.activeInHierarchy) continue;
+                    meshActive++;
+                    if (m.isVisible) meshVisible++;
+                }
+
+                var all = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsSortMode.None);
+                int goActive = 0;
+                foreach (var t in all) if (t.gameObject.activeInHierarchy) goActive++;
+
+                string line =
+                    $"파티클시스템 {psActive}개(재생중 {psPlaying}, 입자 {liveParticles}개, 최대 한 곳 {maxParticles}개) | " +
+                    $"애니메이터 {animActive}개 | " +
+                    $"메시렌더러 {meshActive}개(화면 안 {meshVisible}) | 활성 오브젝트 {goActive}개";
+
+                Main.Entry.Logger.Log("[scan2] " + line);
+                LastResult += "\n    " + line;
+            }
+            catch (Exception ex)
+            {
+                Main.Entry.Logger.Error("scan2 failed: " + ex.Message);
             }
         }
     }

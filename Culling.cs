@@ -20,9 +20,14 @@ namespace StutterFix
         private static float sinceCull;
         private static Camera cam;
 
+        private static MeshRenderer[] meshCache = new MeshRenderer[0];
+        private static readonly HashSet<MeshRenderer> disabledMeshes = new HashSet<MeshRenderer>();
+
         internal static bool Enabled;
         // true면 오브젝트를 통째로 비활성화한다. 렌더링뿐 아니라 그 오브젝트의 매 프레임 처리까지 사라진다.
         internal static bool DeactivateObjects;
+        // 타일(메시 렌더러)까지 대상에 넣는다. 화면이 크게 망가지므로 진단용으로만 쓴다.
+        internal static bool IncludeMeshes;
         internal static float Margin = 1.5f;   // 화면 크기의 몇 배까지 남겨둘지
         internal static string Status = "(꺼짐)";
 
@@ -40,6 +45,7 @@ namespace StutterFix
             {
                 sinceRefresh = 0f;
                 cache = UnityEngine.Object.FindObjectsByType<SpriteRenderer>(FindObjectsSortMode.None);
+                if (IncludeMeshes) meshCache = UnityEngine.Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
                 cam = Camera.main;
             }
 
@@ -103,7 +109,33 @@ namespace StutterFix
                 }
             }
 
-            int hidden = DeactivateObjects ? deactivated.Count : disabled.Count;
+            if (IncludeMeshes)
+            {
+                foreach (var mr in meshCache)
+                {
+                    if (mr == null) continue;
+                    Vector3 p = mr.transform.position;
+                    bool inside = view.Contains(new Vector2(p.x, p.y));
+
+                    if (!inside)
+                    {
+                        if (mr.enabled)
+                        {
+                            mr.enabled = false;
+                            disabledMeshes.Add(mr);
+                            off++;
+                        }
+                    }
+                    else if (disabledMeshes.Contains(mr))
+                    {
+                        mr.enabled = true;
+                        disabledMeshes.Remove(mr);
+                        on++;
+                    }
+                }
+            }
+
+            int hidden = DeactivateObjects ? deactivated.Count : disabled.Count + disabledMeshes.Count;
             Status = $"대상 {cache.Length}개, 현재 꺼둠 {hidden}개 (이번에 끔 {off} / 켬 {on})" +
                      (DeactivateObjects ? " [오브젝트 비활성화 모드]" : " [렌더러만 끄기]");
         }
@@ -121,6 +153,12 @@ namespace StutterFix
                 if (go != null) go.SetActive(true);
             }
             deactivated.Clear();
+
+            foreach (var mr in disabledMeshes)
+            {
+                if (mr != null) mr.enabled = true;
+            }
+            disabledMeshes.Clear();
 
             Status = "(꺼짐 - 모두 복구함)";
         }

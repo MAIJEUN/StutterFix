@@ -156,6 +156,12 @@ namespace StutterFix
                 Culling.Enabled = cull;
                 if (!cull) Culling.RestoreAll();
             }
+            bool mesh = GUILayout.Toggle(Culling.IncludeMeshes, "  타일(메시)도 컬링 — 화면이 크게 망가짐, 진단 전용");
+            if (mesh != Culling.IncludeMeshes)
+            {
+                Culling.RestoreAll();
+                Culling.IncludeMeshes = mesh;
+            }
             bool deact = GUILayout.Toggle(Culling.DeactivateObjects, "  오브젝트를 통째로 비활성화 (더 강력, 실험용)");
             if (deact != Culling.DeactivateObjects)
             {
