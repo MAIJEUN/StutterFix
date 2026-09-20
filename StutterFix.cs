@@ -113,12 +113,14 @@ namespace StutterFix
         {
             GcControl.Tick(dt);
             ModWatch.Tick(dt);
+            AllocScan.Tick(dt);
             AbTest.Tick(dt);
             LoopProfiler.Tick(dt);
             Profiler.Tick(dt);
 
             if (Input.GetKeyDown(KeyCode.F7)) LoopProfiler.Toggle();
             if (Input.GetKeyDown(KeyCode.F8)) AbTest.Toggle();
+            if (Input.GetKeyDown(KeyCode.F9)) AllocScan.Toggle();
 
             if (capacityApplied) return;
 
@@ -187,6 +189,8 @@ namespace StutterFix
 
             GUILayout.Space(10);
             GUILayout.Label("── 진단 도구 ──");
+            GUILayout.Label("    F9: 누가 메모리를 잡는지 15초 추적 (곡 재생 중에 누를 것)");
+            GUILayout.Label("    " + AllocScan.LastReport);
             GUILayout.Label("    F7: 엔진 단계 + 함수별 측정 20초,  F8: GC 기능 A-B 테스트");
             GUILayout.Label("    " + LoopProfiler.LastReport);
             GUILayout.Label("    A-B: " + AbTest.Summary);

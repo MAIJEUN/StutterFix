@@ -20,6 +20,7 @@
     <Compile Include="GcControl.cs" />
     <Compile Include="Hitch.cs" />
     <Compile Include="ModWatch.cs" />
+    <Compile Include="AllocScan.cs" />
   </ItemGroup>
 
   <PropertyGroup>

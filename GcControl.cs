@@ -150,12 +150,18 @@ namespace StutterFix
                 Paused = false;
                 long before = GC.GetTotalMemory(false) / 1048576;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                GC.Collect();
-
-                // 한 번으로는 거의 안 치워질 때가 있다. 로그에서 6001MB가 465ms 걸려 5661MB로만 줄었고,
-                // 4초 뒤 다시 한계에 닿아 또 멈췄다. 절반도 못 치웠으면 그 자리에서 한 번 더 돌린다.
-                long mid = GC.GetTotalMemory(false) / 1048576;
-                if (before > 1000 && mid > before / 2) GC.Collect();
+                // 유니티의 점진적 GC는 한 번 불러서는 한 주기를 끝내지 않는다.
+                // 실제로 6001MB가 704ms 걸려 5671MB로만 줄었고, 4초 뒤 다시 불렀을 때 비로소 757MB가 됐다.
+                // 그러니 더 이상 줄지 않을 때까지 이어서 돌린다. 어차피 멈출 거면 한 번에 끝내는 편이 낫다.
+                long prev = before;
+                for (int i = 0; i < 5; i++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    long now = GC.GetTotalMemory(false) / 1048576;
+                    if (now > prev - 50) break;   // 50MB도 안 줄면 끝난 것이다
+                    prev = now;
+                }
 
                 sw.Stop();
                 ForcedCollects++;
