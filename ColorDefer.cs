@@ -18,8 +18,9 @@ namespace StutterFix
     public static class ColorDefer
     {
         internal static bool Enabled;
-        internal static float Margin = 2.0f;     // 화면 크기의 몇 배까지 "가깝다"고 볼지
+        internal static float Margin = 2.5f;     // 화면 크기의 몇 배까지 "가깝다"고 볼지
         internal static long Deferred, Applied, Passed;
+        internal static int LastRate;
 
         private class Pending
         {
@@ -34,6 +35,16 @@ namespace StutterFix
         private static bool patched;
         private static bool reentry;
         private static Camera cam;
+        private static int scanTick;
+        private static int callsThisSecond;
+        private static float rateTimer;
+        internal static bool heavyMode;
+        internal static int HeavyThreshold = 2500;   // 초당 ColorFloor 호출 수 기준
+        internal static int FrameThreshold = 120;    // 한 프레임에 이만큼 몰리면 즉시 개입
+        private static int callsThisFrame;
+        private static float lowSeconds;
+        private static float lastSize = -1f;
+        private static Vector3 lastPos;
 
         internal static void Install()
         {
@@ -61,6 +72,20 @@ namespace StutterFix
         {
             if (!Enabled || reentry) return true;
 
+            // 가벼운 구간에서는 색칠이 적어 미룰 이유가 없는데도 끼어들면 손해다.
+            // 최근 호출량이 임계치를 넘을 때만 개입한다.
+            callsThisSecond++;
+            callsThisFrame++;
+
+            // 1초마다 판정하면 무거운 구간 시작 후 최대 1초간 그대로 끊긴다.
+            // 한 프레임에 호출이 몰리는 순간 바로 개입을 시작한다.
+            if (!heavyMode && callsThisFrame >= FrameThreshold)
+            {
+                heavyMode = true;
+                lowSeconds = 0f;
+            }
+            if (!heavyMode) return true;
+
             var comp = __instance as Component;
             if (comp == null) return true;
 
@@ -78,7 +103,9 @@ namespace StutterFix
                 p = new Pending { Floor = comp };
                 pending[id] = p;
             }
-            p.Args = (object[])__args.Clone();
+            // 매번 새 배열을 만들면 15만 번의 쓰레기가 생겨 GC가 자주 돈다. 기존 배열에 덮어쓴다.
+            if (p.Args == null || p.Args.Length != __args.Length) p.Args = new object[__args.Length];
+            Array.Copy(__args, p.Args, __args.Length);
             Deferred++;
             return false;                    // 원래 색칠을 건너뛴다
         }
@@ -101,9 +128,48 @@ namespace StutterFix
                 if (pending.Count > 0) FlushAll();
                 return;
             }
+            callsThisFrame = 0;
+
+            // 켜는 것은 즉시, 끄는 것은 천천히 한다. 경계에서 켜졌다 꺼졌다 하면 더 불안정해진다.
+            rateTimer += dt;
+            if (rateTimer >= 0.25f)
+            {
+                int rate = (int)(callsThisSecond / rateTimer);
+                LastRate = rate;
+                callsThisSecond = 0;
+                rateTimer = 0f;
+
+                if (rate >= HeavyThreshold) { heavyMode = true; lowSeconds = 0f; }
+                else if (heavyMode)
+                {
+                    lowSeconds += 0.25f;
+                    if (lowSeconds >= 2f) { heavyMode = false; FlushAll(); }
+                }
+            }
+
             if (pending.Count == 0 || colorFloor == null) return;
 
             cam = Camera.main;
+
+            // 카메라가 줌아웃되거나 크게 움직이면 화면 밖이던 타일이 한꺼번에 들어온다.
+            // 그때 조금씩만 칠하면 옛날 색이 잠깐 보이므로, 변화가 크면 즉시 전부 칠한다.
+            bool cameraJumped = false;
+            if (cam != null)
+            {
+                float size = cam.orthographicSize;
+                Vector3 pos = cam.transform.position;
+                if (Mathf.Abs(size - lastSize) > lastSize * 0.05f ||
+                    (pos - lastPos).sqrMagnitude > size * size * 0.25f)
+                {
+                    cameraJumped = true;
+                }
+                lastSize = size;
+                lastPos = pos;
+            }
+
+            // 평소에는 대기 목록 전체를 매 프레임 훑는 비용이 아까워 세 프레임에 한 번만 확인한다.
+            if (!cameraJumped && ++scanTick < 3) return;
+            scanTick = 0;
             ready.Clear();
             foreach (var kv in pending)
             {
@@ -112,8 +178,10 @@ namespace StutterFix
                 if (IsNear(p.Floor.transform.position)) ready.Add(kv.Key);
             }
 
-            // 한 프레임에 너무 많이 몰리면 그 자체로 멈칫하므로 상한을 둔다.
-            int limit = Math.Min(ready.Count, 150);
+            // 한 프레임에 너무 많이 몰리면 그 자체로 멈칫하므로 상한을 두되,
+            // 카메라가 크게 바뀐 직후에는 색이 틀려 보이지 않도록 상한을 풀어준다.
+            int cap = cameraJumped ? ready.Count : (ready.Count > 1500 ? 400 : 120);
+            int limit = Math.Min(ready.Count, cap);
             for (int i = 0; i < limit; i++)
             {
                 Apply(ready[i]);
@@ -156,8 +224,10 @@ namespace StutterFix
             {
                 if (invoker != null)
                 {
+                    // 화면 밖에서 이미 지나간 변화라 애니메이션(duration)을 0으로 줘서 즉시 적용한다.
+                    // DOTween 트윈을 새로 만드는 비용이 적용 비용의 대부분이었다.
                     invoker(floor, (TrackColorType)a[0], (Color)a[1], (Color)a[2], (float)a[3],
-                        (TrackColorPulse)a[4], (float)a[5], (int)a[6], (float)a[7], (DG.Tweening.Ease)a[8]);
+                        (TrackColorPulse)a[4], (float)a[5], (int)a[6], 0f, (DG.Tweening.Ease)a[8]);
                 }
                 else
                 {
@@ -183,7 +253,10 @@ namespace StutterFix
             {
                 long t = Deferred + Passed;
                 if (t == 0) return "(호출 없음)";
-                return $"미룸 {Deferred:N0} / 바로칠함 {Passed:N0} ({100.0 * Deferred / t:F0}% 절약), 나중적용 {Applied:N0}, 대기 {pending.Count}";
+                return "미룸 " + Deferred.ToString("N0") + " / 바로칠함 " + Passed.ToString("N0") +
+                       " (" + (100.0 * Deferred / t).ToString("F0") + "% 절약), 나중적용 " + Applied.ToString("N0") +
+                       ", 대기 " + pending.Count + "\n    초당 호출 " + LastRate.ToString("N0") + "회, 현재 " +
+                       (heavyMode ? "무거운 구간 (개입 중)" : "가벼운 구간 (개입 안 함)");
             }
         }
     }
