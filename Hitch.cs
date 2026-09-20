@@ -45,6 +45,7 @@ namespace StutterFix
         private static long rateHeapMark;
         internal static float AllocMBPerSec;
         internal static float PeakAllocMBPerSec;
+        internal static float LastFrameMs;
 
         // DOTween 의 정리 함수는 살아 있는 애니메이션 목록 전체를 훑는다.
         // 목록이 길면 정리 한 번이 통째로 비싸지므로 그 길이를 같이 본다.
@@ -67,6 +68,7 @@ namespace StutterFix
             long stamp = Stopwatch.GetTimestamp();
             float realMs = lastStamp == 0 ? dt * 1000f : (stamp - lastStamp) * 1000f / Stopwatch.Frequency;
             lastStamp = stamp;
+            LastFrameMs = realMs;
 
             long heap = GC.GetTotalMemory(false) / 1048576;
             long native = NativeMB();
