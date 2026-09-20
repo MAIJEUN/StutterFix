@@ -38,6 +38,8 @@ namespace StutterFix
         internal static bool Paused;
 
         private static float pausedFor;
+        private static float quietTimer;
+        private static long quietHeapMark;
         private static int frameCounter;
         private static bool patched;
 
@@ -64,6 +66,11 @@ namespace StutterFix
                     new[] { "scrController", "FailAction" },     // 실패
                     new[] { "scrController", "Fail2Action" },
                     new[] { "scrController", "OnLandOnPortal" }, // 완주(포탈 도착)
+                    new[] { "scrController", "QuitToMainMenu" },
+                    new[] { "scrController", "Checkpoint_Exit" },
+                    new[] { "scnEditor", "QuitToMenu" },
+                    new[] { "scnEditor", "TryQuitToMenu" },
+                    new[] { "scnEditor", "SaveAndQuit" },
                 };
 
                 // 재시작과 재생 시작은 종료가 아니라 "여기서 한 번 치우고 계속"이다.
@@ -111,6 +118,10 @@ namespace StutterFix
                     }
                 }
 
+                // 나가는 길은 종류가 많아 다 잡기 어렵다. 씬이 바뀌는 것은 무조건 끝난 것이므로
+                // 마지막 그물로 걸어 둔다.
+                UnityEngine.SceneManagement.SceneManager.activeSceneChanged += OnSceneChanged;
+
                 patched = true;
                 Main.Entry.Logger.Log("gc control installed");
             }
@@ -118,6 +129,13 @@ namespace StutterFix
             {
                 Main.Entry.Logger.Error("gc control install failed: " + ex.Message);
             }
+        }
+
+        private static void OnSceneChanged(UnityEngine.SceneManagement.Scene from, UnityEngine.SceneManagement.Scene to)
+        {
+            endedByHook = true;
+            Hitch.Report();
+            Resume("씬 바뀜");
         }
 
         public static void AfterLoad() { endedByHook = false; Resume("맵 로딩"); }
@@ -197,7 +215,7 @@ namespace StutterFix
             bool playing = IsPlaying();
             Hitch.Tick(dt, playing);
 
-            if (playing && !Paused) { Pause(); pausedFor = 0f; PeakHeapMB = 0; }
+            if (playing && !Paused) { Pause(); pausedFor = 0f; PeakHeapMB = 0; quietTimer = 0f; quietHeapMark = GC.GetTotalMemory(false) / 1048576; }
             else if (!playing && Paused) { Hitch.Report(); ScheduleResume("곡 종료 [" + LastScene + "]"); }
 
             // 곡이 끝났으면 연출이 끝나기를 기다렸다 치운다.
@@ -225,6 +243,20 @@ namespace StutterFix
 
             long heapNow = GC.GetTotalMemory(false) / 1048576;
             if (heapNow > PeakHeapMB) PeakHeapMB = (int)heapNow;
+
+            // 나가는 길을 다 잡지 못해도, 아무 일도 일어나지 않는 상태로 오래 있으면 끝난 것이다.
+            // 곡이 도는 중에는 조용한 구간에도 초당 몇 MB씩은 쌓인다.
+            quietTimer += dt;
+            if (quietTimer >= 10f)
+            {
+                if (heapNow - quietHeapMark < 3)
+                {
+                    Resume("10초간 조용함");
+                    return;
+                }
+                quietHeapMark = heapNow;
+                quietTimer = 0f;
+            }
 
             if (heapNow > HardLimitMB)
             {
