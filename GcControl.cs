@@ -206,6 +206,11 @@ namespace StutterFix
 
         internal static void Tick(float dt)
         {
+            // 넘겨받는 dt 는 게임 시간이라 일시정지나 메뉴에서 0이 된다.
+            // 그 시간으로 세면 "곡 끝나고 3초 뒤 정리", "10초간 조용하면 정리", 시간 제한이
+            // 전부 얼어붙어서, 플레이 중에 나가면 GC가 멈춘 채로 영영 남는다.
+            dt = Time.unscaledDeltaTime;
+
             if (!Enabled)
             {
                 Resume("기능 꺼짐");
