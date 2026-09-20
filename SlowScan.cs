@@ -72,6 +72,38 @@ namespace StutterFix
                         catch { }
                     }
                 }
+                // 타일 하나하나를 건드리는 함수들. 효과 하나가 타일 2000~4700개를 칠하므로
+                // 그 안에서 어디에 시간이 가는지 알아야 고칠 자리가 정해진다.
+                // 호출 수가 많아 측정 비용이 섞이지만, 20ms짜리 안에서 셋 중 누가 큰지 가리는 데는 충분하다.
+                foreach (var target in new[]
+                {
+                    new[] { "scrFloor", "ColorFloor" },
+                    new[] { "scrFloor", "SetTrackStyle" },
+                    new[] { "scrFloor", "UpdateAngle" },
+                    new[] { "scrFloor", "SetColor" },
+                })
+                {
+                    var t = AccessTools.TypeByName(target[0]);
+                    if (t == null) continue;
+                    foreach (var m in t.GetMethods(AccessTools.all))
+                    {
+                        if (m.Name != target[1] || m.DeclaringType != t) continue;
+                        if (m.IsAbstract || m.ContainsGenericParameters) continue;
+                        if (slots.ContainsKey(m)) continue;
+                        try
+                        {
+                            var slot = new Slot { Name = target[0] + "." + target[1] };
+                            slots[m] = slot;
+                            all.Add(slot);
+                            harmony.Patch(m,
+                                prefix: new HarmonyMethod(typeof(SlowScan), nameof(Pre)),
+                                postfix: new HarmonyMethod(typeof(SlowScan), nameof(Post)));
+                            count++;
+                        }
+                        catch { }
+                    }
+                }
+
                 Main.Entry.Logger.Log($"[느린함수] {count}개 감쌈 ({watch.ElapsedMilliseconds}ms)");
             }
             catch (Exception ex)
