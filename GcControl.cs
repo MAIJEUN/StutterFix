@@ -50,13 +50,59 @@ namespace StutterFix
                         harmony.Patch(load, postfix: new HarmonyMethod(typeof(GcControl), nameof(AfterLoad)));
                 }
 
-                // 에디터로 돌아가는 순간은 확실한 종료 신호다. 여기서 반드시 정리한다.
-                var scnEditor = AccessTools.TypeByName("scnEditor");
-                if (scnEditor != null)
+                // 상태값을 지켜보는 대신 "끝나는 순간에 불리는 함수"를 직접 가로챈다.
+                // currentState 는 이 버전에서 재생 중에도 None으로 남아 믿을 수 없었다.
+                var ends = new[]
                 {
-                    var back = AccessTools.Method(scnEditor, "SwitchToEditMode");
-                    if (back != null)
-                        harmony.Patch(back, prefix: new HarmonyMethod(typeof(GcControl), nameof(BeforeEditMode)));
+                    new[] { "scnEditor", "SwitchToEditMode" },   // 편집으로 복귀
+                    new[] { "scrController", "FailAction" },     // 실패
+                    new[] { "scrController", "Fail2Action" },
+                    new[] { "scrController", "OnLandOnPortal" }, // 완주(포탈 도착)
+                };
+
+                // 재시작과 재생 시작은 종료가 아니라 "여기서 한 번 치우고 계속"이다.
+                var restarts = new[]
+                {
+                    new[] { "scrController", "Restart" },
+                    new[] { "scnEditor", "Play" },
+                };
+
+                foreach (var e in ends)
+                {
+                    try
+                    {
+                        var type = AccessTools.TypeByName(e[0]);
+                        if (type == null) continue;
+                        foreach (var m in type.GetMethods(AccessTools.all))
+                        {
+                            if (m.Name != e[1] || m.IsAbstract || m.ContainsGenericParameters) continue;
+                            harmony.Patch(m, prefix: new HarmonyMethod(typeof(GcControl), nameof(OnSongEnd)));
+                            Main.Entry.Logger.Log("end hook: " + e[0] + "." + e[1]);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Main.Entry.Logger.Error("end hook failed " + e[0] + "." + e[1] + ": " + ex.Message);
+                    }
+                }
+
+                foreach (var e in restarts)
+                {
+                    try
+                    {
+                        var type = AccessTools.TypeByName(e[0]);
+                        if (type == null) continue;
+                        foreach (var m in type.GetMethods(AccessTools.all))
+                        {
+                            if (m.Name != e[1] || m.IsAbstract || m.ContainsGenericParameters) continue;
+                            harmony.Patch(m, prefix: new HarmonyMethod(typeof(GcControl), nameof(OnSongRestart)));
+                            Main.Entry.Logger.Log("restart hook: " + e[0] + "." + e[1]);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Main.Entry.Logger.Error("restart hook failed " + e[0] + "." + e[1] + ": " + ex.Message);
+                    }
                 }
 
                 patched = true;
@@ -68,8 +114,25 @@ namespace StutterFix
             }
         }
 
-        public static void AfterLoad() { Resume("맵 로딩"); }
-        public static void BeforeEditMode() { Hitch.Report(); Resume("에디터 복귀"); }
+        public static void AfterLoad() { endedByHook = false; Resume("맵 로딩"); }
+
+        public static void OnSongEnd(MethodBase __originalMethod)
+        {
+            endedByHook = true;
+            Hitch.Report();
+            Resume(__originalMethod.Name);
+        }
+
+        public static void OnSongRestart(MethodBase __originalMethod)
+        {
+            Hitch.Report();
+            Resume(__originalMethod.Name);
+            endedByHook = false;
+        }
+
+        // 종료 함수가 불린 뒤에는 다시 멈추지 않는다.
+        // 완주해도 에디터는 playMode를 켜 둔 채라서, 이것이 없으면 다음 프레임에 도로 멈춘다.
+        private static bool endedByHook;
 
         private static void Pause()
         {
@@ -153,10 +216,10 @@ namespace StutterFix
 
         // ── 게임 상태 읽기 ──────────────────────────────────────────────
         // scrController.currentState 는 None / Start / Countdown / Checkpoint / PlayerControl / Fail / Fail2 / Won.
-        // 끝난 상태만 골라내고 나머지는 플레이로 본다.
-        // 반대로(플레이 상태만 골라내기) 하면 목록에 없는 이름이 하나라도 나올 때
-        // 곡 내내 GC가 안 멈춘다. 실제로 그렇게 만들었다가 한 번도 안 멈췄다.
-        private static readonly string[] StopStates = { "None", "Fail", "Fail2", "Won" };
+        // 그런데 이 버전에서는 재생 중에도 None으로 남아 있다(패널에서 확인). 쓰지 않는 필드로 보인다.
+        // 그래서 끝난 상태로 바뀔 때만 종료 신호로 쓰고, 판정 자체는 gameworld + 에디터 재생 여부로 한다.
+        // 종료는 상태값에 기대지 않고 아래 Install()에서 실제 종료 함수들을 직접 가로채 처리한다.
+        private static readonly string[] StopStates = { "Fail", "Fail2", "Won" };
 
         private static PropertyInfo controllerProp, pausedProp, playModeProp, pausedInPlayProp;
         private static FieldInfo gameworldField, editorInstanceField, stateField, floorField;
@@ -236,9 +299,10 @@ namespace StutterFix
                 }
 
                 bool stateOk = Array.IndexOf(StopStates, stateName) < 0;
-                bool playing = gameworld && !paused && playMode && stateOk;
+                bool playing = gameworld && !paused && playMode && stateOk && !endedByHook;
 
                 LastScene = stateName
+                          + (endedByHook ? " 종료됨" : "")
                           + (gameworld ? "" : " world:X")
                           + (hasEditor ? (playMode ? " 에디터재생" : " 편집중") : "")
                           + (paused ? " 일시정지" : "");
