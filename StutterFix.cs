@@ -104,6 +104,7 @@ namespace StutterFix
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
             Profiler.Tick(dt);
+            Culling.Tick(dt);
             if (capacityApplied) return;
 
             // DOTween 초기화 이후에 적용해야 해서 잠시 기다린다.
@@ -146,6 +147,28 @@ namespace StutterFix
             }
             GUILayout.Label("    켠 뒤 무거운 구간을 지나가면 함수별 소요 시간이 로그에 기록됩니다.");
             GUILayout.Label("    최근: " + Profiler.LastReport);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 화면 밖 장식 컬링 (실험) ──");
+            bool cull = GUILayout.Toggle(Culling.Enabled, "  화면 밖 스프라이트 렌더러 끄기");
+            if (cull != Culling.Enabled)
+            {
+                Culling.Enabled = cull;
+                if (!cull) Culling.RestoreAll();
+            }
+            bool deact = GUILayout.Toggle(Culling.DeactivateObjects, "  오브젝트를 통째로 비활성화 (더 강력, 실험용)");
+            if (deact != Culling.DeactivateObjects)
+            {
+                Culling.RestoreAll();
+                Culling.DeactivateObjects = deact;
+            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("여유 범위 (화면 배수)", GUILayout.Width(160));
+            GUILayout.Label(Culling.Margin.ToString("F1"), GUILayout.Width(40));
+            Culling.Margin = GUILayout.HorizontalSlider(Culling.Margin, 1.0f, 4.0f, GUILayout.Width(200));
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    " + Culling.Status);
+            GUILayout.Label("    화면 밖 장식이 사라져 보이면 여유 범위를 키우세요.");
 
             GUILayout.Space(6);
             Profiler.AutoScan = GUILayout.Toggle(Profiler.AutoScan, "  씬 스캔 (5초마다 스프라이트/텍스처 수 기록)");

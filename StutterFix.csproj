@@ -15,6 +15,7 @@
     <Compile Include="StutterFix.cs" />
     <Compile Include="Profiler.cs" />
     <Compile Include="SceneScan.cs" />
+    <Compile Include="Culling.cs" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -49,5 +50,6 @@
   </ItemGroup>
 
 </Project>
+
 
 

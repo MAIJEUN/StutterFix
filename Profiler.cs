@@ -145,6 +145,11 @@ namespace StutterFix
             lines.Insert(0, $"FPS {frames / window:F0} (frame {1000f * window / Math.Max(1, frames):F1} ms)");
             lines.Insert(1, $"측정합계 {totalMs / window:F1} ms/s");
             lines.Insert(2, $"GC0 {gc0 - lastGc0}회/s, heap {heap / 1048576.0:F0}MB");
+            try
+            {
+                lines.Insert(3, $"재생 중 tween {DG.Tweening.DOTween.TotalPlayingTweens()}개 / 활성 {DG.Tweening.DOTween.TotalActiveTweens()}개");
+            }
+            catch { }
             lastGc0 = gc0;
             frames = 0;
 
