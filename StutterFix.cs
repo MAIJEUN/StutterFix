@@ -42,6 +42,7 @@ namespace StutterFix
                 var harmony = new Harmony(modEntry.Info.Id);
                 PatchUnloadCallers(harmony);
                 TextFix.Install(harmony);
+                EffectScan.Install(harmony);
                 GcControl.Install();
             }
             catch (Exception ex)

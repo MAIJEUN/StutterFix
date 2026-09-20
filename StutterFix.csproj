@@ -24,6 +24,7 @@
     <Compile Include="TextFix.cs" />
     <Compile Include="PhaseWatch.cs" />
     <Compile Include="SlowScan.cs" />
+    <Compile Include="EffectScan.cs" />
   </ItemGroup>
 
   <PropertyGroup>
