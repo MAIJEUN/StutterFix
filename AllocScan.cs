@@ -46,6 +46,7 @@ namespace StutterFix
             {
                 lock (gate) stats.Clear();
                 harmony = new Harmony("StutterFix.AllocScan");
+                var patchWatch = System.Diagnostics.Stopwatch.StartNew();
 
                 var types = new HashSet<Type>();
                 foreach (var mb in UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
@@ -74,10 +75,12 @@ namespace StutterFix
                     }
                 }
 
+                PatchCoroutines(done);
+
                 startHeap = GC.GetTotalMemory(false);
                 elapsed = 0f;
                 Running = true;
-                Main.Entry.Logger.Log($"[할당추적] 시작: 컴포넌트 {types.Count}종, 함수 {patchedCount}개, {Seconds:F0}초");
+                Main.Entry.Logger.Log($"[할당추적] 시작: 컴포넌트 {types.Count}종, 함수 {patchedCount}개 (감싸는 데 {patchWatch.ElapsedMilliseconds}ms), {Seconds:F0}초");
                 if (!GcControl.Paused)
                     Main.Entry.Logger.Log("[할당추적] 주의: GC가 도는 중이라 값이 부정확하다. 곡을 재생하면서 켜야 한다.");
             }
@@ -86,6 +89,45 @@ namespace StutterFix
                 Main.Entry.Logger.Error("[할당추적] 시작 실패: " + ex.Message);
                 Running = false;
             }
+        }
+
+        // 엔진 단계별 측정에서 할당의 거의 전부가 Update/ScriptRunDelayedDynamicFrameRate,
+        // 즉 코루틴 단계에서 나왔다(110MB/s). 코루틴 본체는 컴파일러가 만든 숨은 클래스의
+        // MoveNext 에 들어 있으므로, IEnumerator 를 구현한 클래스들의 MoveNext 를 전부 감싼다.
+        private static void PatchCoroutines(HashSet<MethodBase> done)
+        {
+            int count = 0;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                string an = asm.GetName().Name;
+                if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")
+                    || an.StartsWith("netstandard") || an.StartsWith("Mono") || an.StartsWith("0Harmony")
+                    || an.StartsWith("I18N") || an.StartsWith("Microsoft")) continue;
+
+                Type[] types;
+                try { types = asm.GetTypes(); } catch { continue; }
+
+                foreach (var t in types)
+                {
+                    try
+                    {
+                        if (!typeof(System.Collections.IEnumerator).IsAssignableFrom(t)) continue;
+                        if (t.ContainsGenericParameters) continue;
+                        var m = AccessTools.DeclaredMethod(t, "MoveNext");
+                        if (m == null || m.IsAbstract) continue;
+                        if (!done.Add(m)) continue;
+                        harmony.Patch(m,
+                            prefix: new HarmonyMethod(typeof(AllocScan), nameof(Pre)),
+                            postfix: new HarmonyMethod(typeof(AllocScan), nameof(Post)));
+                        count++;
+                        if (count >= 1500) break;
+                    }
+                    catch { }
+                }
+                if (count >= 1500) break;
+            }
+            patchedCount += count;
+            Main.Entry.Logger.Log("[할당추적] 코루틴 " + count + "개 감쌈");
         }
 
         private static void Stop()
@@ -108,7 +150,9 @@ namespace StutterFix
             long delta = GC.GetTotalMemory(false) - __state;
             if (delta <= 0) return;
 
-            string owner = __instance != null ? __instance.GetType().Name : __originalMethod.DeclaringType.Name;
+            var type = __instance != null ? __instance.GetType() : __originalMethod.DeclaringType;
+            // 코루틴은 컴파일러가 만든 숨은 클래스라 이름만으론 어디 것인지 모른다. 바깥 클래스까지 붙인다.
+            string owner = type.DeclaringType != null ? type.DeclaringType.Name + "+" + type.Name : type.Name;
             string key = owner + "." + __originalMethod.Name;
             lock (gate)
             {
