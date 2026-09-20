@@ -1,0 +1,9 @@
+{
+  "Id": "StutterFix",
+  "DisplayName": "Stutter Fix (Tween Capacity)",
+  "Author": "local",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.22.14.0",
+  "AssemblyName": "StutterFix.dll",
+  "EntryMethod": "StutterFix.Main.Load"
+}
