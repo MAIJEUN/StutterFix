@@ -135,6 +135,7 @@ namespace StutterFix
         {
             capacityApplied = true;
             ModWatch.Install();   // 다른 모드들이 다 올라온 뒤에 감싼다
+            PhaseWatch.Install();  // 끊긴 프레임의 범인을 단계 단위로 지목하려면 항상 켜져 있어야 한다
             try
             {
                 DOTween.Init();

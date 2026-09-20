@@ -22,6 +22,7 @@
     <Compile Include="ModWatch.cs" />
     <Compile Include="AllocScan.cs" />
     <Compile Include="TextFix.cs" />
+    <Compile Include="PhaseWatch.cs" />
   </ItemGroup>
 
   <PropertyGroup>
