@@ -102,8 +102,22 @@ namespace StutterFix
             }
         }
 
+        internal static bool AutoScan;
+        private static float sinceScan;
+
         internal static void Tick(float dt)
         {
+            // 씬 스캔은 프로파일러와 별개로 동작한다 (스캔 자체가 무거워서 5초 간격).
+            if (AutoScan)
+            {
+                sinceScan += dt;
+                if (sinceScan >= 5f)
+                {
+                    sinceScan = 0f;
+                    SceneScan.Run();
+                }
+            }
+
             if (!Running) return;
             frames++;
             sinceReport += dt;

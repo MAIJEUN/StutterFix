@@ -147,6 +147,11 @@ namespace StutterFix
             GUILayout.Label("    켠 뒤 무거운 구간을 지나가면 함수별 소요 시간이 로그에 기록됩니다.");
             GUILayout.Label("    최근: " + Profiler.LastReport);
 
+            GUILayout.Space(6);
+            Profiler.AutoScan = GUILayout.Toggle(Profiler.AutoScan, "  씬 스캔 (5초마다 스프라이트/텍스처 수 기록)");
+            GUILayout.Label("    스캔할 때마다 순간 멈춤이 생깁니다. 확인 후 꺼주세요.");
+            GUILayout.Label("    최근: " + SceneScan.LastResult);
+
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             GUILayout.Label("Tweener 용량", GUILayout.Width(140));
