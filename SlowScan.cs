@@ -96,18 +96,25 @@ namespace StutterFix
                     new[] { "scrDecorationManager", "UpdateDecorationTiling" },
                     new[] { "scrFloor", "SetSprite" },
                     new[] { "scrFloor", "UpdateTrackTexture" },
+                    // IL을 끝까지 푸니 타일마다 DOTween.To(...).SetEase(...) 로 애니메이션을 하나씩 만든다.
+                    // DOTween.To 는 제네릭이라 직접 감쌀 수 없지만, 만들어진 애니메이션은 전부
+                    // TweenManager 를 거친다. 이 클래스 전체를 재서 어디로 가는지 본다.
+                    new[] { "TweenManager", "*" },
                 })
                 {
                     var t = AccessTools.TypeByName(target[0]);
                     if (t == null) continue;
                     foreach (var m in t.GetMethods(AccessTools.all))
                     {
-                        if (m.Name != target[1] || m.DeclaringType != t) continue;
+                        bool all_ = target[1] == "*";
+                        if (!all_ && m.Name != target[1]) continue;
+                        if (m.DeclaringType != t) continue;
+                        if (all_ && (m.Name.StartsWith("get_") || m.Name.StartsWith("set_"))) continue;
                         if (m.IsAbstract || m.ContainsGenericParameters) continue;
                         if (slots.ContainsKey(m)) continue;
                         try
                         {
-                            var slot = new Slot { Name = target[0] + "." + target[1] };
+                            var slot = new Slot { Name = target[0] + "." + m.Name };
                             slots[m] = slot;
                             all.Add(slot);
                             harmony.Patch(m,
