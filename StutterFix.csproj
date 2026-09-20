@@ -16,6 +16,7 @@
     <Compile Include="Profiler.cs" />
     <Compile Include="SceneScan.cs" />
     <Compile Include="Culling.cs" />
+    <Compile Include="AbTest.cs" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -33,6 +34,10 @@
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>$(GameManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
@@ -58,6 +63,7 @@
   </ItemGroup>
 
 </Project>
+
 
 
 

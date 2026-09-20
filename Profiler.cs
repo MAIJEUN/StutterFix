@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
+using UnityEngine;
 using UnityModManagerNet;
 
 namespace StutterFix
@@ -145,6 +146,8 @@ namespace StutterFix
             lines.Insert(0, $"FPS {frames / window:F0} (frame {1000f * window / Math.Max(1, frames):F1} ms)");
             lines.Insert(1, $"측정합계 {totalMs / window:F1} ms/s");
             lines.Insert(2, $"GC0 {gc0 - lastGc0}회/s, heap {heap / 1048576.0:F0}MB");
+            // 맵이 프레임 제한을 걸었는지 확인하는 용도. 부하와 제한은 증상이 비슷해서 값을 직접 봐야 한다.
+            lines.Insert(3, $"targetFrameRate {Application.targetFrameRate}, vSync {QualitySettings.vSyncCount}, captureFramerate {Time.captureFramerate}");
             try
             {
                 lines.Insert(3, $"재생 중 tween {DG.Tweening.DOTween.TotalPlayingTweens()}개 / 활성 {DG.Tweening.DOTween.TotalActiveTweens()}개");

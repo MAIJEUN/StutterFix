@@ -29,6 +29,7 @@ namespace StutterFix
         private static bool capacityApplied;
         private static float elapsed;
         private static int skippedUnloads;
+        private static bool tweensPaused;
 
         public static bool Load(UnityModManager.ModEntry modEntry)
         {
@@ -103,6 +104,26 @@ namespace StutterFix
 
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
+            // 맵이 프레임 제한 이벤트로 targetFrameRate를 낮추는 경우가 있다.
+            // 0보다 큰 값이 설정되어 있으면 매 프레임 덮어써서 맵의 제한을 무시한다.
+            if (Config != null && Config.ForceFrameRate > 0 && Application.targetFrameRate != Config.ForceFrameRate)
+            {
+                Application.targetFrameRate = Config.ForceFrameRate;
+            }
+
+            // F9: 애니메이션 멈춤/재생 토글, F10: 자동 A/B 테스트 시작/종료
+            if (Input.GetKeyDown(KeyCode.F9))
+            {
+                tweensPaused = !tweensPaused;
+                try { if (tweensPaused) DOTween.PauseAll(); else DOTween.PlayAll(); } catch { }
+                Entry.Logger.Log(tweensPaused ? "tweens paused (F9)" : "tweens resumed (F9)");
+            }
+            if (Input.GetKeyDown(KeyCode.F9) == false && Input.GetKeyDown(KeyCode.F8))
+            {
+                AbTest.Toggle();
+            }
+
+            AbTest.Tick(dt);
             Profiler.Tick(dt);
             Culling.Tick(dt);
             if (capacityApplied) return;
@@ -147,6 +168,34 @@ namespace StutterFix
             }
             GUILayout.Label("    켠 뒤 무거운 구간을 지나가면 함수별 소요 시간이 로그에 기록됩니다.");
             GUILayout.Label("    최근: " + Profiler.LastReport);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 애니메이션 일시정지 (진단) ──");
+            int playing = 0;
+            try { playing = DOTween.TotalPlayingTweens(); } catch { }
+            GUILayout.Label($"    재생 중인 tween: {playing}개");
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("전부 멈추기", GUILayout.Width(120)))
+            {
+                try { DOTween.PauseAll(); Entry.Logger.Log($"paused all tweens ({playing})"); } catch (Exception ex) { Entry.Logger.Error(ex.Message); }
+            }
+            if (GUILayout.Button("다시 재생", GUILayout.Width(120)))
+            {
+                try { DOTween.PlayAll(); Entry.Logger.Log("resumed all tweens"); } catch (Exception ex) { Entry.Logger.Error(ex.Message); }
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    멈춘 동안 FPS가 오르면 애니메이션 처리가 병목입니다. 화면은 멈춰 보입니다.");
+            GUILayout.Label("    단축키: F9 = 멈춤/재생 토글,  F8 = 자동 A/B 테스트 시작/종료");
+            GUILayout.Label($"    자동 A/B: {(AbTest.Running ? "진행 중" : "정지")} — {AbTest.Summary}");
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 맵의 프레임 제한 무시 ──");
+            GUILayout.Label($"    현재 targetFrameRate: {Application.targetFrameRate} (-1이면 제한 없음)");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("강제할 값 (0 = 끔)", GUILayout.Width(140));
+            Config.ForceFrameRate = IntField(Config.ForceFrameRate, 0, 1000);
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    맵이 연출용으로 프레임을 낮추는 경우 이 값으로 덮어씁니다. 180 정도를 넣어보세요.");
 
             GUILayout.Space(10);
             GUILayout.Label("── 화면 밖 장식 컬링 (실험) ──");
@@ -222,6 +271,8 @@ namespace StutterFix
         public int TweenerCapacity = 40000;
         public int SequenceCapacity = 25000;
         public bool SkipAssetUnload = true;
+        // 0이면 맵의 프레임 제한을 그대로 둔다. 0보다 크면 그 값으로 강제한다.
+        public int ForceFrameRate = 0;
 
         public override void Save(UnityModManager.ModEntry modEntry)
         {
