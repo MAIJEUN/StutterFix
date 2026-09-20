@@ -45,6 +45,7 @@ namespace StutterFix
             {
                 var harmony = new Harmony(modEntry.Info.Id);
                 PatchUnloadCallers(harmony);
+                GcControl.Install();
             }
             catch (Exception ex)
             {
@@ -124,6 +125,8 @@ namespace StutterFix
                 AbTest.Toggle();
             }
 
+            GcControl.Tick(dt);
+            EventSpread.Tick(dt);
             ColorDefer.Tick(dt);
             LoopProfiler.Tick(dt);
             AbTest.Tick(dt);
@@ -173,13 +176,55 @@ namespace StutterFix
             GUILayout.Label("    최근: " + Profiler.LastReport);
 
             GUILayout.Space(10);
+            GUILayout.Label("── 곡 중 GC 멈춤 (핵심 기능) ──");
+            GcControl.Enabled = GUILayout.Toggle(GcControl.Enabled, "  곡을 플레이하는 동안 GC를 멈춘다");
+            GUILayout.Label("    " + GcControl.Status);
+            GUILayout.Label("    측정: 끊김(33ms 초과) 118구간 -> 12구간, 평균 106 -> 124fps");
+
+            GUILayout.Space(10);
+            GUILayout.Label("── GC 상태 ──");
+            GUILayout.Label("    " + GcTest.Status);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── A/B 실험 대상 선택 (F8로 실행) ──");
+            GUILayout.BeginHorizontal();
+            foreach (Experiments.Target t in Enum.GetValues(typeof(Experiments.Target)))
+            {
+                if (t == Experiments.Target.None) continue;
+                bool sel = Experiments.Selected == t;
+                if (GUILayout.Button((sel ? "> " : "  ") + t, GUILayout.Width(110)))
+                {
+                    Experiments.Selected = t;
+                    Experiments.Install(t);
+                }
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    " + Experiments.Status);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 짧은 색 애니메이션 생략 (권장) ──");
+            if (GUILayout.Button(TweenSkip.Enabled ? "생략 끄기" : "생략 켜기", GUILayout.Width(180)))
+            {
+                TweenSkip.Install();
+                TweenSkip.Enabled = !TweenSkip.Enabled;
+                TweenSkip.ResetStats();
+            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("기준 길이 " + TweenSkip.Threshold.ToString("F2") + "초 이하", GUILayout.Width(170));
+            TweenSkip.Threshold = GUILayout.HorizontalSlider(TweenSkip.Threshold, 0f, 2f, GUILayout.Width(200));
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    " + TweenSkip.Status);
+
+            GUILayout.Space(10);
             GUILayout.Label("── 화면 밖 타일 색칠 미루기 (실험) ──");
             if (GUILayout.Button(ColorDefer.Enabled ? "미루기 끄기" : "미루기 켜기", GUILayout.Width(180)))
             {
                 ColorDefer.Install();
                 ColorDefer.Enabled = !ColorDefer.Enabled;
+                ColorDefer.ResetStats();
                 if (!ColorDefer.Enabled) ColorDefer.FlushAll();
             }
+            ColorDefer.NoTweenMode = GUILayout.Toggle(ColorDefer.NoTweenMode, "  미루지 않고 화면 밖 애니메이션만 생략 (권장)");
             GUILayout.Label("    " + ColorDefer.Status);
 
             GUILayout.Space(10);

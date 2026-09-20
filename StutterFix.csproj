@@ -20,6 +20,11 @@
     <Compile Include="LoopProfiler.cs" />
     <Compile Include="ColorSkip.cs" />
     <Compile Include="ColorDefer.cs" />
+    <Compile Include="TweenSkip.cs" />
+    <Compile Include="Experiments.cs" />
+    <Compile Include="EventSpread.cs" />
+    <Compile Include="GcTest.cs" />
+    <Compile Include="GcControl.cs" />
   </ItemGroup>
 
   <PropertyGroup>

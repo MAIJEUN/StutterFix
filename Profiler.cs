@@ -39,6 +39,9 @@ namespace StutterFix
             new[] { "scrVfxPlus", "Update" },
             new[] { "ffxPlusBase", "StartEffect" },
             new[] { "scrFloor", "ColorFloor" },
+            new[] { "scrFloor", "SetColor" },
+            new[] { "scrFloor", "TweenColor" },
+            new[] { "FloorRenderer", "set_color" },
             new[] { "scrFloor", "SetTrackStyle" },
             new[] { "scrFloor", "UpdateAngle" },
             new[] { "ffxPlusBase", "IsAllowedByVisualSettings" },
@@ -77,7 +80,7 @@ namespace StutterFix
                                 prefix: new HarmonyMethod(typeof(Profiler), nameof(Pre)),
                                 postfix: new HarmonyMethod(typeof(Profiler), nameof(Post)));
                             patched++;
-                            if (t[1] == "ColorFloor" || t[1] == "StartEffect")
+                            if (t[1] == "ColorFloor" || t[1] == "TweenColor" || t[1] == "SetColor")
                                 Main.Entry.Logger.Log("[sig] " + method.DeclaringType.Name + "." + method.ToString());
                         }
                         catch (Exception ex)

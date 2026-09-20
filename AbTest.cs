@@ -45,10 +45,6 @@ namespace StutterFix
         {
             if (!Running) return;
 
-            // PauseAll은 호출 시점에 존재하는 tween만 멈춘다. 맵은 매 프레임 새 tween을 만들어내므로
-            // 멈춤 구간 내내 계속 불러줘야 실제로 애니메이션이 멎은 상태가 된다.
-            if (paused) SafePause();
-
             phaseElapsed += dt;
             phaseFrames++;
 
@@ -60,9 +56,7 @@ namespace StutterFix
             if (phaseElapsed < PhaseSeconds) return;
 
             float fps = phaseFrames / phaseElapsed;
-            int tweens = 0;
-            try { tweens = DOTween.TotalPlayingTweens(); } catch { }
-            Main.Entry.Logger.Log($"[ab] {(paused ? "멈춤" : "재생")} 구간: {fps:F0} fps, 최악 {phaseWorst:F1}ms ({phaseFrames}프레임 / {phaseElapsed:F1}초), 재생중 tween {tweens}개");
+            Main.Entry.Logger.Log($"[ab] {(paused ? "GC멈춤" : "GC정상")} 구간: {fps:F0} fps, 최악 {phaseWorst:F1}ms ({phaseFrames}프레임 / {phaseElapsed:F1}초)");
 
             phaseElapsed = 0f;
             phaseFrames = 0;
@@ -72,10 +66,12 @@ namespace StutterFix
 
             float pf = pausedTime > 0 ? pausedFrames / pausedTime : 0;
             float yf = playingTime > 0 ? playingFrames / playingTime : 0;
-            Summary = $"멈춤 {pf:F0} fps / 재생 {yf:F0} fps";
+            Summary = "차단ON " + pf.ToString("F0") + " fps / 차단OFF " + yf.ToString("F0") + " fps";
         }
 
-        private static void SafePause() { try { DOTween.PauseAll(); } catch { } }
-        private static void SafePlay() { try { DOTween.PlayAll(); } catch { } }
+        // 판마다 편차가 커서 서로 다른 판을 비교하면 결론이 흔들린다.
+        // 같은 판 안에서 기능을 켰다 껐다 하며 재면 그 편차가 사라진다.
+        private static void SafePause() { GcTest.SetPaused(true); }
+        private static void SafePlay() { GcTest.SetPaused(false); }
     }
 }

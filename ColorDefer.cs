@@ -18,6 +18,8 @@ namespace StutterFix
     public static class ColorDefer
     {
         internal static bool Enabled;
+        // true면 미루지 않고, 화면 밖 타일의 색 애니메이션만 없앤다 (가볍고 색 오류가 없다).
+        internal static bool NoTweenMode = true;
         internal static float Margin = 2.5f;     // 화면 크기의 몇 배까지 "가깝다"고 볼지
         internal static long Deferred, Applied, Passed;
         internal static int LastRate;
@@ -93,6 +95,16 @@ namespace StutterFix
             {
                 Passed++;
                 return true;                 // 화면 근처면 지금 칠한다
+            }
+
+            // 화면 밖이면 애니메이션이 어차피 보이지 않는다.
+            // duration을 0으로 만들면 DOTween 트윈 생성이 사라져 호출 비용과 GC가 크게 준다.
+            // 색 자체는 지금 적용되므로 나중에 틀린 색이 보일 일도 없다.
+            if (NoTweenMode)
+            {
+                if (__args.Length > 7 && __args[7] is float && (float)__args[7] > 0f) __args[7] = 0f;
+                Deferred++;
+                return true;
             }
 
             // 화면 밖이면 마지막 값만 기억해둔다. 나중 이벤트가 덮어써도 최종 결과는 같다.
@@ -240,6 +252,13 @@ namespace StutterFix
         }
 
         // 기능을 끌 때는 미뤄둔 색을 전부 적용해서 화면을 원래 상태로 되돌린다.
+        // 켤 때마다 0부터 세야 켠 상태와 끈 상태를 공정하게 비교할 수 있다.
+        internal static void ResetStats()
+        {
+            Deferred = Applied = Passed = 0;
+            LastRate = 0;
+        }
+
         internal static void FlushAll()
         {
             var ids = new List<int>(pending.Keys);
