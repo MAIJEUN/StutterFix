@@ -25,6 +25,7 @@
     <Compile Include="PhaseWatch.cs" />
     <Compile Include="SlowScan.cs" />
     <Compile Include="EffectScan.cs" />
+    <Compile Include="EffectBudget.cs" />
   </ItemGroup>
 
   <PropertyGroup>

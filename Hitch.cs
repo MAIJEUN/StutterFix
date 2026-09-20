@@ -119,6 +119,7 @@ namespace StutterFix
             rateHeapMark = heap;
             rateTimer = 0f;
             reported = false;
+            EffectBudget.Reset();
             SlowScan.InstallOnce();
             Main.Entry.Logger.Log("[끊김] 기록 시작");
         }
@@ -128,6 +129,7 @@ namespace StutterFix
             if (songTime < 1f || reported) return;   // 곡이 끝나면 여러 경로에서 불릴 수 있다
             reported = true;
 
+            EffectBudget.Reset();
             ModWatch.Report();
 
             if (recs.Count == 0)

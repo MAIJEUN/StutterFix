@@ -114,6 +114,7 @@ namespace StutterFix
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
             GcControl.Tick(dt);
+            EffectBudget.Tick();
             ModWatch.Tick(dt);
             AllocScan.Tick(dt);
             AbTest.Tick(dt);
@@ -175,6 +176,16 @@ namespace StutterFix
             GUILayout.Label("    " + Hitch.Summary);
             GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
             SlowScan.Enabled = GUILayout.Toggle(SlowScan.Enabled, "  끊길 때 어느 게임 함수가 느렸는지도 같이 찍는다");
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 효과 몰림 나누기 ──");
+            EffectBudget.Enabled = GUILayout.Toggle(EffectBudget.Enabled,
+                "  한 프레임에 몰린 효과를 나눠서 시작한다");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("한 프레임에 " + (int)EffectBudget.BudgetMs + "ms까지", GUILayout.Width(200));
+            EffectBudget.BudgetMs = (int)GUILayout.HorizontalSlider(EffectBudget.BudgetMs, 3f, 60f, GUILayout.Width(200));
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    지금까지 " + EffectBudget.DeferredTotal + "개 미룸, 대기 " + EffectBudget.QueueLength + "개");
 
             GUILayout.Space(10);
             GUILayout.Label("── 글자 장식 ──");

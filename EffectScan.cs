@@ -77,15 +77,20 @@ namespace StutterFix
             }
         }
 
-        public static void Pre(out long __state)
+        // false 를 돌려주면 그 효과는 이번 프레임에 시작하지 않고 다음 프레임으로 밀린다.
+        public static bool Pre(object __instance, MethodBase __originalMethod, object[] __args, out long __state)
         {
             __state = Stopwatch.GetTimestamp();
+            if (!EffectBudget.ShouldRun(__instance, __originalMethod, __args)) return false;
+            EffectBudget.Enter();
+            return true;
         }
 
         public static void Post(object __instance, long __state)
         {
-            if (!Enabled) return;
             double ms = (Stopwatch.GetTimestamp() - __state) * 1000.0 / Stopwatch.Frequency;
+            EffectBudget.Exit(ms);
+            if (!Enabled) return;
 
             StartedThisFrame++;
             MsThisFrame += ms;
