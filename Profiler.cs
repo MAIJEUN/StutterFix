@@ -31,16 +31,20 @@ namespace StutterFix
 
         private static readonly string[][] Targets =
         {
-            new[] { "scrFloor", "LateUpdate" },
+            // 타일 진입 / 이벤트 적용 계열 - 이번 조사의 주 대상
+            new[] { "scnGame", "ApplyEventsToFloors" },
+            new[] { "scnGame", "ApplyEvent" },
+            new[] { "scnGame", "PrepVfx" },
+            new[] { "scrPlanet", "MoveToNextFloor" },
+            new[] { "scrPlanet", "Update_RefreshAngles" },
+            new[] { "scrConductor", "PlayHitTimes" },
+            new[] { "scrPlayer", "Hit" },
+            new[] { "scrFloor", "UpdateIconSprite" },
+            new[] { "scrVfxPlus", "MakeNewFilterDictionary" },
+            // 비교용 기준선
             new[] { "scrDecorationManager", "LateUpdate" },
-            new[] { "scrCustomBackgroundSprite", "LateUpdate" },
             new[] { "scrCamera", "Update" },
-            new[] { "scrCamera", "LateUpdate" },
-            new[] { "scrController", "Update" },
-            new[] { "scrConductor", "Update" },
-            new[] { "scrPlanet", "Update" },
             new[] { "DG.Tweening.Core.DOTweenComponent", "Update" },
-            new[] { "DG.Tweening.Core.DOTweenComponent", "LateUpdate" },
         };
 
         internal static void Start()
@@ -51,20 +55,33 @@ namespace StutterFix
             int patched = 0;
             foreach (var t in Targets)
             {
-                var type = AccessTools.TypeByName(t[0]);
-                if (type == null) continue;
-                var method = AccessTools.Method(type, t[1]);
-                if (method == null) continue;
                 try
                 {
-                    harmony.Patch(method,
-                        prefix: new HarmonyMethod(typeof(Profiler), nameof(Pre)),
-                        postfix: new HarmonyMethod(typeof(Profiler), nameof(Post)));
-                    patched++;
+                    var type = AccessTools.TypeByName(t[0]);
+                    if (type == null) continue;
+
+                    // 같은 이름의 오버로드가 여럿일 수 있다. AccessTools.Method는 그럴 때 예외를 던지므로
+                    // 이름이 같은 메서드를 전부 찾아 각각 패치한다.
+                    foreach (var method in type.GetMethods(AccessTools.all))
+                    {
+                        if (method.Name != t[1]) continue;
+                        if (method.IsAbstract || method.ContainsGenericParameters) continue;
+                        try
+                        {
+                            harmony.Patch(method,
+                                prefix: new HarmonyMethod(typeof(Profiler), nameof(Pre)),
+                                postfix: new HarmonyMethod(typeof(Profiler), nameof(Post)));
+                            patched++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Main.Entry.Logger.Error($"profiler patch failed for {t[0]}.{t[1]}: {ex.Message}");
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Main.Entry.Logger.Error($"profiler patch failed for {t[0]}.{t[1]}: {ex.Message}");
+                    Main.Entry.Logger.Error($"profiler target failed {t[0]}.{t[1]}: {ex.Message}");
                 }
             }
 

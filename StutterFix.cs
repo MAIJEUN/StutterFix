@@ -118,11 +118,13 @@ namespace StutterFix
                 try { if (tweensPaused) DOTween.PauseAll(); else DOTween.PlayAll(); } catch { }
                 Entry.Logger.Log(tweensPaused ? "tweens paused (F9)" : "tweens resumed (F9)");
             }
+            if (Input.GetKeyDown(KeyCode.F7)) LoopProfiler.Toggle();
             if (Input.GetKeyDown(KeyCode.F9) == false && Input.GetKeyDown(KeyCode.F8))
             {
                 AbTest.Toggle();
             }
 
+            LoopProfiler.Tick(dt);
             AbTest.Tick(dt);
             Profiler.Tick(dt);
             Culling.Tick(dt);
@@ -168,6 +170,14 @@ namespace StutterFix
             }
             GUILayout.Label("    켠 뒤 무거운 구간을 지나가면 함수별 소요 시간이 로그에 기록됩니다.");
             GUILayout.Label("    최근: " + Profiler.LastReport);
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 엔진 단계별 측정 (F7) ──");
+            if (GUILayout.Button(LoopProfiler.Running ? "엔진 측정 끄기" : "엔진 측정 켜기", GUILayout.Width(180)))
+            {
+                LoopProfiler.Toggle();
+            }
+            GUILayout.Label("    " + LoopProfiler.LastReport);
 
             GUILayout.Space(10);
             GUILayout.Label("── 애니메이션 일시정지 (진단) ──");
