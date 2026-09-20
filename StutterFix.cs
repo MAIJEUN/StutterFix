@@ -187,6 +187,12 @@ namespace StutterFix
                 "  끊길 때 어느 게임 함수가 느렸는지도 찍는다 (곡 시작이 4초 느려집니다)");
 
             GUILayout.Space(10);
+            GUILayout.Label("── 실험: 카메라 필터 끄기 ──");
+            RenderWatch.ForceFiltersOff = GUILayout.Toggle(RenderWatch.ForceFiltersOff,
+                "  맵이 거는 화면 필터를 전부 끈다 (원인 확인용, 화면이 달라집니다)");
+            GUILayout.Label("    직전 프레임에 " + RenderWatch.ForcedOffCount + "개 껐음");
+
+            GUILayout.Space(10);
             GUILayout.Label("── 애니메이션 목록 재정렬 막기 (핵심) ──");
             TweenFix.Enabled = GUILayout.Toggle(TweenFix.Enabled,
                 "  효과가 도는 동안 DOTween 목록을 건드리지 않는다  (지금까지 " + TweenFix.Guarded + "회)");

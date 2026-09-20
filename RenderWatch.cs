@@ -71,6 +71,19 @@ namespace StutterFix
         private static string lastChange = "없음";
         private static float sinceChange = 999f;
 
+        // 박자마다 75ms가 반복되는데 힙도 네이티브도 그래픽 메모리도 0이다.
+        // 할당이 아니라 그 순간 그릴 것이 많다는 뜻이고, 필터 11겹이 그것을 11번 처리한다.
+        // 필터를 꺼보면 필터가 증폭기인지 아닌지 한 번에 갈린다.
+        internal static bool ForceFiltersOff;
+        internal static int ForcedOffCount;
+
+        private static bool IsFilter(Behaviour b)
+        {
+            string n = b.GetType().Name;
+            return n.IndexOf("CameraFilterPack", StringComparison.Ordinal) >= 0
+                || n.IndexOf("Bloom", StringComparison.Ordinal) >= 0;
+        }
+
         internal static void Tick(float dt)
         {
             try
@@ -89,6 +102,19 @@ namespace StutterFix
                         for (int i = 0; i < found.Length; i++)
                             wasOn[i] = found[i] != null && found[i].enabled;
                     }
+                }
+
+                if (ForceFiltersOff)
+                {
+                    int off = 0;
+                    foreach (var b in camFx)
+                    {
+                        if (b == null || !b.enabled || b is Camera) continue;
+                        if (!IsFilter(b)) continue;   // 카메라 움직임 같은 게임 코드는 건드리지 않는다
+                        b.enabled = false;
+                        off++;
+                    }
+                    ForcedOffCount = off;
                 }
 
                 sinceChange += dt;
