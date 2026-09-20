@@ -112,6 +112,7 @@ namespace StutterFix
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
             GcControl.Tick(dt);
+            ModWatch.Tick(dt);
             AbTest.Tick(dt);
             LoopProfiler.Tick(dt);
             Profiler.Tick(dt);
@@ -130,6 +131,7 @@ namespace StutterFix
         internal static void ApplyCapacity()
         {
             capacityApplied = true;
+            ModWatch.Install();   // 다른 모드들이 다 올라온 뒤에 감싼다
             try
             {
                 DOTween.Init();
@@ -166,6 +168,7 @@ namespace StutterFix
             Hitch.ThresholdMs = (int)GUILayout.HorizontalSlider(Hitch.ThresholdMs, 16f, 100f, GUILayout.Width(200));
             GUILayout.EndHorizontal();
             GUILayout.Label("    " + Hitch.Summary);
+            GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
 
             GUILayout.Space(10);
             GUILayout.Label("── 맵 로딩 ──");

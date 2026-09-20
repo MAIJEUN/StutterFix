@@ -151,6 +151,12 @@ namespace StutterFix
                 long before = GC.GetTotalMemory(false) / 1048576;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 GC.Collect();
+
+                // 한 번으로는 거의 안 치워질 때가 있다. 로그에서 6001MB가 465ms 걸려 5661MB로만 줄었고,
+                // 4초 뒤 다시 한계에 닿아 또 멈췄다. 절반도 못 치웠으면 그 자리에서 한 번 더 돌린다.
+                long mid = GC.GetTotalMemory(false) / 1048576;
+                if (before > 1000 && mid > before / 2) GC.Collect();
+
                 sw.Stop();
                 ForcedCollects++;
                 Main.Entry.Logger.Log(string.Format("GC 재개 및 정리 ({0}) {1}MB -> {2}MB, {3}ms",

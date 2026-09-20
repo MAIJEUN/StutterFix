@@ -19,6 +19,7 @@
     <Compile Include="LoopProfiler.cs" />
     <Compile Include="GcControl.cs" />
     <Compile Include="Hitch.cs" />
+    <Compile Include="ModWatch.cs" />
   </ItemGroup>
 
   <PropertyGroup>
