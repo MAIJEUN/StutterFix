@@ -173,6 +173,7 @@ namespace StutterFix
             GUILayout.EndHorizontal();
             GUILayout.Label("    " + Hitch.Summary);
             GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
+            SlowScan.Enabled = GUILayout.Toggle(SlowScan.Enabled, "  끊길 때 어느 게임 함수가 느렸는지도 같이 찍는다");
 
             GUILayout.Space(10);
             GUILayout.Label("── 글자 장식 ──");

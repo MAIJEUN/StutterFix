@@ -99,12 +99,14 @@ namespace StutterFix
                         "[끊김] 타일 #{0}, {1:F1}초 | 프레임 {2:F0}ms | 힙 {3:+#;-#;0}MB | 네이티브 {4:+#;-#;0}MB | 정리 {5}회 | 할당 {6:F0}MB/s | 모드 {7}",
                         r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top));
                     Main.Entry.Logger.Log("[끊김]    직전 프레임 단계: " + PhaseWatch.TopOfLastFrame(3));
+                    Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(3));
                 }
             }
 
             lastHeap = heap;
             lastNative = native;
             lastCollects = collects;
+            SlowScan.Reset();   // 다음 프레임 몫만 모으도록 매번 비운다
         }
 
         private static void Begin(long heap)
@@ -116,6 +118,7 @@ namespace StutterFix
             rateHeapMark = heap;
             rateTimer = 0f;
             reported = false;
+            SlowScan.InstallOnce();
             Main.Entry.Logger.Log("[끊김] 기록 시작");
         }
 

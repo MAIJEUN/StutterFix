@@ -23,6 +23,7 @@
     <Compile Include="AllocScan.cs" />
     <Compile Include="TextFix.cs" />
     <Compile Include="PhaseWatch.cs" />
+    <Compile Include="SlowScan.cs" />
   </ItemGroup>
 
   <PropertyGroup>
