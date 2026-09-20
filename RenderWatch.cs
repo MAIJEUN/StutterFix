@@ -22,8 +22,40 @@ namespace StutterFix
         internal static int BlendModeCount;
         private static int blendThisFrame;
 
+        // 필터를 전부 꺼도 박자마다 75ms가 그대로였다. 필터는 범인이 아니다.
+        // 그리기 안에서 어디가 막히는지 쪼갠다.
+        //   걸러내기(컬링) : 화면 안에 무엇이 들어오는지 고르는 시간. 물체 수에 비례한다.
+        //   그리기 준비     : 고른 것을 그래픽 카드에 넘기는 시간. 그리는 개수에 비례한다.
+        // 둘 다 짧은데 프레임이 길면 그래픽 카드가 실제로 바쁜 것이고, 그때는 그릴 양을 줄이는 수밖에 없다.
+        internal static float CullMs, SubmitMs;
+        private static long preCullStamp, preRenderStamp;
+
+        private static void OnPreCull(Camera c)
+        {
+            if (c != cam) return;
+            preCullStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        private static void OnPreRender(Camera c)
+        {
+            if (c != cam) return;
+            preRenderStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (preCullStamp != 0)
+                CullMs = (preRenderStamp - preCullStamp) * 1000f / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        private static void OnPostRender(Camera c)
+        {
+            if (c != cam || preRenderStamp == 0) return;
+            SubmitMs = (System.Diagnostics.Stopwatch.GetTimestamp() - preRenderStamp) * 1000f / System.Diagnostics.Stopwatch.Frequency;
+        }
+
         internal static void Install(Harmony harmony)
         {
+            Camera.onPreCull += OnPreCull;
+            Camera.onPreRender += OnPreRender;
+            Camera.onPostRender += OnPostRender;
+
             try
             {
                 var type = AccessTools.TypeByName("BlendModeEffect");
@@ -163,8 +195,8 @@ namespace StutterFix
                     fx++;
                 }
 
-                return string.Format("카메라 크기 {0:F1}, 카메라 효과 {1}개, 블렌드 물체 {2}개, 화면버퍼 {3}개, 최근 변화 {4} ({5:F1}초 전)",
-                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, lastChange, sinceChange);
+                return string.Format("카메라 크기 {0:F1}, 효과 {1}개, 블렌드 물체 {2}개, 버퍼 {3}개 | 걸러내기 {4:F1}ms, 그리기 준비 {5:F1}ms",
+                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, CullMs, SubmitMs);
             }
             catch { return "?"; }
         }
