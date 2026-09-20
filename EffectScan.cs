@@ -33,22 +33,43 @@ namespace StutterFix
                 var baseType = AccessTools.TypeByName("ffxPlusBase");
                 if (baseType == null) { Main.Entry.Logger.Error("ffxPlusBase 없음"); return; }
 
+                // 같은 이름의 함수가 여러 개인 타입이 있다. AccessTools.DeclaredMethod 는 그럴 때 예외를 던지고,
+                // 그 예외 하나 때문에 설치가 통째로 중단됐었다. 이름으로 전부 찾아 하나씩 따로 감싼다.
                 int count = 0;
                 foreach (var t in baseType.Assembly.GetTypes())
                 {
                     if (!baseType.IsAssignableFrom(t) || t.ContainsGenericParameters) continue;
-                    var m = AccessTools.DeclaredMethod(t, "StartEffect");
-                    if (m == null || m.IsAbstract) continue;
+                    foreach (var m in t.GetMethods(AccessTools.all))
+                    {
+                        if (m.Name != "StartEffect" || m.DeclaringType != t) continue;
+                        if (m.IsAbstract || m.ContainsGenericParameters) continue;
+                        try
+                        {
+                            harmony.Patch(m,
+                                prefix: new HarmonyMethod(typeof(EffectScan), nameof(Pre)),
+                                postfix: new HarmonyMethod(typeof(EffectScan), nameof(Post)));
+                            count++;
+                        }
+                        catch { }
+                    }
+                }
+                // StartEffect 28개가 합계 1ms인데 scrVfxPlus.Update 는 404ms였다.
+                // 시간이 효과 시작이 아니라 그 앞의 걸러내기에 있을 수 있으므로 그쪽도 같이 센다.
+                int checks = 0;
+                foreach (var m in baseType.GetMethods(AccessTools.all))
+                {
+                    if (m.Name != "IsAllowedByVisualSettings" || m.IsAbstract) continue;
                     try
                     {
                         harmony.Patch(m,
-                            prefix: new HarmonyMethod(typeof(EffectScan), nameof(Pre)),
-                            postfix: new HarmonyMethod(typeof(EffectScan), nameof(Post)));
-                        count++;
+                            prefix: new HarmonyMethod(typeof(EffectScan), nameof(CheckPre)),
+                            postfix: new HarmonyMethod(typeof(EffectScan), nameof(CheckPost)));
+                        checks++;
                     }
                     catch { }
                 }
-                Main.Entry.Logger.Log("[효과] StartEffect " + count + "개 감쌈");
+
+                Main.Entry.Logger.Log("[효과] StartEffect " + count + "개, 걸러내기 " + checks + "개 감쌈");
             }
             catch (Exception ex)
             {
@@ -79,16 +100,33 @@ namespace StutterFix
                 Main.Entry.Logger.Log(string.Format("[효과] {0} {1:F0}ms ({2}번째 사용)", name, ms, n + 1));
         }
 
+        internal static int ChecksThisFrame;
+        internal static double CheckMsThisFrame;
+
+        public static void CheckPre(out long __state)
+        {
+            __state = Stopwatch.GetTimestamp();
+        }
+
+        public static void CheckPost(long __state)
+        {
+            if (!Enabled) return;
+            ChecksThisFrame++;
+            CheckMsThisFrame += (Stopwatch.GetTimestamp() - __state) * 1000.0 / Stopwatch.Frequency;
+        }
+
         internal static string FrameSummary()
         {
-            if (StartedThisFrame == 0) return "효과 시작 없음";
-            return string.Format("효과 {0}개 시작, 합계 {1:F0}ms", StartedThisFrame, MsThisFrame);
+            return string.Format("효과 {0}개 시작 {1:F0}ms, 걸러내기 {2}회 {3:F0}ms",
+                StartedThisFrame, MsThisFrame, ChecksThisFrame, CheckMsThisFrame);
         }
 
         internal static void ResetFrame()
         {
             StartedThisFrame = 0;
             MsThisFrame = 0;
+            ChecksThisFrame = 0;
+            CheckMsThisFrame = 0;
         }
     }
 }
