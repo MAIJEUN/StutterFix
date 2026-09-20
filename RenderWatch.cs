@@ -82,9 +82,14 @@ namespace StutterFix
             }
         }
 
-        public static void CountBlend()
+        internal static bool ForceBlendOff;
+
+        public static void CountBlend(object __instance)
         {
             blendThisFrame++;
+            if (!ForceBlendOff) return;
+            var b = __instance as Behaviour;
+            if (b != null) b.enabled = false;
         }
 
         internal static void EndFrame()
@@ -180,6 +185,24 @@ namespace StutterFix
             return n;
         }
 
+        // 걸러내기 0.2ms인데 Camera.Render 안에서 69ms를 멈춘다.
+        // CPU가 그릴 목록을 만드느라 바쁜 것이 아니라 그래픽 카드가 밀려서 기다리는 모양이다.
+        // 유니티가 GPU 시간을 직접 알려주는 창구가 있으므로 그 값으로 확인한다.
+        private static UnityEngine.FrameTiming[] timings = new UnityEngine.FrameTiming[1];
+
+        internal static string GpuInfo()
+        {
+            try
+            {
+                UnityEngine.FrameTimingManager.CaptureFrameTimings();
+                uint n = UnityEngine.FrameTimingManager.GetLatestTimings(1, timings);
+                if (n == 0) return "GPU 시간 못 읽음";
+                var t = timings[0];
+                return string.Format("CPU {0:F1}ms, GPU {1:F1}ms", t.cpuFrameTime, t.gpuFrameTime);
+            }
+            catch { return "GPU 시간 못 읽음"; }
+        }
+
         internal static string Info()
         {
             try
@@ -196,7 +219,7 @@ namespace StutterFix
                 }
 
                 return string.Format("카메라 크기 {0:F1}, 효과 {1}개, 블렌드 물체 {2}개, 버퍼 {3}개 | 걸러내기 {4:F1}ms, 그리기 준비 {5:F1}ms",
-                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, CullMs, SubmitMs);
+                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, CullMs, SubmitMs) + " | " + GpuInfo();
             }
             catch { return "?"; }
         }

@@ -191,6 +191,9 @@ namespace StutterFix
             RenderWatch.ForceFiltersOff = GUILayout.Toggle(RenderWatch.ForceFiltersOff,
                 "  맵이 거는 화면 필터를 전부 끈다 (원인 확인용, 화면이 달라집니다)");
             GUILayout.Label("    직전 프레임에 " + RenderWatch.ForcedOffCount + "개 껐음");
+            RenderWatch.ForceBlendOff = GUILayout.Toggle(RenderWatch.ForceBlendOff,
+                "  블렌드 모드 장식을 전부 끈다 (원인 확인용)");
+            GUILayout.Label("    블렌드 물체는 하나하나가 화면을 한 번씩 더 읽습니다 (지금 " + RenderWatch.BlendModeCount + "개)");
 
             GUILayout.Space(10);
             GUILayout.Label("── 애니메이션 목록 재정렬 막기 (핵심) ──");
