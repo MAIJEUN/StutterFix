@@ -165,6 +165,11 @@ namespace StutterFix
             GUILayout.Label("한계 " + GcControl.HardLimitMB + "MB에서 한 번 정리", GUILayout.Width(200));
             GcControl.HardLimitMB = (int)GUILayout.HorizontalSlider(GcControl.HardLimitMB, 1000f, 12000f, GUILayout.Width(200));
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("곡 끝나고 " + GcControl.EndDelaySeconds.ToString("F0") + "초 뒤 정리", GUILayout.Width(200));
+            GcControl.EndDelaySeconds = (int)GUILayout.HorizontalSlider(GcControl.EndDelaySeconds, 0f, 15f, GUILayout.Width(200));
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    (완주 연출이 도는 중에 정리하면 연출이 끊깁니다)");
 
             GUILayout.Space(10);
             GUILayout.Label("── 끊김 기록 ──");

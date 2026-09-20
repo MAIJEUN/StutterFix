@@ -21,6 +21,12 @@ namespace StutterFix
         internal static bool NoCollectDuringSong = true;  // 곡 중에는 조금씩 치우기도 하지 않는다
         internal static int HardLimitMB = 6000;           // 여기 넘으면 끊김을 감수하고 완전 정리
         internal static float MaxPauseSeconds = 300f;     // 감지가 실패해도 이 시간이 지나면 반드시 정리
+        internal static float EndDelaySeconds = 3f;       // 곡이 끝나고 이만큼 기다렸다 정리한다
+
+        // 완주 직후는 마무리 연출이 돌아가는 중이라, 그 순간 정리하면 연출이 끊긴다.
+        // 연출이 끝날 때까지 기다렸다가 치운다.
+        private static float resumeCountdown = -1f;
+        private static string resumeReason;
         internal static int IncrementalStartMB = 800;     // 조금씩 치우기 모드에서만 쓴다
         internal static float SliceMs = 2f;
         internal static int SliceEveryFrames = 4;
@@ -120,13 +126,21 @@ namespace StutterFix
         {
             endedByHook = true;
             Hitch.Report();
-            Resume(__originalMethod.Name);
+            ScheduleResume(__originalMethod.Name);
+        }
+
+        internal static void ScheduleResume(string reason)
+        {
+            if (!Paused) return;
+            if (resumeCountdown > 0f) return;
+            resumeCountdown = EndDelaySeconds;
+            resumeReason = reason;
         }
 
         public static void OnSongRestart(MethodBase __originalMethod)
         {
             Hitch.Report();
-            Resume(__originalMethod.Name);
+            Resume(__originalMethod.Name);   // 재시작은 어차피 화면이 바뀌는 순간이라 바로 치운다
             endedByHook = false;
         }
 
@@ -148,6 +162,7 @@ namespace StutterFix
             {
                 GarbageCollector.GCMode = GarbageCollector.Mode.Enabled;
                 Paused = false;
+                resumeCountdown = -1f;
                 long before = GC.GetTotalMemory(false) / 1048576;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 // 유니티의 점진적 GC는 한 번 불러서는 한 주기를 끝내지 않는다.
@@ -183,7 +198,19 @@ namespace StutterFix
             Hitch.Tick(dt, playing);
 
             if (playing && !Paused) { Pause(); pausedFor = 0f; PeakHeapMB = 0; }
-            else if (!playing && Paused) { Hitch.Report(); Resume("곡 종료 [" + LastScene + "]"); }
+            else if (!playing && Paused) { Hitch.Report(); ScheduleResume("곡 종료 [" + LastScene + "]"); }
+
+            // 곡이 끝났으면 연출이 끝나기를 기다렸다 치운다.
+            if (resumeCountdown > 0f)
+            {
+                resumeCountdown -= dt;
+                if (resumeCountdown <= 0f)
+                {
+                    resumeCountdown = -1f;
+                    Resume(resumeReason);
+                    return;
+                }
+            }
 
             if (!Paused) return;
 
