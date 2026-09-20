@@ -44,6 +44,7 @@ namespace StutterFix
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);
                 TweenFix.Install(harmony);
+                RenderWatch.Install(harmony);
                 GcControl.Install();
             }
             catch (Exception ex)
