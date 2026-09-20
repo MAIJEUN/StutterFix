@@ -21,6 +21,7 @@
     <Compile Include="Hitch.cs" />
     <Compile Include="ModWatch.cs" />
     <Compile Include="AllocScan.cs" />
+    <Compile Include="TextFix.cs" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -47,6 +48,10 @@
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
       <HintPath>$(GameManaged)\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameManaged)/UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.AnimationModule">
