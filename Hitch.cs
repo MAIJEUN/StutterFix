@@ -110,6 +110,8 @@ namespace StutterFix
 
         internal static void Report()
         {
+            if (songTime < 1f) return;   // 플레이한 적이 없으면 보고할 것도 없다
+
             if (recs.Count == 0)
             {
                 Summary = string.Format("{0:F0}초 동안 {1}ms 넘는 끊김 없음 (할당 {2:F0}MB/s)", songTime, ThresholdMs, AllocMBPerSec);

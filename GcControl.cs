@@ -153,13 +153,15 @@ namespace StutterFix
 
         // ── 게임 상태 읽기 ──────────────────────────────────────────────
         // scrController.currentState 는 None / Start / Countdown / Checkpoint / PlayerControl / Fail / Fail2 / Won.
-        // 이 중 곡이 실제로 진행되는 상태에서만 GC를 멈춘다.
-        // 완주(Won)나 실패(Fail)로 바뀌는 순간이 곧 종료 신호다.
-        private static readonly string[] PlayStates = { "Start", "Countdown", "Checkpoint", "PlayerControl" };
+        // 끝난 상태만 골라내고 나머지는 플레이로 본다.
+        // 반대로(플레이 상태만 골라내기) 하면 목록에 없는 이름이 하나라도 나올 때
+        // 곡 내내 GC가 안 멈춘다. 실제로 그렇게 만들었다가 한 번도 안 멈췄다.
+        private static readonly string[] StopStates = { "None", "Fail", "Fail2", "Won" };
 
         private static PropertyInfo controllerProp, pausedProp, playModeProp, pausedInPlayProp;
         private static FieldInfo gameworldField, editorInstanceField, stateField, floorField;
         private static bool reflectionReady;
+        private static string loggedScene = "";
 
         private static void PrepareReflection()
         {
@@ -233,13 +235,20 @@ namespace StutterFix
                     }
                 }
 
-                bool stateOk = Array.IndexOf(PlayStates, stateName) >= 0;
+                bool stateOk = Array.IndexOf(StopStates, stateName) < 0;
                 bool playing = gameworld && !paused && playMode && stateOk;
 
                 LastScene = stateName
                           + (gameworld ? "" : " world:X")
                           + (hasEditor ? (playMode ? " 에디터재생" : " 편집중") : "")
                           + (paused ? " 일시정지" : "");
+
+                // 상태 이름이 바뀔 때만 남긴다. 감지가 또 어긋나면 이 줄만 보면 된다.
+                if (LastScene != loggedScene)
+                {
+                    loggedScene = LastScene;
+                    Main.Entry.Logger.Log("[상태] " + LastScene + (playing ? "  -> 플레이" : "  -> 정지"));
+                }
                 return playing;
             }
             catch (Exception ex)
