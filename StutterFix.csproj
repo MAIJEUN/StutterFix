@@ -18,6 +18,7 @@
     <Compile Include="AbTest.cs" />
     <Compile Include="LoopProfiler.cs" />
     <Compile Include="GcControl.cs" />
+    <Compile Include="Hitch.cs" />
   </ItemGroup>
 
   <PropertyGroup>

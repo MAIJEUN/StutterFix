@@ -50,20 +50,38 @@ namespace StutterFix
             return true;
         }
 
-        // scnGame.LoadLevel / Awake 안의 Resources.UnloadUnusedAssets 호출을 가로챈다.
-        // 세 호출 지점 모두 반환값을 바로 버리므로(IL에서 call 다음이 pop) 건너뛰어도 로직에 영향이 없다.
+        // Resources.UnloadUnusedAssets 를 부르는 곳은 게임 전체에서 딱 세 군데다.
+        // (IL 스캔으로 확인: scnGame.Awake, scnGame.LoadLevel, scnEditor.SwitchToEditMode)
+        // 세 곳 모두 반환값을 바로 버리므로(call 다음 바이트가 pop) 건너뛰어도 로직에 영향이 없다.
+        //
+        // 특히 scnEditor.SwitchToEditMode 는 플레이를 멈추고 편집으로 돌아올 때마다 불린다.
+        // 로그에서 이 호출 하나가 매번 120ms씩 화면을 세웠다(정리된 에셋은 1~2개뿐이었다).
         private static void PatchUnloadCallers(Harmony harmony)
         {
             var transpiler = new HarmonyMethod(typeof(Main), nameof(UnloadTranspiler));
-            var scnGame = AccessTools.TypeByName("scnGame");
-            if (scnGame == null) return;
 
-            foreach (var name in new[] { "LoadLevel", "Awake" })
+            var targets = new[]
             {
-                var m = AccessTools.Method(scnGame, name);
+                new[] { "scnGame", "LoadLevel" },
+                new[] { "scnGame", "Awake" },
+                new[] { "scnEditor", "SwitchToEditMode" },
+            };
+
+            foreach (var t in targets)
+            {
+                var type = AccessTools.TypeByName(t[0]);
+                if (type == null) continue;
+                var m = AccessTools.Method(type, t[1]);
                 if (m == null) continue;
-                harmony.Patch(m, transpiler: transpiler);
-                Entry.Logger.Log("patched scnGame." + name);
+                try
+                {
+                    harmony.Patch(m, transpiler: transpiler);
+                    Entry.Logger.Log("patched " + t[0] + "." + t[1]);
+                }
+                catch (Exception ex)
+                {
+                    Entry.Logger.Error("patch failed " + t[0] + "." + t[1] + ": " + ex.Message);
+                }
             }
         }
 
@@ -131,12 +149,23 @@ namespace StutterFix
             GUILayout.Space(10);
             GUILayout.Label("── 곡 중 GC 멈춤 (핵심) ──");
             GcControl.Enabled = GUILayout.Toggle(GcControl.Enabled, "  곡을 플레이하는 동안 GC를 멈춘다");
+            GcControl.NoCollectDuringSong = GUILayout.Toggle(GcControl.NoCollectDuringSong,
+                "  곡 중에는 아예 치우지 않고 쌓아두기만 한다 (권장)");
             GUILayout.Label("    측정: 평균 106 -> 124fps (A-B 125쌍)");
             GUILayout.Label("    " + GcControl.Status);
             GUILayout.BeginHorizontal();
-            GUILayout.Label("전체 정리 기준 " + GcControl.HardLimitMB + "MB", GUILayout.Width(180));
-            GcControl.HardLimitMB = (int)GUILayout.HorizontalSlider(GcControl.HardLimitMB, 1000f, 8000f, GUILayout.Width(200));
+            GUILayout.Label("한계 " + GcControl.HardLimitMB + "MB에서 한 번 정리", GUILayout.Width(200));
+            GcControl.HardLimitMB = (int)GUILayout.HorizontalSlider(GcControl.HardLimitMB, 1000f, 12000f, GUILayout.Width(200));
             GUILayout.EndHorizontal();
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 끊김 기록 ──");
+            Hitch.Enabled = GUILayout.Toggle(Hitch.Enabled, "  끊긴 프레임을 기록한다 (곡이 끝나면 정리해서 보여줌)");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("기준 " + (int)Hitch.ThresholdMs + "ms", GUILayout.Width(200));
+            Hitch.ThresholdMs = (int)GUILayout.HorizontalSlider(Hitch.ThresholdMs, 16f, 100f, GUILayout.Width(200));
+            GUILayout.EndHorizontal();
+            GUILayout.Label("    " + Hitch.Summary);
 
             GUILayout.Space(10);
             GUILayout.Label("── 맵 로딩 ──");
