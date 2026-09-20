@@ -20,7 +20,9 @@ namespace StutterFix
     public static class Hitch
     {
         internal static bool Enabled = true;
-        internal static float ThresholdMs = 30f;
+        // 164Hz 화면에서는 한 프레임이 6ms다. 20ms만 돼도 눈에 띄므로 기준을 낮게 잡는다.
+        // 30ms로 두었을 때 사용자가 느낀 28~30초 구간이 기록에 아예 안 남았다.
+        internal static float ThresholdMs = 16f;
         internal static string Summary = "(아직 기록 없음)";
 
         private struct Rec

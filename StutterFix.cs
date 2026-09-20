@@ -178,7 +178,7 @@ namespace StutterFix
             Hitch.Enabled = GUILayout.Toggle(Hitch.Enabled, "  끊긴 프레임을 기록한다 (곡이 끝나면 정리해서 보여줌)");
             GUILayout.BeginHorizontal();
             GUILayout.Label("기준 " + (int)Hitch.ThresholdMs + "ms", GUILayout.Width(200));
-            Hitch.ThresholdMs = (int)GUILayout.HorizontalSlider(Hitch.ThresholdMs, 16f, 100f, GUILayout.Width(200));
+            Hitch.ThresholdMs = (int)GUILayout.HorizontalSlider(Hitch.ThresholdMs, 8f, 100f, GUILayout.Width(200));
             GUILayout.EndHorizontal();
             GUILayout.Label("    " + Hitch.Summary);
             GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
