@@ -117,6 +117,7 @@ namespace StutterFix
         {
             GcControl.Tick(dt);
             EffectBudget.Tick();
+            RenderWatch.Tick(dt);
             ModWatch.Tick(dt);
             AllocScan.Tick(dt);
             AbTest.Tick(dt);

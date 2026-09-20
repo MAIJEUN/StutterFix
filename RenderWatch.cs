@@ -33,6 +33,15 @@ namespace StutterFix
 
                 // 켜져 있는 것만 Update 가 불리므로, 프레임당 호출 수가 곧 화면에 걸린 개수다.
                 harmony.Patch(update, prefix: new HarmonyMethod(typeof(RenderWatch), nameof(CountBlend)));
+
+                // 화면 크기 버퍼를 새로 잡는 순간도 센다.
+                foreach (var m in typeof(RenderTexture).GetMethods(AccessTools.all))
+                {
+                    if (m.Name != "GetTemporary" || m.ContainsGenericParameters) continue;
+                    try { harmony.Patch(m, prefix: new HarmonyMethod(typeof(RenderWatch), nameof(CountRt))); }
+                    catch { }
+                }
+
                 Main.Entry.Logger.Log("render watch installed");
             }
             catch (Exception ex)
@@ -50,6 +59,51 @@ namespace StutterFix
         {
             BlendModeCount = blendThisFrame;
             blendThisFrame = 0;
+            TempRtThisFrame = rtCounter;
+            rtCounter = 0;
+        }
+
+        // 같은 지점에서 두 판 연속 끊긴다. 일회성 비용이 아니라 그 순간의 그리기가 무거운 것이다.
+        // 프레임마다 카메라 효과의 켜짐/꺼짐을 지켜보다가, 끊긴 프레임 근처에서 바뀐 것을 알려준다.
+        private static Behaviour[] camFx = new Behaviour[0];
+        private static bool[] wasOn = new bool[0];
+        private static float refreshTimer;
+        private static string lastChange = "없음";
+        private static float sinceChange = 999f;
+
+        internal static void Tick(float dt)
+        {
+            try
+            {
+                refreshTimer += dt;
+                if (cam == null || refreshTimer >= 1f)
+                {
+                    refreshTimer = 0f;
+                    if (cam == null) cam = Camera.main;
+                    if (cam == null) return;
+                    var found = cam.GetComponents<Behaviour>();
+                    if (found.Length != camFx.Length)
+                    {
+                        camFx = found;
+                        wasOn = new bool[found.Length];
+                        for (int i = 0; i < found.Length; i++)
+                            wasOn[i] = found[i] != null && found[i].enabled;
+                    }
+                }
+
+                sinceChange += dt;
+                for (int i = 0; i < camFx.Length; i++)
+                {
+                    var b = camFx[i];
+                    if (b == null) continue;
+                    bool on = b.enabled;
+                    if (on == wasOn[i]) continue;
+                    wasOn[i] = on;
+                    lastChange = b.GetType().Name + (on ? " 켜짐" : " 꺼짐");
+                    sinceChange = 0f;
+                }
+            }
+            catch { }
         }
 
         internal static string Info()
@@ -60,17 +114,26 @@ namespace StutterFix
                 if (cam == null) return "카메라 없음";
 
                 int fx = 0;
-                foreach (var b in cam.GetComponents<Behaviour>())
+                foreach (var b in camFx)
                 {
                     if (b == null || !b.enabled) continue;
                     if (b is Camera) continue;
                     fx++;
                 }
 
-                return string.Format("카메라 크기 {0:F1}, 카메라 효과 {1}개, 블렌드 물체 {2}개",
-                    cam.orthographicSize, fx, BlendModeCount);
+                return string.Format("카메라 크기 {0:F1}, 카메라 효과 {1}개, 블렌드 물체 {2}개, 화면버퍼 {3}개, 최근 변화 {4} ({5:F1}초 전)",
+                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, lastChange, sinceChange);
             }
             catch { return "?"; }
+        }
+
+        // 화면 크기 버퍼를 새로 잡으면 그래픽 카드 쪽에서 한 프레임이 통째로 밀릴 수 있다.
+        internal static int TempRtThisFrame;
+        private static int rtCounter;
+
+        public static void CountRt()
+        {
+            rtCounter++;
         }
     }
 }
