@@ -77,6 +77,7 @@ namespace StutterFix
             if (queue.Count == 0) return;
 
             replaying = true;
+            bool guard = TweenFix.Begin();   // 밀어둔 효과도 같은 보호 아래서 실행한다
             int done = 0, failed = 0;
             double worst = 0;
             string worstName = "";
@@ -105,6 +106,7 @@ namespace StutterFix
             }
             finally
             {
+                TweenFix.End(guard);
                 replaying = false;
                 if (done > 0) queue.RemoveRange(0, done);
             }

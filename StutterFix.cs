@@ -43,6 +43,7 @@ namespace StutterFix
                 PatchUnloadCallers(harmony);
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);
+                TweenFix.Install(harmony);
                 GcControl.Install();
             }
             catch (Exception ex)
@@ -181,6 +182,12 @@ namespace StutterFix
             GUILayout.Label("    " + Hitch.Summary);
             GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
             SlowScan.Enabled = GUILayout.Toggle(SlowScan.Enabled, "  끊길 때 어느 게임 함수가 느렸는지도 같이 찍는다");
+
+            GUILayout.Space(10);
+            GUILayout.Label("── 애니메이션 목록 재정렬 막기 (핵심) ──");
+            TweenFix.Enabled = GUILayout.Toggle(TweenFix.Enabled,
+                "  효과가 도는 동안 DOTween 목록을 건드리지 않는다  (지금까지 " + TweenFix.Guarded + "회)");
+            GUILayout.Label("    측정: 한 프레임 435ms 중 382ms가 목록 재정렬 4981회였다");
 
             GUILayout.Space(10);
             GUILayout.Label("── 효과 몰림 나누기 ──");
