@@ -66,7 +66,9 @@ namespace StutterFix
         internal static void Exit(double ms)
         {
             depth--;
-            if (depth <= 0) { depth = 0; usedMs += ms; }
+            if (depth > 0) return;
+            depth = 0;
+            if (!replaying) usedMs += ms;   // 밀린 것을 처리할 때는 Drain 쪽에서 따로 센다
         }
 
         // 밀린 것을 먼저 처리한다. 새 효과보다 앞서 실행해야 순서가 뒤집히지 않는다.
@@ -75,24 +77,30 @@ namespace StutterFix
             if (queue.Count == 0) return;
 
             replaying = true;
-            int done = 0;
+            int done = 0, failed = 0;
+            double worst = 0;
+            string worstName = "";
+            long drainStart = Stopwatch.GetTimestamp();
+
             try
             {
                 while (done < queue.Count && usedMs < BudgetMs)
                 {
                     var p = queue[done];
                     done++;
-                    try
-                    {
-                        var target = p.Instance as UnityEngine.Object;
-                        if (target == null && p.Instance != null) { }
-                        else if (target == null) continue;   // 사라진 효과는 건너뛴다
 
-                        long t0 = Stopwatch.GetTimestamp();
-                        p.Method.Invoke(p.Instance, p.Args);
-                        usedMs += (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
-                    }
-                    catch { }
+                    // 이미 사라진 효과에 그대로 부르면 예외가 난다. 예외 하나 만드는 비용이
+                    // 효과를 시작하는 비용보다 커서, 밀린 것을 비우는 순간이 도로 끊김이 된다.
+                    var uo = p.Instance as UnityEngine.Object;
+                    if (uo == null) continue;
+
+                    long t0 = Stopwatch.GetTimestamp();
+                    try { p.Method.Invoke(p.Instance, p.Args); }
+                    catch { failed++; }
+                    double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+
+                    usedMs += ms;
+                    if (ms > worst) { worst = ms; worstName = p.Instance.GetType().Name; }
                 }
             }
             finally
@@ -100,6 +108,12 @@ namespace StutterFix
                 replaying = false;
                 if (done > 0) queue.RemoveRange(0, done);
             }
+
+            double total = (Stopwatch.GetTimestamp() - drainStart) * 1000.0 / Stopwatch.Frequency;
+            if (total > BudgetMs * 2)
+                Main.Entry.Logger.Log(string.Format(
+                    "[효과나누기] 밀린 것 {0}개 처리에 {1:F0}ms (예산 {2:F0}ms), 실패 {3}개, 최악 {4} {5:F0}ms, 남은 대기 {6}개",
+                    done, total, BudgetMs, failed, worstName, worst, queue.Count));
         }
 
         // 효과가 하나도 시작되지 않는 프레임에도 밀린 것을 비워야 한다.
