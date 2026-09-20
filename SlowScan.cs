@@ -88,6 +88,14 @@ namespace StutterFix
                     new[] { "DOTween", "Kill" },
                     new[] { "TweenManager", "FilteredOperation" },
                     new[] { "TweenManager", "Despawn" },
+                    // 타일 함수 17ms + 애니메이션 정리 15ms = 32ms 뿐인데 효과 하나가 386ms였다.
+                    // 남은 354ms는 타일당 73us. 타일마다 장식을 찾아 도는 코드가 유력하다.
+                    new[] { "scrDecorationManager", "GetTaggedDecorations" },
+                    new[] { "scrDecorationManager", "GetDecoration" },
+                    new[] { "scrDecorationManager", "GetDecorationIndex" },
+                    new[] { "scrDecorationManager", "UpdateDecorationTiling" },
+                    new[] { "scrFloor", "SetSprite" },
+                    new[] { "scrFloor", "UpdateTrackTexture" },
                 })
                 {
                     var t = AccessTools.TypeByName(target[0]);
