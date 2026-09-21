@@ -29,6 +29,7 @@
     <Compile Include="TweenFix.cs" />
     <Compile Include="RenderWatch.cs" />
     <Compile Include="SamplerWatch.cs" />
+    <Compile Include="RenderCallbackScan.cs" />
   </ItemGroup>
 
   <PropertyGroup>
