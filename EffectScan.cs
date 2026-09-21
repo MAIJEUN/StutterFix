@@ -96,6 +96,10 @@ namespace StutterFix
             MsThisFrame += ms;
 
             string name = __instance != null ? __instance.GetType().Name : "?";
+
+            // 박자 끊김 프레임마다 효과가 4개씩 시작됐다. 시작 자체는 0ms라도, 그 효과가 화면에
+            // 만드는 결과가 비쌀 수 있다. 끊긴 프레임에 어떤 종류가 시작됐는지 이름을 모아 둔다.
+            if (namesThisFrame.Length < 300) namesThisFrame.Append(namesThisFrame.Length > 0 ? ", " : "").Append(name);
             int n;
             useCount.TryGetValue(name, out n);
             useCount[name] = n + 1;
@@ -131,6 +135,8 @@ namespace StutterFix
             catch { return ""; }
         }
 
+        private static readonly System.Text.StringBuilder namesThisFrame = new System.Text.StringBuilder();
+
         internal static int ChecksThisFrame;
         internal static double CheckMsThisFrame;
 
@@ -148,8 +154,8 @@ namespace StutterFix
 
         internal static string FrameSummary()
         {
-            return string.Format("효과 {0}개 시작 {1:F0}ms, 걸러내기 {2}회 {3:F0}ms",
-                StartedThisFrame, MsThisFrame, ChecksThisFrame, CheckMsThisFrame);
+            return string.Format("효과 {0}개 시작 {1:F0}ms [{4}], 걸러내기 {2}회 {3:F0}ms",
+                StartedThisFrame, MsThisFrame, ChecksThisFrame, CheckMsThisFrame, namesThisFrame);
         }
 
         internal static void ResetFrame()
@@ -158,6 +164,7 @@ namespace StutterFix
             MsThisFrame = 0;
             ChecksThisFrame = 0;
             CheckMsThisFrame = 0;
+            namesThisFrame.Length = 0;
         }
     }
 }

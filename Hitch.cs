@@ -162,6 +162,7 @@ namespace StutterFix
 
             EffectBudget.Reset();
             ModWatch.Report();
+            Main.Entry.Logger.Log("[끊김] 같은 글자 건너뛰기 누적 " + TextFix.SkippedSameText + "회");
 
             if (recs.Count == 0)
             {
