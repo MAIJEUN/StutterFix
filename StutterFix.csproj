@@ -34,6 +34,7 @@
     <Compile Include="ParticleTextWatch.cs" />
     <Compile Include="TextureCensus.cs" />
     <Compile Include="FloorFix.cs" />
+    <Compile Include="BootConfig.cs" />
   </ItemGroup>
 
   <PropertyGroup>

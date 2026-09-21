@@ -39,6 +39,8 @@ namespace StutterFix
             modEntry.OnUnload = Unload;   // 이것이 있어야 UMM이 게임을 켠 채로 새 DLL을 다시 불러온다
 
             InstallAll();
+            BootConfig.Apply(Config.LegacyGfxJobs);
+            modEntry.Logger.Log(BootConfig.Describe());
             if (LaunchWarning.Length > 0) modEntry.Logger.Log(LaunchWarning.Trim());
             return true;
         }
@@ -49,6 +51,8 @@ namespace StutterFix
         private static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
         {
             if (value) InstallAll(); else UninstallAll();
+            // 모드를 끄면 게임 파일도 원래대로 돌려놓는다(다음 실행부터 원래 방식).
+            BootConfig.Apply(value && Config.LegacyGfxJobs);
             return true;
         }
 
@@ -294,6 +298,13 @@ namespace StutterFix
             GUILayout.EndHorizontal();
 
             GUILayout.Space(10);
+            GUILayout.Label("── 그래픽 작업 분산 ──");
+            bool legacy = GUILayout.Toggle(Config.LegacyGfxJobs, "  그리기 명령을 여러 스레드로 만든다 (legacy 그래픽 작업, 게임 재시작 후 적용)");
+            if (legacy != Config.LegacyGfxJobs) { Config.LegacyGfxJobs = legacy; BootConfig.Apply(legacy); Config.Save(Entry); }
+            GUILayout.Label("    " + (BootConfig.Status.Length > 0 ? BootConfig.Status : BootConfig.Describe()));
+            GUILayout.Label("    측정: D3D11 프레임 140 -> 160, 곡 전체 끊김 150번대 -> 93번 (-force-gfx-jobs legacy 와 같은 효과)");
+
+            GUILayout.Space(10);
             GUILayout.Label("── 곡 중 GC 멈춤 (핵심) ──");
             GcControl.Enabled = GUILayout.Toggle(GcControl.Enabled, "  곡을 플레이하는 동안 GC를 멈춘다");
             GcControl.NoCollectDuringSong = GUILayout.Toggle(GcControl.NoCollectDuringSong,
@@ -394,6 +405,7 @@ namespace StutterFix
         public int TweenerCapacity = 40000;
         public int SequenceCapacity = 25000;
         public bool SkipAssetUnload = true;
+        public bool LegacyGfxJobs = true;   // boot.config 로 그래픽 작업 분산(legacy)을 켠다
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }
     }
