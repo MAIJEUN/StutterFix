@@ -112,5 +112,12 @@ namespace StutterFix
         {
             for (int i = 0; i < all.Count; i++) { all[i].Ticks = 0; all[i].Calls = 0; }
         }
+
+        // 패치는 Main 이 ID로 한꺼번에 푼다. 여기서는 "이미 감쌌음" 기록만 지워 다시 켤 때 새로 감싸게 한다.
+        internal static void Shutdown()
+        {
+            slots.Clear();
+            all.Clear();
+        }
     }
 }

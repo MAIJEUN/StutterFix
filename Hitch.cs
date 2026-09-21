@@ -150,6 +150,7 @@ namespace StutterFix
             rateTimer = 0f;
             reported = false;
             EffectBudget.Reset();
+            EffectBudget.Suspend(3f);
             ParticleTextWatch.Refresh();
             SlowScan.InstallOnce();
             Main.Entry.Logger.Log("[끊김] 기록 시작");

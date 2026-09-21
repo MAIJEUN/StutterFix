@@ -42,9 +42,16 @@ namespace StutterFix
 
         // 한 번의 효과 시작이 내부에서 또 StartEffect 를 부른다(기본 클래스 -> 상속 클래스).
         // 시간을 두 번 더하지 않도록 가장 바깥 호출에서만 센다.
+        // 곡을 중간부터 시작하면 게임이 그 지점까지의 효과를 한 프레임에 몰아서 적용한다.
+        // 이걸 예산 초과로 보고 뒤로 미루면 적용 순서가 꼬여 이펙트가 이상하게 보였다.
+        // 곡이 시작되거나 다시 시작된 직후에는 나누지 않고 그대로 통과시킨다.
+        private static float graceUntil;
+        internal static void Suspend(float seconds) { graceUntil = Time.realtimeSinceStartup + seconds; }
+
         internal static bool ShouldRun(object instance, MethodBase method, object[] args)
         {
             if (!Enabled || replaying) return true;
+            if (Time.realtimeSinceStartup < graceUntil) return true;
 
             if (Time.frameCount != frame)
             {

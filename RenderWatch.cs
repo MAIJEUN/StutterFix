@@ -90,14 +90,12 @@ namespace StutterFix
             }
         }
 
-        internal static bool ForceBlendOff;
-
-        public static void CountBlend(object __instance)
+        // 예전에는 여기에 블렌드 장식을 강제로 끄는 실험 스위치가 있었다.
+        // 컴포넌트를 enabled=false 로 끄기만 하고 스위치를 꺼도 되살리지 않아서,
+        // 한 번 써 본 뒤로는 그 판 내내 블렌드 효과가 꺼진 채 남는 버그가 있었다. 원인도 아니었으므로 지웠다.
+        public static void CountBlend()
         {
             blendThisFrame++;
-            if (!ForceBlendOff) return;
-            var b = __instance as Behaviour;
-            if (b != null) b.enabled = false;
         }
 
         internal static void EndFrame()
@@ -116,18 +114,8 @@ namespace StutterFix
         private static string lastChange = "없음";
         private static float sinceChange = 999f;
 
-        // 박자마다 75ms가 반복되는데 힙도 네이티브도 그래픽 메모리도 0이다.
-        // 할당이 아니라 그 순간 그릴 것이 많다는 뜻이고, 필터 11겹이 그것을 11번 처리한다.
-        // 필터를 꺼보면 필터가 증폭기인지 아닌지 한 번에 갈린다.
-        internal static bool ForceFiltersOff;
-        internal static int ForcedOffCount;
-
-        private static bool IsFilter(Behaviour b)
-        {
-            string n = b.GetType().Name;
-            return n.IndexOf("CameraFilterPack", StringComparison.Ordinal) >= 0
-                || n.IndexOf("Bloom", StringComparison.Ordinal) >= 0;
-        }
+        // 필터 전환은 끊김과 상관이지 인과가 아니었다(다 꺼도 끊김 그대로). 로그만 불리므로 기본으로 끈다.
+        internal static bool LogFilterChanges;
 
         internal static void Tick(float dt)
         {
@@ -149,19 +137,6 @@ namespace StutterFix
                     }
                 }
 
-                if (ForceFiltersOff)
-                {
-                    int off = 0;
-                    foreach (var b in camFx)
-                    {
-                        if (b == null || !b.enabled || b is Camera) continue;
-                        if (!IsFilter(b)) continue;   // 카메라 움직임 같은 게임 코드는 건드리지 않는다
-                        b.enabled = false;
-                        off++;
-                    }
-                    ForcedOffCount = off;
-                }
-
                 sinceChange += dt;
                 for (int i = 0; i < camFx.Length; i++)
                 {
@@ -174,7 +149,7 @@ namespace StutterFix
                     sinceChange = 0f;
                     // 필터가 바뀌는 순간이 비싼 것인지, 그 박자에 우연히 겹친 것인지 가리려면
                     // 끊기지 않은 전환도 전부 봐야 한다.
-                    if (GcControl.Paused)
+                    if (LogFilterChanges && GcControl.Paused)
                         Main.Entry.Logger.Log(string.Format("[필터] {0} | 이 프레임 {1:F0}ms | 버퍼 {2}개 | 켜진 효과 {3}개",
                             lastChange, Hitch.LastFrameMs, TempRtThisFrame, CountOn()));
                 }

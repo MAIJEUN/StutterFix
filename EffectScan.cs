@@ -82,9 +82,7 @@ namespace StutterFix
         // 이 효과 자체는 타일 하나에 위치/크기/투명도 애니메이션을 거는 가벼운 일이다.
         // 그런데 곡 내내 박자마다 나오는데 끊김은 그 구간에만 있다. 그 구간 타일에
         // 무거운 것(딸린 장식 등)이 붙어 있는지 보려고 등장할 때마다 딸린 렌더러 수를 남긴다.
-        internal static bool LogFloorAppear = true;
-        internal static bool SkipFloorAppear;   // 실험: 등장 연출을 건너뛴다 (타일이 제대로 안 보일 수 있다)
-        internal static int SkippedFloorAppear;
+        internal static bool LogFloorAppear;   // 결론 남(평범한 타일, 원인 아님). 다시 볼 때만 켠다
 
         private static FieldInfo floorField, animTypeField;
 
@@ -113,7 +111,6 @@ namespace StutterFix
             __state = Stopwatch.GetTimestamp();
             if (__instance != null && __instance.GetType().Name == "ffxFloorAppearPlus")
             {
-                if (SkipFloorAppear) { SkippedFloorAppear++; return false; }
                 if (LogFloorAppear && GcControl.Paused && EffectBudget.OuterCall) DescribeFloorAppear(__instance);
             }
             if (!EffectBudget.ShouldRun(__instance, __originalMethod, __args)) return false;

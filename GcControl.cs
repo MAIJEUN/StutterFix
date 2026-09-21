@@ -143,7 +143,8 @@ namespace StutterFix
         {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= OnSceneChanged;
             resumeCountdown = -1f;
-            Resume("모드 다시 불러오기");
+            Resume("모드 꺼짐");
+            patched = false;   // 다시 켜면 다시 건다
         }
 
         public static void AfterLoad() { endedByHook = false; Resume("맵 로딩"); }
@@ -167,6 +168,8 @@ namespace StutterFix
         {
             Hitch.Report();
             Resume(__originalMethod.Name);   // 재시작은 어차피 화면이 바뀌는 순간이라 바로 치운다
+            EffectBudget.Reset();
+            EffectBudget.Suspend(3f);
             endedByHook = false;
         }
 

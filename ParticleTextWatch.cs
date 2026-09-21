@@ -20,8 +20,6 @@ namespace StutterFix
         internal static int SetTextThisFrame;
         private static int setTextCounter;
 
-        internal static bool ForceParticlesOff;
-
         internal static void Install(Harmony harmony)
         {
             try
@@ -116,12 +114,9 @@ namespace StutterFix
             catch (Exception ex) { Main.Entry.Logger.Error("[파티클] 목록 실패: " + ex.Message); }
         }
 
-        // 실험 스위치로 꺼 둔 것은 내려갈 때 되살린다.
         internal static void Shutdown()
         {
             Font.textureRebuilt -= OnFontRebuilt;
-            if (!ForceParticlesOff) return;
-            foreach (var r in renderers) if (r != null) r.enabled = true;
         }
 
         internal static void Tick()
@@ -130,13 +125,6 @@ namespace StutterFix
             setTextCounter = 0;
             fontRebuilds = 0;
             visibleCounter = 0;
-
-            if (!ForceParticlesOff) return;
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                var r = renderers[i];
-                if (r != null && r.enabled) r.enabled = false;
-            }
         }
 
         // 끊긴 프레임에서만 부른다.

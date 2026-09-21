@@ -35,12 +35,33 @@ namespace StutterFix
             modEntry.OnGUI = OnGUI;
             modEntry.OnSaveGUI = OnSaveGUI;
             modEntry.OnUpdate = OnUpdate;
-            modEntry.OnToggle = (e, value) => true;
+            modEntry.OnToggle = OnToggle;
             modEntry.OnUnload = Unload;   // 이것이 있어야 UMM이 게임을 켠 채로 새 DLL을 다시 불러온다
 
+            InstallAll();
+            return true;
+        }
+
+        // UMM에서 모드를 끄고 켤 때 불린다.
+        // 예전에는 true 만 돌려주고 아무것도 안 해서, 꺼도 패치와 GC 멈춤이 그대로 살아 있었다.
+        // 이제 끄면 다시 불러오기 때와 똑같이 전부 풀고, 켜면 다시 건다.
+        private static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
+        {
+            if (value) InstallAll(); else UninstallAll();
+            return true;
+        }
+
+        private static bool installed;
+
+        private static void InstallAll()
+        {
+            if (installed) return;
+            installed = true;
+            capacityApplied = false;   // 모드별 감시, 단계 표시 같은 늦은 설치도 다시 하게 한다
+            elapsed = 0f;
             try
             {
-                var harmony = new Harmony(modEntry.Info.Id);
+                var harmony = new Harmony(Entry.Info.Id);
                 PatchUnloadCallers(harmony);
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);
@@ -50,12 +71,12 @@ namespace StutterFix
                 FrameRateScreenWatch.Install(harmony);
                 ParticleTextWatch.Install(harmony);
                 GcControl.Install();
+                Entry.Logger.Log("켜짐: 패치 설치 완료");
             }
             catch (Exception ex)
             {
-                modEntry.Logger.Error("harmony patch failed: " + ex);
+                Entry.Logger.Error("harmony patch failed: " + ex);
             }
-            return true;
         }
 
         // Resources.UnloadUnusedAssets 를 부르는 곳은 게임 전체에서 딱 세 군데다.
@@ -131,6 +152,14 @@ namespace StutterFix
         private static bool Unload(UnityModManager.ModEntry modEntry)
         {
             modEntry.Logger.Log("내리는 중 (다시 불러오기)");
+            UninstallAll();
+            return true;
+        }
+
+        private static void UninstallAll()
+        {
+            if (!installed) return;
+            installed = false;
             Try(GcControl.Shutdown);
             Try(RenderWatch.Shutdown);
             Try(PhaseWatch.Uninstall);
@@ -141,11 +170,13 @@ namespace StutterFix
             Try(SamplerWatch.Shutdown);
             Try(EffectBudget.Reset);
             Try(ParticleTextWatch.Shutdown);
+            Try(RenderCallbackScan.Shutdown);
+            Try(SlowScan.Shutdown);
 
             foreach (var id in HarmonyIds)
                 Try(() => new Harmony(id).UnpatchAll(id));
 
-            return true;
+            Entry.Logger.Log("꺼짐: 패치와 감시를 모두 풀었음");
         }
 
         private static void Try(Action a)
@@ -181,6 +212,8 @@ namespace StutterFix
                 RequestReload();
                 return;
             }
+
+            if (!installed) return;   // 꺼져 있으면 아무 일도 하지 않는다
 
             GcControl.Tick(dt);
             EffectBudget.Tick();
@@ -257,19 +290,6 @@ namespace StutterFix
             GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
             SlowScan.Enabled = GUILayout.Toggle(SlowScan.Enabled,
                 "  끊길 때 어느 게임 함수가 느렸는지도 찍는다 (곡 시작이 4초 느려집니다)");
-
-            GUILayout.Space(10);
-            GUILayout.Label("── 실험: 카메라 필터 끄기 ──");
-            RenderWatch.ForceFiltersOff = GUILayout.Toggle(RenderWatch.ForceFiltersOff,
-                "  맵이 거는 화면 필터를 전부 끈다 (원인 확인용, 화면이 달라집니다)");
-            GUILayout.Label("    직전 프레임에 " + RenderWatch.ForcedOffCount + "개 껐음");
-            EffectScan.SkipFloorAppear = GUILayout.Toggle(EffectScan.SkipFloorAppear,
-                "  타일 등장 연출을 건너뛴다 (원인 확인용, 타일이 제대로 안 보일 수 있음. 지금까지 " + EffectScan.SkippedFloorAppear + "회)");
-            ParticleTextWatch.ForceParticlesOff = GUILayout.Toggle(ParticleTextWatch.ForceParticlesOff,
-                "  파티클을 전부 끈다 (원인 확인용)");
-            RenderWatch.ForceBlendOff = GUILayout.Toggle(RenderWatch.ForceBlendOff,
-                "  블렌드 모드 장식을 전부 끈다 (원인 확인용)");
-            GUILayout.Label("    블렌드 물체는 하나하나가 화면을 한 번씩 더 읽습니다 (지금 " + RenderWatch.BlendModeCount + "개)");
 
             GUILayout.Space(10);
             GUILayout.Label("── 애니메이션 목록 재정렬 막기 (핵심) ──");
