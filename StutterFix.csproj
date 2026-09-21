@@ -33,6 +33,7 @@
     <Compile Include="FrameRateScreenWatch.cs" />
     <Compile Include="ParticleTextWatch.cs" />
     <Compile Include="TextureCensus.cs" />
+    <Compile Include="FloorFix.cs" />
   </ItemGroup>
 
   <PropertyGroup>
