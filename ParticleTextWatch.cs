@@ -40,7 +40,33 @@ namespace StutterFix
             catch (Exception ex) { Main.Entry.Logger.Error("particle/text watch 실패: " + ex.Message); }
         }
 
-        public static void CountSetText() { setTextCounter++; }
+        // 학교 PC에서는 TextGenerator 폭주가 없었다. 이 PC에만 있는 무언가가 글자를 매 프레임
+        // 34번씩 다시 넣는다는 뜻이다. 다른 모드가 게임 함수 안에 끼어들어(Harmony) 부르면
+        // 모드별 갱신 측정에는 안 잡히므로, 누가 부르는지 호출 경로를 직접 남긴다.
+        private static int stackSamples;
+        private static int lastSampleFrame = -1000;
+
+        public static void CountSetText()
+        {
+            setTextCounter++;
+            if (stackSamples >= 3 || !GcControl.Paused) return;   // 곡 중에만, 판마다 3번
+            if (Time.frameCount - lastSampleFrame < 300) return;  // 서로 다른 순간에서 뽑는다
+            lastSampleFrame = Time.frameCount;
+            stackSamples++;
+
+            var lines = Environment.StackTrace.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var sb = new System.Text.StringBuilder();
+            int shown = 0;
+            foreach (var l in lines)
+            {
+                string s = l.Trim();
+                if (s.IndexOf("System.Environment", StringComparison.Ordinal) >= 0) continue;
+                if (s.IndexOf("ParticleTextWatch", StringComparison.Ordinal) >= 0) continue;
+                sb.Append("\n      ").Append(s);
+                if (++shown >= 12) break;
+            }
+            Main.Entry.Logger.Log("[글자 호출경로 " + stackSamples + "/3]" + sb);
+        }
 
         // 같은 글자를 다시 넣는 것은 싸지만, 처음 보는 글자나 크기가 들어오면 유니티가
         // 폰트 텍스처를 통째로 다시 만든다. 엔진 내부 작업이라 스크립트 측정에는 안 잡히고,
@@ -64,6 +90,7 @@ namespace StutterFix
                 for (int i = 0; i < systems.Length; i++)
                     renderers[i] = systems[i] != null ? systems[i].GetComponent<ParticleSystemRenderer>() : null;
                 Main.Entry.Logger.Log("[파티클] 이 맵의 파티클 시스템 " + systems.Length + "개");
+                stackSamples = 0;
             }
             catch (Exception ex) { Main.Entry.Logger.Error("[파티클] 목록 실패: " + ex.Message); }
         }
