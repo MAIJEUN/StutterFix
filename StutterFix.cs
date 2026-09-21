@@ -106,6 +106,7 @@ namespace StutterFix
                 ImagePrefetch.Install(harmony);
                 TweenFix.Install(harmony);
                 GcControl.Install();
+                SettingsWindow.Create();
 
                 // 측정 (개발자용만)
                 if (Edition.Dev)
@@ -275,7 +276,9 @@ namespace StutterFix
             Try(Profiler.Stop);
             Try(ModWatch.Shutdown);
             Try(SamplerWatch.Shutdown);
-            Try(EffectBudget.Reset);
+            Try(EffectBudget.Reset);       // 색 나누기 대기열도 같이 비운다
+            Try(ImagePrefetch.Stop);       // 이미지 작업 스레드와 풀어 둔 메모리
+            Try(SettingsWindow.Destroy);
             Try(ParticleTextWatch.Shutdown);
             Try(RenderCallbackScan.Shutdown);
             Try(SlowScan.Shutdown);
@@ -391,50 +394,22 @@ namespace StutterFix
             if (Edition.Dev) DevGUI(); else PlayerGUI();
         }
 
-        private static bool Option(bool value, string title, string detail)
-        {
-            bool v = GUILayout.Toggle(value, "  " + title);
-            if (!string.IsNullOrEmpty(detail)) GUILayout.Label("      " + detail);
-            return v;
-        }
-
-        // 플레이어용: 기능마다 켜기/끄기와 한 줄 설명만. 바꾸면 바로 저장된다.
+        // 플레이어용 UMM 화면: 소개와 설정 창 열기 버튼만. 설정은 따로 뜨는 창(SettingsWindow)에서 한다.
         private static void PlayerGUI()
         {
-            GUILayout.Label("고사양 커스텀 맵의 끊김을 줄입니다. 화면에 보이는 결과는 바꾸지 않습니다. (" + Edition.Name + ")");
+            GUILayout.Label("<b>Stutter Fix</b>  v" + Entry.Info.Version + "  ·  made by <b>naro</b> & <b>Claude</b>");
+            GUILayout.Label("고사양 커스텀 맵에서 플레이 중 순간적으로 멈추는 현상과 맵 로딩 시간을 줄입니다. 연출과 판정은 바꾸지 않습니다.");
             if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
-            GUILayout.Space(6);
+            GUILayout.Space(8);
+            WindowButton();
+        }
 
-            var c = Config;
-            int beforeHash = (c.GcPause ? 1 : 0) | (c.EffectSplit ? 2 : 0) | (c.RecolorSplit ? 4 : 0) | (c.TweenGuard ? 8 : 0)
-                           | (c.SkipSameText ? 16 : 0) | (c.ImagePrefetch ? 32 : 0) | (c.ShaderWarm ? 64 : 0) | (c.SkipAssetUnload ? 128 : 0);
-
-            GUILayout.Label("── 플레이 중 ──");
-            c.GcPause = Option(c.GcPause, "곡을 플레이하는 동안 GC(메모리 정리)를 멈춘다",
-                "곡이 끝나고 " + GcControl.EndDelaySeconds.ToString("F0") + "초 뒤 한 번에 정리합니다. " + GcControl.Status);
-            c.EffectSplit = Option(c.EffectSplit, "한 프레임에 몰린 효과를 몇 프레임에 나눠 시작한다", null);
-            c.RecolorSplit = Option(c.RecolorSplit, "타일 수천 개의 색 바꾸기를 나눠 칠한다", "먼 타일이 몇 프레임 늦게 칠해질 뿐 결과는 같습니다.");
-            c.TweenGuard = Option(c.TweenGuard, "효과가 도는 동안 애니메이션 목록 재정렬을 막는다", null);
-            c.SkipSameText = Option(c.SkipSameText, "글자 장식에 같은 글자를 다시 넣으면 건너뛴다", "매 프레임 글자를 다시 넣는 모드(PACL2 등)와 같이 쓸 때 효과가 큽니다.");
-            c.ShaderWarm = Option(c.ShaderWarm, "곡 시작 때 셰이더를 미리 준비한다", null);
-
-            GUILayout.Space(6);
-            GUILayout.Label("── 맵 불러오기 ──");
-            c.ImagePrefetch = Option(c.ImagePrefetch, "장식 이미지를 여러 코어에서 미리 푼다",
-                "이미지가 많은 맵의 로딩이 빨라집니다. " + ImagePrefetch.Last);
-            c.SkipAssetUnload = Option(c.SkipAssetUnload, "맵을 불러올 때 사용하지 않는 에셋 정리를 건너뛴다", null);
-
-            GUILayout.Space(6);
-            GUILayout.Label("── 그래픽 (게임을 다시 켜야 적용) ──");
-            bool legacy = Option(c.LegacyGfxJobs, "그리기 명령을 여러 스레드로 만든다 (legacy 그래픽 작업)",
-                BootConfig.Status.Length > 0 ? BootConfig.Status : BootConfig.Describe());
-            bool legacyChanged = legacy != c.LegacyGfxJobs;
-            if (legacyChanged) { c.LegacyGfxJobs = legacy; BootConfig.Apply(legacy); }
-
-            int afterHash = (c.GcPause ? 1 : 0) | (c.EffectSplit ? 2 : 0) | (c.RecolorSplit ? 4 : 0) | (c.TweenGuard ? 8 : 0)
-                          | (c.SkipSameText ? 16 : 0) | (c.ImagePrefetch ? 32 : 0) | (c.ShaderWarm ? 64 : 0) | (c.SkipAssetUnload ? 128 : 0);
-            if (afterHash != beforeHash) ApplyConfig();
-            if (afterHash != beforeHash || legacyChanged) c.Save(Entry);
+        private static void WindowButton()
+        {
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("설정 창 열기", GUILayout.Width(160), GUILayout.Height(30))) SettingsWindow.Toggle();
+            GUILayout.Label("   게임 중 언제든 <b>" + Config.WindowKey + "</b> 키로 열고 닫을 수 있습니다.", GUILayout.Height(30));
+            GUILayout.EndHorizontal();
         }
 
         private static void DevGUI()
@@ -442,6 +417,7 @@ namespace StutterFix
             GUILayout.Label("고사양 맵의 프레임 문제를 줄입니다. 효과가 측정된 기능만 들어 있습니다. (" + Edition.Name + ")");
             if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
             if (ReloadProblem.Length > 0) GUILayout.Label("  ⚠ " + ReloadProblem);
+            WindowButton();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("모드 다시 불러오기 (Ctrl+F5)", GUILayout.Width(220))) RequestReload();
             GUILayout.Label("  게임을 켠 채로 새로 빌드한 DLL을 적용합니다. 설정 슬라이더는 기본값으로 돌아갑니다.");
@@ -569,6 +545,7 @@ namespace StutterFix
         public bool SkipSameText = true;
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;
+        public KeyCode WindowKey = KeyCode.Insert;   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }
     }

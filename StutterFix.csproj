@@ -25,6 +25,7 @@
   <ItemGroup>
     <Compile Include="StutterFix.cs" />
     <Compile Include="Edition.cs" />
+    <Compile Include="SettingsWindow.cs" />
     <Compile Include="Profiler.cs" />
     <Compile Include="SceneScan.cs" />
     <Compile Include="AbTest.cs" />
@@ -77,6 +78,10 @@
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
       <HintPath>$(GameManaged)\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManaged)/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
