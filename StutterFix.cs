@@ -288,6 +288,9 @@ namespace StutterFix
             GUILayout.Space(10);
             GUILayout.Label("── 글자 장식 ──");
             GUILayout.Label("    TextGenerator 재사용: 바꾼 자리 " + TextFix.Replaced + "곳, 지금까지 " + TextFix.Reused + "회 재사용");
+            TextFix.SkipSameText = GUILayout.Toggle(TextFix.SkipSameText,
+                "  같은 글자를 다시 넣으면 건너뛴다 (지금까지 " + TextFix.SkippedSameText + "회)");
+            GUILayout.Label("    (PACL2 모드가 매 프레임 글자 장식 34개를 같은 내용으로 다시 넣습니다)");
             GUILayout.Label("    (원래는 초당 3891번 새로 만들어 96MB/s를 잡아먹던 자리)");
 
             GUILayout.Space(10);

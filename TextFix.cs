@@ -33,12 +33,51 @@ namespace StutterFix
             return shared;
         }
 
+        // ── 같은 글자를 다시 넣으면 건너뛴다 ────────────────────────────
+        // PACL2 모드가 scnGame.Update 에 끼어들어 매 프레임 글자 장식 34개를 같은 내용 그대로 다시 넣는다.
+        // (호출 경로: PACL2.CustomFFX.Variables.VariableStateManager.UpdateTexts)
+        // 학교 PC에서 TextGenerator 폭주가 없었던 이유가 이것이다.
+        //
+        // SetText 의 본문은 두 줄뿐이다.
+        //   text.text = s;
+        //   StartCoroutine(SetCollider());   <- 글자 크기를 다시 재는 코루틴
+        // 내용이 같으면 결과도 똑같으므로 통째로 건너뛰어도 화면은 달라지지 않는다.
+        internal static bool SkipSameText = true;
+        internal static long SkippedSameText;
+
+        private static System.Reflection.FieldInfo textField;
+        private static System.Reflection.PropertyInfo textProp;
+
+        public static bool SetTextPrefix(object __instance, string __0)
+        {
+            if (!SkipSameText) return true;
+            try
+            {
+                var comp = textField.GetValue(__instance);
+                if (comp == null) return true;
+                if (textProp == null) textProp = AccessTools.Property(comp.GetType(), "text");
+                var current = textProp.GetValue(comp, null) as string;
+                if (!string.Equals(current, __0, StringComparison.Ordinal)) return true;
+                SkippedSameText++;
+                return false;
+            }
+            catch { return true; }
+        }
+
         internal static void Install(Harmony harmony)
         {
             try
             {
                 var owner = AccessTools.TypeByName("scrTextDecoration");
                 if (owner == null) { Main.Entry.Logger.Error("scrTextDecoration 없음"); return; }
+
+                textField = AccessTools.Field(owner, "text");
+                var setText = AccessTools.Method(owner, "SetText", new[] { typeof(string) });
+                if (textField != null && setText != null)
+                {
+                    harmony.Patch(setText, prefix: new HarmonyMethod(typeof(TextFix), nameof(SetTextPrefix)));
+                    Main.Entry.Logger.Log("patched scrTextDecoration.SetText (같은 글자 건너뛰기)");
+                }
 
                 // 코루틴 본체는 컴파일러가 만든 <SetCollider>d__NN 클래스의 MoveNext 안에 있다.
                 foreach (var nested in owner.GetNestedTypes(AccessTools.all))

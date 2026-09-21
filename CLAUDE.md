@@ -41,9 +41,10 @@ METHOD=scrCamera bin/Debug/net8.0/ILScan.exe <dll> ZZZ     # 타입의 메서드
 | GC 정리 | A/B 125쌍: 평균 106→124fps | 곡 중 GC 멈춤 (`GcControl`) |
 | `scrTextDecoration.SetCollider`가 매번 `new TextGenerator()` | 96MB/s, 초당 3891회 | 하나를 재사용 (`TextFix`) → 할당 110MB/s→4MB/s, 6GB 한계 도달 곡당 5~7회→0회 |
 | DOTween `ReorganizeActiveTweens` O(n²) | 한 프레임 382ms (4981회) | 효과 도는 동안 `isUpdateLoop=true` (`TweenFix`) |
+| PACL2가 매 프레임 글자 장식 34개를 같은 내용으로 다시 넣음 (`VariableStateManager.UpdateTexts`) | 호출 경로로 확인, 모드 끄면 0회 | 같은 글자면 `SetText` 건너뛰기 (`TextFix`) |
 | 편집 복귀 시 `UnloadUnusedAssets` | 매번 120ms | 건너뛰기 |
 | 한 프레임에 효과 수십 개 몰림 | | 프레임당 예산으로 분산 (`EffectBudget`) |
-| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**. 아님으로 확인: 스크립트 콜백, 할당, 필터, 블렌드(일부만 줄어듦), 커스텀 프레임레이트 연출, 파티클(늘 9400개), 폰트 재생성(0회). 다음: 다른 모드 전부 끄고 비교 |
+| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**. 아님으로 확인: 스크립트 콜백, 할당, 필터, 블렌드(일부만 줄어듦), 커스텀 프레임레이트 연출, 파티클(늘 9400개), 폰트 재생성(0회). 모드를 전부 꺼도 남고 오히려 커짐(75→115ms) → 맵 자체 문제. 효과를 줄이는 모드(EnhancedEffectRemover 등)가 덜어 주던 것이 원인 |
 
 ## 측정에서 배운 것 (반복하지 말 것)
 
