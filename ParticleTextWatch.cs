@@ -34,12 +34,25 @@ namespace StutterFix
                     try { harmony.Patch(m, prefix: new HarmonyMethod(typeof(ParticleTextWatch), nameof(CountSetText))); }
                     catch { }
                 }
+                Font.textureRebuilt += OnFontRebuilt;
                 Main.Entry.Logger.Log("particle/text watch installed");
             }
             catch (Exception ex) { Main.Entry.Logger.Error("particle/text watch 실패: " + ex.Message); }
         }
 
         public static void CountSetText() { setTextCounter++; }
+
+        // 같은 글자를 다시 넣는 것은 싸지만, 처음 보는 글자나 크기가 들어오면 유니티가
+        // 폰트 텍스처를 통째로 다시 만든다. 엔진 내부 작업이라 스크립트 측정에는 안 잡히고,
+        // 메인 스레드에서 그리기 직전에 일어나며 GPU는 거의 안 쓴다. 지금까지의 단서와 모두 맞는다.
+        private static int fontRebuilds;
+        private static string lastFont = "";
+
+        private static void OnFontRebuilt(Font f)
+        {
+            fontRebuilds++;
+            if (f != null) lastFont = f.name;
+        }
 
         // 파티클 목록은 곡이 시작될 때 한 번만 만든다. 매 프레임 찾으면 그 자체가 끊김이 된다.
         internal static void Refresh()
@@ -58,6 +71,7 @@ namespace StutterFix
         // 실험 스위치로 꺼 둔 것은 내려갈 때 되살린다.
         internal static void Shutdown()
         {
+            Font.textureRebuilt -= OnFontRebuilt;
             if (!ForceParticlesOff) return;
             foreach (var r in renderers) if (r != null) r.enabled = true;
         }
@@ -66,6 +80,7 @@ namespace StutterFix
         {
             SetTextThisFrame = setTextCounter;
             setTextCounter = 0;
+            fontRebuilds = 0;
 
             if (!ForceParticlesOff) return;
             for (int i = 0; i < renderers.Length; i++)
@@ -88,8 +103,8 @@ namespace StutterFix
                 particles += n;
                 if (n > max) max = n;
             }
-            return string.Format("파티클 {0}개 재생중, 입자 {1}개(최대 한 곳 {2}) | 글자 바뀜 {3}회",
-                playing, particles, max, setTextCounter);
+            return string.Format("파티클 {0}개 재생중, 입자 {1}개(최대 한 곳 {2}) | 글자 바뀜 {3}회 | 폰트 재생성 {4}회{5}",
+                playing, particles, max, setTextCounter, fontRebuilds, fontRebuilds > 0 ? " (" + lastFont + ")" : "");
         }
     }
 }
