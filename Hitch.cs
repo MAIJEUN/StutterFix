@@ -118,8 +118,9 @@ namespace StutterFix
                     };
                     recs.Add(r);
                     Main.Entry.Logger.Log(string.Format(
-                        "[끊김] 타일 #{0}, {1:F1}초 | 프레임 {2:F0}ms | 힙 {3:+#;-#;0}MB | 네이티브 {4:+#;-#;0}MB | 그래픽 {8:+#;-#;0}MB | 정리 {5}회 | 할당 {6:F0}MB/s | 모드 {7}",
-                        r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top, gfx - lastGfx));
+                        "[끊김] {9} 타일 #{0}, {1:F1}초 | 프레임 {2:F0}ms | 힙 {3:+#;-#;0}MB | 네이티브 {4:+#;-#;0}MB | 그래픽 {8:+#;-#;0}MB | 정리 {5}회 | 할당 {6:F0}MB/s | 모드 {7}",
+                        r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top, gfx - lastGfx,
+                        DateTime.Now.ToString("HH:mm:ss.fff")));   // 바깥 측정(PerfView)과 맞춰 보려면 실제 시각이 필요하다
                     Main.Entry.Logger.Log("[끊김]    직전 프레임 단계: " + PhaseWatch.TopOfLastFrame(3));
                     Main.Entry.Logger.Log("[끊김]    그리기: " + RenderWatch.Info());
                     Main.Entry.Logger.Log("[끊김]    그리기 콜백: " + RenderCallbackScan.Top(5) + " | " + FrameRateScreenWatch.Info());
