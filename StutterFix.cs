@@ -255,6 +255,7 @@ namespace StutterFix
             if (Input.GetKeyDown(KeyCode.F7)) LoopProfiler.Toggle();
             if (Input.GetKeyDown(KeyCode.F8)) AbTest.Toggle();
             if (Input.GetKeyDown(KeyCode.F9)) AllocScan.Toggle();
+            if (Input.GetKeyDown(KeyCode.F6)) TextureCensus.Run();
 
             if (capacityApplied) return;
 
@@ -361,6 +362,8 @@ namespace StutterFix
 
             GUILayout.Space(10);
             GUILayout.Label("── 진단 도구 ──");
+            GUILayout.Label("    F6: VRAM을 무엇이 쓰는지 센다 (편집 화면에서 맵을 연 상태로 누를 것)");
+            GUILayout.Label("    " + TextureCensus.LastReport);
             GUILayout.Label("    F9: 누가 메모리를 잡는지 15초 추적 (곡 재생 중에 누를 것)");
             GUILayout.Label("    " + AllocScan.LastReport);
             GUILayout.Label("    F7: 엔진 단계 + 함수별 측정 20초,  F8: GC 기능 A-B 테스트");

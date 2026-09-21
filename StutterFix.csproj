@@ -32,6 +32,7 @@
     <Compile Include="RenderCallbackScan.cs" />
     <Compile Include="FrameRateScreenWatch.cs" />
     <Compile Include="ParticleTextWatch.cs" />
+    <Compile Include="TextureCensus.cs" />
   </ItemGroup>
 
   <PropertyGroup>
