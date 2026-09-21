@@ -46,6 +46,7 @@ namespace StutterFix
                 TweenFix.Install(harmony);
                 RenderWatch.Install(harmony);
                 RenderCallbackScan.Install(harmony);
+                FrameRateScreenWatch.Install(harmony);
                 GcControl.Install();
             }
             catch (Exception ex)

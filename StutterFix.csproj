@@ -30,6 +30,7 @@
     <Compile Include="RenderWatch.cs" />
     <Compile Include="SamplerWatch.cs" />
     <Compile Include="RenderCallbackScan.cs" />
+    <Compile Include="FrameRateScreenWatch.cs" />
   </ItemGroup>
 
   <PropertyGroup>
