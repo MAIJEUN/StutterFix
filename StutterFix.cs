@@ -263,6 +263,8 @@ namespace StutterFix
             RenderWatch.ForceFiltersOff = GUILayout.Toggle(RenderWatch.ForceFiltersOff,
                 "  맵이 거는 화면 필터를 전부 끈다 (원인 확인용, 화면이 달라집니다)");
             GUILayout.Label("    직전 프레임에 " + RenderWatch.ForcedOffCount + "개 껐음");
+            EffectScan.SkipFloorAppear = GUILayout.Toggle(EffectScan.SkipFloorAppear,
+                "  타일 등장 연출을 건너뛴다 (원인 확인용, 타일이 제대로 안 보일 수 있음. 지금까지 " + EffectScan.SkippedFloorAppear + "회)");
             ParticleTextWatch.ForceParticlesOff = GUILayout.Toggle(ParticleTextWatch.ForceParticlesOff,
                 "  파티클을 전부 끈다 (원인 확인용)");
             RenderWatch.ForceBlendOff = GUILayout.Toggle(RenderWatch.ForceBlendOff,

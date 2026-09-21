@@ -61,6 +61,9 @@ namespace StutterFix
             return false;
         }
 
+        // 기본 클래스와 상속 클래스의 StartEffect 가 겹쳐 불리므로, 바깥 호출에서만 한 번 기록한다.
+        internal static bool OuterCall { get { return depth == 0; } }
+
         internal static void Enter() { depth++; }
 
         internal static void Exit(double ms)

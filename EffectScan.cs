@@ -77,10 +77,45 @@ namespace StutterFix
             }
         }
 
+        // ── 타일 등장 연출 ────────────────────────────────────────────
+        // 28~40초의 박자 끊김 프레임마다 시작된 효과는 전부 ffxFloorAppearPlus 였다.
+        // 이 효과 자체는 타일 하나에 위치/크기/투명도 애니메이션을 거는 가벼운 일이다.
+        // 그런데 곡 내내 박자마다 나오는데 끊김은 그 구간에만 있다. 그 구간 타일에
+        // 무거운 것(딸린 장식 등)이 붙어 있는지 보려고 등장할 때마다 딸린 렌더러 수를 남긴다.
+        internal static bool LogFloorAppear = true;
+        internal static bool SkipFloorAppear;   // 실험: 등장 연출을 건너뛴다 (타일이 제대로 안 보일 수 있다)
+        internal static int SkippedFloorAppear;
+
+        private static FieldInfo floorField, animTypeField;
+
+        private static void DescribeFloorAppear(object instance)
+        {
+            try
+            {
+                var t = instance.GetType();
+                if (floorField == null) floorField = AccessTools.Field(t, "floor");
+                if (animTypeField == null) animTypeField = AccessTools.Field(t, "animType");
+
+                var floor = floorField != null ? floorField.GetValue(instance) as UnityEngine.Component : null;
+                if (floor == null) { Main.Entry.Logger.Log("[타일등장] 대상 없음"); return; }
+
+                var tr = floor.transform;
+                int renderers = floor.GetComponentsInChildren<UnityEngine.Renderer>(true).Length;
+                Main.Entry.Logger.Log(string.Format("[타일등장] {0} | 방식 {1} | 자식 {2}개, 렌더러 {3}개",
+                    floor.name, animTypeField != null ? animTypeField.GetValue(instance) : "?", tr.childCount, renderers));
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[타일등장] 읽기 실패: " + ex.Message); }
+        }
+
         // false 를 돌려주면 그 효과는 이번 프레임에 시작하지 않고 다음 프레임으로 밀린다.
         public static bool Pre(object __instance, MethodBase __originalMethod, object[] __args, out long __state)
         {
             __state = Stopwatch.GetTimestamp();
+            if (__instance != null && __instance.GetType().Name == "ffxFloorAppearPlus")
+            {
+                if (SkipFloorAppear) { SkippedFloorAppear++; return false; }
+                if (LogFloorAppear && GcControl.Paused && EffectBudget.OuterCall) DescribeFloorAppear(__instance);
+            }
             if (!EffectBudget.ShouldRun(__instance, __originalMethod, __args)) return false;
             EffectBudget.Enter();
             return true;
