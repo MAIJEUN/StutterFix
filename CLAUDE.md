@@ -94,3 +94,10 @@ PerfView.exe /AcceptEULA /NoGui /LogFile:...\save.log UserCommand SaveCPUStacks 
   세 개 다 넣어도(64MB/256MB/30000) 해결되지 않았고 프레임이 떨어졌다. 쓰지 않는다.
 - `-force-gfx-jobs` 값: off / split / legacy / native. 지원 안 되는 조합은 "is not supported ... Reverting" 로그 후 되돌린다.
 - 결과: D3D12+native → 28~40초와 127~130초 멈춤 / D3D12만 → 28~40초 멈춤 / D3D11 → 28~40초 깨끗하나 프레임 140.
+
+## 지운 것: 같은 타일 스타일 건너뛰기 (FloorFix)
+
+타일마다 SetTrackStyle 의 마지막 인자를 기억해 두고 같으면 건너뛰었다(48% 건너뜀).
+그런데 **타일 색이 이상해졌고**, legacy 그래픽 작업과 함께 쓰면 125~130초에 1초 간격으로
+유니티 루프 바깥에서 60~75ms 멈춤이 생겼다(켬 160번 / 끔 94번, 같은 세션 비교).
+"인자가 같으면 결과도 같다"는 가정이 틀렸다. 다른 코드가 그사이 같은 재질 값을 바꾼다. 다시 만들지 않는다.
