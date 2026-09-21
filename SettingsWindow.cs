@@ -27,12 +27,12 @@ namespace StutterFix
         internal static void Destroy()
         {
             if (Instance == null) return;
-            Instance.SetOpen(false);
+            if (Open) Instance.FinishClose();   // 모드를 끌 때는 애니메이션 없이 바로
             UnityEngine.Object.Destroy(Instance.gameObject);
             Instance = null;
         }
 
-        internal static void Toggle() { if (Instance != null) Instance.SetOpen(!Open); }
+        internal static void Toggle() { if (Instance != null) Instance.SetOpen(!Open || Instance.closing); }
 
         // ── 언어 ───────────────────────────────────────────────────────
         internal static bool English
@@ -64,32 +64,73 @@ namespace StutterFix
         private bool cursorWas;
         private bool built;
         private float scale = 1f;
-        private float fade;
+        // ── 애니메이션 ─────────────────────────────────────────────────
+        // show: 창이 나타난 정도(0~1). 닫을 때도 0까지 내려간 뒤에야 실제로 닫는다.
+        // pageT: 페이지를 바꾼 뒤 본문이 들어온 정도. navY/tabX: 메뉴 선택 표시와 언어 밑줄의 현재 위치.
+        private float show;
+        private float windowAlpha = 1f;
+        private bool closing;
+        private float pageT = 1f;
+        private float navY = -1f, tabX = -1f;
         private readonly Dictionary<string, float> anim = new Dictionary<string, float>();
 
+        private static float EaseOut(float t) { t = 1f - Mathf.Clamp01(t); return 1f - t * t * t; }   // 빠르게 시작해 부드럽게 멈춤
+        private static float Approach(float cur, float target, float speed) { return cur + (target - cur) * (1f - Mathf.Exp(-speed * Time.unscaledDeltaTime)); }
+
         private Font font;
-        private GUIStyle sWindow, sShadow, sTitle, sSub, sH1, sLead, sBody, sDim, sSmall, sTag, sCard, sCardDark, sNav, sNavOn,
+        private GUIStyle sWindow, sShadow, sTitle, sSub, sH1, sLead, sBody, sDim, sSmall, sTag, sCard, sCardDark, sNav, sNavOn, sNavText,
             sPrimary, sClose, sTab, sTabOn, sStat, sStatDark, sStatLabel, sStatLabelDark, sScroll, sThumb;
         private Texture2D tWhite, tMark;
 
         private const float W = 900f, H = 590f, SideW = 196f, HeaderH = 66f;
 
+        // 여는 것은 바로, 닫는 것은 사라지는 애니메이션이 끝난 뒤에 한다.
         private void SetOpen(bool open)
         {
-            if (open == Open) return;
-            Open = open;
-            if (open) { cursorWas = Cursor.visible; fade = 0f; }
-            else { Cursor.visible = cursorWas; SetUiBlocked(false); }
+            if (open)
+            {
+                if (Open && !closing) return;
+                if (!Open) { cursorWas = Cursor.visible; show = 0f; pageT = 1f; }
+                Open = true;
+                closing = false;
+            }
+            else if (Open) closing = true;
+        }
+
+        private void FinishClose()
+        {
+            Open = false;
+            closing = false;
+            show = 0f;
+            Cursor.visible = cursorWas;
+            SetUiBlocked(false);
         }
 
         private void Update()
         {
             if (Main.Config == null) return;
-            if (Input.GetKeyDown(Main.Config.WindowKey)) SetOpen(!Open);
+            if (Input.GetKeyDown(Main.Config.WindowKey)) SetOpen(!Open || closing);
             if (!Open) return;
-            if (Input.GetKeyDown(KeyCode.Escape)) { SetOpen(false); return; }
+            if (!closing && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
             Cursor.visible = true;   // 곡 중에는 게임이 커서를 숨긴다
-            fade = Mathf.MoveTowards(fade, 1f, Time.unscaledDeltaTime * 6f);
+
+            float dt = Time.unscaledDeltaTime;
+            if (closing)
+            {
+                show = Mathf.MoveTowards(show, 0f, dt / 0.14f);   // 닫기는 빠르게
+                if (show <= 0f) FinishClose();
+            }
+            else show = Mathf.MoveTowards(show, 1f, dt / 0.26f);
+            pageT = Mathf.MoveTowards(pageT, 1f, dt / 0.24f);
+        }
+
+        // 메뉴를 바꿀 때: 본문을 처음부터 다시 들여보내고, 스크롤은 맨 위로
+        private void GoTo(int p)
+        {
+            if (p == page) return;
+            page = p;
+            scroll = Vector2.zero;
+            pageT = 0f;
         }
 
         // 창 위를 누를 때 뒤의 게임 UI(에디터 버튼 등)가 같이 눌리지 않게 막는다.
@@ -137,15 +178,22 @@ namespace StutterFix
             var oldColor = GUI.color;
             try
             {
-                float ease = Mathf.SmoothStep(0, 1, fade);
+                // 열 때: 살짝 작고 아래에 있던 창이 커지며 올라온다. 닫을 때는 그 반대로 빠르게.
+                float e = closing ? show * show : EaseOut(show);
                 if (Event.current.type == EventType.Repaint)
                 {
-                    GUI.color = new Color(0, 0, 0, 0.35f * ease);   // 뒤 게임 화면을 살짝 가린다
+                    GUI.color = new Color(0, 0, 0, 0.35f * e);   // 뒤 게임 화면을 살짝 가린다
                     GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), tWhite);
                 }
-                GUI.color = new Color(1, 1, 1, ease);
-                GUI.matrix = Matrix4x4.TRS(new Vector3(0, (1 - ease) * 10f * scale, 0), Quaternion.identity, new Vector3(scale, scale, 1f));
-                SetUiBlocked(rect.Contains(Event.current.mousePosition));
+                windowAlpha = e;
+                GUI.color = new Color(1, 1, 1, e);
+                float k = Mathf.Lerp(0.965f, 1f, e);
+                Vector3 c = new Vector3(rect.center.x, rect.center.y, 0);
+                GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f))
+                           * Matrix4x4.Translate(c + new Vector3(0, (1 - e) * 14f, 0))
+                           * Matrix4x4.Scale(new Vector3(k, k, 1f))
+                           * Matrix4x4.Translate(-c);
+                SetUiBlocked(!closing && rect.Contains(Event.current.mousePosition));
                 if (Event.current.type == EventType.Repaint)
                     sShadow.Draw(new Rect(rect.x - 34, rect.y - 22, rect.width + 68, rect.height + 70), false, false, false, false);
                 rect = GUI.Window(0x5F1A, rect, DrawWindow, GUIContent.none, sWindow);
@@ -165,7 +213,7 @@ namespace StutterFix
             var oldColor = GUI.color;
             GUI.skin.verticalScrollbar = sScroll;         // 스크롤바 손잡이 모양은 이름으로 찾으므로 잠깐 바꿔 끼운다
             GUI.skin.verticalScrollbarThumb = sThumb;
-            GUI.color = Color.white;
+            GUI.color = new Color(1, 1, 1, windowAlpha);   // 창 안의 글자와 카드도 같이 나타나고 사라진다
             try { DrawContents(); }
             finally
             {
@@ -188,26 +236,45 @@ namespace StutterFix
             var en = new Rect(tx + 74, 20, 76, 28);
             if (GUI.Button(ko, "한국어", English ? sTab : sTabOn)) SetLanguage("ko");
             if (GUI.Button(en, "English", English ? sTabOn : sTab)) SetLanguage("en");
-            var sel = English ? en : ko;
-            Fill(new Rect(sel.center.x - 9, sel.yMax + 1, 18, 2), Ink, 1);
+            // 밑줄은 고른 쪽으로 미끄러진다
+            float tabTarget = (English ? en : ko).center.x;
+            if (tabX < 0) tabX = tabTarget;
+            if (Event.current.type == EventType.Repaint) tabX = Approach(tabX, tabTarget, 16f);
+            Fill(new Rect(tabX - 9, ko.yMax + 1, 18, 2), Ink, 1);
             if (GUI.Button(new Rect(W - 56, 18, 34, 32), "×", sClose)) SetOpen(false);
 
-            // ── 왼쪽 메뉴
+            // ── 왼쪽 메뉴: 흰 카드 하나가 고른 항목으로 미끄러져 간다
             string[] pages = { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("정보", "About") };
+            float navTarget = HeaderH + 14 + page * 44;
+            if (navY < 0) navY = navTarget;
+            if (Event.current.type == EventType.Repaint)
+            {
+                navY = Approach(navY, navTarget, 18f);
+                sNavOn.Draw(new Rect(18, navY, SideW - 30, 38), false, false, false, false);
+            }
             for (int i = 0; i < pages.Length; i++)
             {
                 var r = new Rect(18, HeaderH + 14 + i * 44, SideW - 30, 38);
-                if (GUI.Button(r, pages[i], i == page ? sNavOn : sNav)) { page = i; scroll = Vector2.zero; }
+                bool near = Mathf.Abs(navY - r.y) < 19f;   // 선택 카드가 지나가는 동안 글자도 진해진다
+                if (GUI.Button(r, pages[i], near ? sNavText : sNav)) GoTo(i);
             }
             GUI.Label(new Rect(30, H - 56, SideW - 30, 18), "naro & Claude", sSmall);
             GUI.Label(new Rect(30, H - 38, SideW - 30, 18), English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name, sSmall);
 
             // ── 본문
-            var body = new Rect(SideW + 14, HeaderH + 10, W - SideW - 32, H - HeaderH - 26);
+            // 카드 그림자는 카드 바깥으로 그려지는데 영역 밖은 잘린다. 예전에는 카드가 영역 왼쪽 끝에 붙어 있어
+            // 왼쪽 테두리와 그림자가 잘려 보였다. 영역을 넓히고 안쪽에 여백(Gutter)을 둔다.
+            const float Gutter = 12f;
+            float pe = EaseOut(pageT);
+            var body = new Rect(SideW + 2 + (1 - pe) * 16f, HeaderH + 4, W - SideW - 18, H - HeaderH - 16);
+            var oldC = GUI.color;
+            GUI.color = new Color(oldC.r, oldC.g, oldC.b, oldC.a * pe);   // 페이지를 바꾸면 옆에서 살짝 밀려 들어온다
             GUILayout.BeginArea(body);
             scroll = GUILayout.BeginScrollView(scroll, false, false, GUIStyle.none, sScroll, GUIStyle.none);
-            GUILayout.BeginVertical(GUILayout.Width(body.width - 22));
-            GUILayout.Space(6);   // 첫 카드 그림자가 잘리지 않게
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(Gutter);
+            GUILayout.BeginVertical(GUILayout.Width(body.width - Gutter * 2 - 18));
+            GUILayout.Space(Gutter);
             switch (page)
             {
                 case 0: PageHome(); break;
@@ -216,10 +283,12 @@ namespace StutterFix
                 case 3: PageGraphics(); break;
                 default: PageAbout(); break;
             }
-            GUILayout.Space(8);
+            GUILayout.Space(Gutter);
             GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
             GUILayout.EndScrollView();
             GUILayout.EndArea();
+            GUI.color = oldC;
 
             GUI.DragWindow(new Rect(0, 0, tx - 10, HeaderH));
         }
@@ -403,9 +472,9 @@ namespace StutterFix
             float k = Mathf.SmoothStep(0, 1, t);
 
             var track = new Rect(r.x, r.y + 1, 44, 24);
-            GUI.DrawTexture(track, tWhite, ScaleMode.StretchToFill, true, 0, Color.Lerp(TrackOff, Ink, k), 0, 12);
+            GUI.DrawTexture(track, tWhite, ScaleMode.StretchToFill, true, 0, Faded(Color.Lerp(TrackOff, Ink, k)), 0, 12);
             float kx = Mathf.Lerp(track.x + 3, track.xMax - 21, k);
-            GUI.DrawTexture(new Rect(kx, track.y + 3, 18, 18), tWhite, ScaleMode.StretchToFill, true, 0, Color.white, 0, 9);
+            GUI.DrawTexture(new Rect(kx, track.y + 3, 18, 18), tWhite, ScaleMode.StretchToFill, true, 0, Faded(Color.white), 0, 9);
         }
 
         private void Stat(string value, string label, bool dark)
@@ -441,8 +510,11 @@ namespace StutterFix
         private void Fill(Rect r, Color c, float radius)
         {
             if (Event.current.type != EventType.Repaint) return;
-            GUI.DrawTexture(r, tWhite, ScaleMode.StretchToFill, true, 0, c, 0, radius);
+            GUI.DrawTexture(r, tWhite, ScaleMode.StretchToFill, true, 0, Faded(c), 0, radius);
         }
+
+        // 색 인자를 받는 DrawTexture 는 GUI.color 의 투명도를 따르지 않으므로 직접 곱한다
+        private static Color Faded(Color c) { return new Color(c.r, c.g, c.b, c.a * GUI.color.a); }
 
         private void SetLanguage(string lang)
         {
@@ -510,6 +582,8 @@ namespace StutterFix
             sNavOn.normal.textColor = Ink; sNavOn.hover.textColor = Ink; sNavOn.fontSize = 14; sNavOn.fontStyle = FontStyle.Bold;
             sNavOn.alignment = TextAnchor.MiddleLeft; sNavOn.padding = new RectOffset(16, 8, 0, 0);
             sNavOn.hover.background = sNavOn.normal.background;
+            sNavText = new GUIStyle(sNav) { fontStyle = FontStyle.Bold };   // 선택 카드 위의 글자 (배경은 따로 미끄러지며 그린다)
+            sNavText.normal.textColor = Ink; sNavText.hover.textColor = Ink;
 
             sPrimary = Styled(Card(Ink, Ink, 10, 0, 0, 0f), 12);
             sPrimary.normal.textColor = Color.white; sPrimary.alignment = TextAnchor.MiddleCenter; sPrimary.fontSize = 14; sPrimary.fontStyle = FontStyle.Bold;
