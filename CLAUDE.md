@@ -44,7 +44,7 @@ METHOD=scrCamera bin/Debug/net8.0/ILScan.exe <dll> ZZZ     # 타입의 메서드
 | PACL2가 매 프레임 글자 장식 34개를 같은 내용으로 다시 넣음 (`VariableStateManager.UpdateTexts`) | 호출 경로로 확인, 모드 끄면 0회 | 같은 글자면 `SetText` 건너뛰기 (`TextFix`) |
 | 편집 복귀 시 `UnloadUnusedAssets` | 매번 120ms | 건너뛰기 |
 | 한 프레임에 효과 수십 개 몰림 | | 프레임당 예산으로 분산 (`EffectBudget`) |
-| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**. 아님으로 확인: 스크립트 콜백, 할당, 필터, 블렌드(일부만 줄어듦), 커스텀 프레임레이트 연출, 파티클(늘 9400개), 폰트 재생성(0회). 모드를 전부 꺼도 남고 오히려 커짐(75→115ms) → 맵 자체 문제. 장식 켜기/끄기도 0회로 아님. 박자마다 효과 4개가 시작되므로 그 종류를 기록 중 |
+| 박자마다 60~80ms (28~40초 구간) | PerfView: 끊긴 60ms 동안 게임 전체 CPU 16ms, 메인 스레드는 `RenderOffscreenCameras` → `CullScene` → `ujob_wait_for`에서 잠듦. GPU도 대기. VRAM 7.0/8GB, 게임 공유메모리 599MB로 넘침 | **Steam 실행 옵션 `-force-d3d12 -force-gfx-jobs native` 제거** (D3D11). 그 구간 끊김 사라짐. 모드는 옵션이 있으면 경고만 띄운다 |
 
 ## 측정에서 배운 것 (반복하지 말 것)
 
@@ -65,3 +65,18 @@ i5-9400F / RTX 4060 Ti / DDR4-2666 24GB / 3440x1440 164Hz / Windows 10 Atlas OS.
 학교 PC에서 TextGenerator 폭주가 티 나지 않은 건 **같은 SSD를 들고 가서** 돌린 것이라 소프트웨어는 같았다. 차이는 하드웨어(더 빠른 CPU/RAM)다.
 PACL2가 매 프레임 글자 34개를 다시 넣는 것은 양쪽 모두에서 일어난다.
 모드 탓을 가리려면 다른 모드를 전부 끄고(게임 재시작) 같은 구간을 돌려 비교한다.
+
+## 엔진 안쪽 보기 (PerfView)
+
+C# 측정으로 안 보이는 끊김(엔진 네이티브, 드라이버, OS)은 PerfView로 본다. 도구와 결과는 `C:\Users\Public\StutterFixTrace`(한글 경로에선 PerfView 기록이 실패했다).
+
+```
+PerfView.exe /AcceptEULA /NoGui /NoView /Zip:false /Merge:true /MaxCollectSec:120 /CircularMB:3000 /KernelEvents:Default /ClrEvents:None /LogFile:...\collect.log collect ...\stall.etl   (관리자)
+PerfView.exe /AcceptEULA /NoGui /LogFile:...\save.log UserCommand SaveCPUStacks ...\stall.etl "A Dance of Fire and Ice"
+```
+- 유니티 심볼은 PerfView가 서버에서 안 받아와서 직접 받았다:
+  `https://symbolserver.unity3d.com/UnityPlayer_Win64_player_mono_x64.pdb/<GUID+Age>/UnityPlayer_Win64_player_mono_x64.pdb` → `symbols\` 캐시 구조로 둔다.
+- 결과 XML에서 메인 스레드(CPU 가장 많은 Thread)의 샘플 사이가 크게 벌어진 곳 = 무언가를 기다리며 잠든 곳이다.
+  그 순간 게임 전체 CPU가 거의 0이면 원인은 게임 바깥(드라이버, VRAM 이동, OS)이다.
+- 끊김 로그의 실제 시각과 기록 시작 시각을 빼서 위치를 맞춘다.
+- VRAM 확인: `Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory` (게임의 SharedUsage가 0보다 크면 VRAM이 넘친 것).

@@ -39,6 +39,7 @@ namespace StutterFix
             modEntry.OnUnload = Unload;   // 이것이 있어야 UMM이 게임을 켠 채로 새 DLL을 다시 불러온다
 
             InstallAll();
+            if (LaunchWarning.Length > 0) modEntry.Logger.Log(LaunchWarning.Trim());
             return true;
         }
 
@@ -52,6 +53,33 @@ namespace StutterFix
         }
 
         private static bool installed;
+
+        // Steam 실행 옵션 -force-d3d12 / -force-gfx-jobs 가 28~40초 박자 끊김(60~80ms)의 원인이었다.
+        // PerfView로 엔진 안쪽을 보니 끊긴 60ms 동안 게임 전체가 거의 쉬고 있었고(GPU도 대기),
+        // VRAM이 8GB 한도에 걸려 600MB가 시스템 램으로 밀려난 상태였다. D3D12가 그것을 옮기는 동안 다 같이 멈춘다.
+        // 옵션을 빼고 D3D11로 돌리자 그 구간 끊김이 사라졌다. 모드로는 고칠 수 없는 자리라 켜져 있으면 알린다.
+        private static string launchWarning;
+
+        internal static string LaunchWarning
+        {
+            get
+            {
+                if (launchWarning != null) return launchWarning;
+                launchWarning = "";
+                try
+                {
+                    string args = string.Join(" ", Environment.GetCommandLineArgs()).ToLowerInvariant();
+                    var found = new List<string>();
+                    if (args.Contains("-force-d3d12")) found.Add("-force-d3d12");
+                    if (args.Contains("-force-gfx-jobs")) found.Add("-force-gfx-jobs");
+                    if (found.Count > 0)
+                        launchWarning = "  ⚠ Steam 실행 옵션에 " + string.Join(", ", found.ToArray()) +
+                                        " 가 있습니다. VRAM이 빠듯하면 박자마다 60~80ms씩 멈춥니다. 빼는 것을 권합니다.";
+                }
+                catch { }
+                return launchWarning;
+            }
+        }
 
         private static void InstallAll()
         {
@@ -257,6 +285,7 @@ namespace StutterFix
         private static void OnGUI(UnityModManager.ModEntry modEntry)
         {
             GUILayout.Label("고사양 맵의 프레임 문제를 줄입니다. 효과가 측정된 기능만 들어 있습니다.");
+            if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("모드 다시 불러오기 (Ctrl+F5)", GUILayout.Width(220))) RequestReload();
             GUILayout.Label("  게임을 켠 채로 새로 빌드한 DLL을 적용합니다. 설정 슬라이더는 기본값으로 돌아갑니다.");
