@@ -1,98 +1,86 @@
-# StutterFix
+# Stutter Fix
 
-얼불춤(A Dance of Fire and Ice) 고사양 맵의 프레임 문제를 줄이는 Unity Mod Manager 모드.
+얼불춤(A Dance of Fire and Ice) 고사양 커스텀 맵에서 **플레이 중 순간적으로 멈추는 현상**과 **맵 로딩 시간**을 줄이는 Unity Mod Manager 모드입니다.
+연출과 판정은 바꾸지 않습니다. 게임이 일을 처리하는 순서와 방법만 바꿉니다.
 
-i5-9400F + RTX 4060 Ti + 3440x1440 환경에서, PresentMon 프레임 단위 측정과
-직접 만든 진단 도구로 원인을 추적한 결과를 바탕으로 만들었습니다.
+made by **naro** & **Claude**
 
-## 들어 있는 기능
+## 설치
 
-### 1. 곡 중 GC 멈춤 (핵심)
-곡이 진행되는 동안 가비지 컬렉션을 멈추고, 곡이 끝나면 재개하며 정리합니다.
+1. [Releases](https://github.com/pding4569/StutterFix/releases)에서 `StutterFix-x.y.z-player.zip`을 받습니다.
+2. Unity Mod Manager의 **Mods** 탭에서 **Install Mod**로 zip을 고르거나, 압축을 풀어 `A Dance of Fire and Ice/Mods/StutterFix/` 폴더에 넣습니다.
+3. 게임을 켜면 적용됩니다. **게임을 한 번 더 껐다 켜면** 멀티스레드 그리기까지 적용됩니다.
 
-0.8초마다 GC를 멈췄다 켜며 같은 곡 안에서 125쌍을 비교한 결과:
+게임 중 **Insert** 키로 설정 창을 열고 닫을 수 있습니다. 한국어/English를 고를 수 있습니다.
 
-| | GC 멈춤 | GC 정상 |
-|---|---|---|
-| 평균 | **124 fps** | 106 fps |
-| 최악 프레임 평균 | **18.9 ms** | 45.3 ms |
-| 33ms 초과 구간 | **12 / 125** | 118 / 125 |
+## 기능
 
-맵이 초당 수만 개의 임시 객체를 만들어내고, 그것을 치우는 작업이 프레임을 멈춥니다.
+모든 기능은 실제 맵에서 끊긴 순간을 하나씩 측정해 원인을 찾은 뒤 만들었습니다. 기본으로 전부 켜져 있습니다.
 
-안전장치: 힙이 기준(기본 3GB)을 넘으면 곡 중이라도 완전 정리하고,
-감지가 실패해도 240초가 지나면 반드시 정리합니다.
+### 플레이
 
-### 2. DOTween 용량 미리 확보
-고사양 맵은 애니메이션을 2만 개 가까이 만듭니다. DOTween은 용량이 부족할 때마다
-내부 배열을 다시 만들고 전부 복사하는데, 그 작업이 메인 스레드에서 일어납니다.
-
-시작할 때 충분한 용량(기본 40000/25000)을 잡아둬 재할당을 없앱니다.
-측정: 하위 1% 프레임 67fps -> 96fps
-
-### 3. 맵 로딩 시 에셋 정리 건너뛰기
-`Resources.UnloadUnusedAssets()`는 오브젝트 56만 개를 훑느라 한 번에 200ms 이상
-메인 스레드를 멈춥니다. `scnGame.LoadLevel`/`Awake`의 호출을 Harmony 트랜스파일러로
-건너뜁니다. 세 호출 지점 모두 반환값을 바로 버리므로(IL에서 `call` 다음이 `pop`)
-게임 로직에는 영향이 없습니다.
-
-한계: 유니티가 씬 전환 시 자동으로 실행하는 정리는 엔진 내부라 막을 수 없습니다.
-
-### 4. 진단 도구
-- **F7**: 유니티 PlayerLoop 단계별 소요 시간 + 함수별 측정 + 컴포넌트 집계 (20초 자동)
-- **F8**: 같은 곡 안에서 0.8초마다 기능을 켰다 껐다 하며 A/B 비교
-
-## 시도했지만 효과가 없어 제거한 것
-
-전부 A/B 측정에서 오차 범위였습니다.
-
-| 시도 | 결과 |
+| 기능 | 하는 일 |
 |---|---|
-| 화면 밖 타일 색칠 미루기 | 첫 맵에서는 효과, 초고사양 맵에서는 평균 113 -> 106fps (손해) |
-| 짧은 색 애니메이션 생략 | 128쌍 A/B에서 112 vs 110 fps (차이 없음) |
-| 이벤트를 여러 프레임에 분산 | 최악 프레임 35.7 -> 39.4ms (오히려 악화) |
-| 화면 밖 스프라이트/메시 컬링 | 변화 없음 |
-| 장식 오브젝트 통째로 비활성화 | 변화 없음 |
+| 메모리 정리 미루기 | 플레이 중 GC(메모리 정리)로 멈추는 것을 막고, 곡이 끝나고 몇 초 뒤 한 번에 정리합니다. 측정: 평균 106 → 124fps, 33ms 넘는 구간 118 → 12 (125구간 중) |
+| 효과 몰림 나누기 | 한 박자에 효과 수십 개가 동시에 시작되면 몇 프레임에 나눠 시작합니다. |
+| 타일 색 바꾸기 나누기 | 타일 수천 개의 색을 한 번에 바꾸는 이벤트를 조금씩 나눠 칠합니다. 먼 타일이 몇 프레임 늦게 바뀔 뿐 결과는 같습니다. 측정: 한 번에 41ms → 4ms |
+| 애니메이션 처리 최적화 | 효과가 많을 때 DOTween이 목록을 반복 재정렬하느라 멈추는 것을 막습니다. 측정: 한 프레임 435ms 중 382ms가 재정렬이던 것을 제거 |
+| 글자 장식 최적화 | 같은 글자를 매 프레임 다시 쓰는 글자 장식을 건너뜁니다. PACL2 같은 모드와 함께 쓸 때 효과가 큽니다. |
+| 그래픽 미리 준비 | 곡 시작 때 셰이더를 미리 준비합니다. |
 
-## 배제된 원인 (실측)
+### 맵 불러오기
 
-| 후보 | 방법 | 결과 |
+| 기능 | 하는 일 |
+|---|---|
+| 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 CPU 여러 코어에서 동시에 풉니다. 측정: 이미지 700장 맵 67초 → 38초. 윈도우 해독기와 픽셀 단위로 비교해 782장 모두 일치 |
+| 불필요한 정리 건너뛰기 | 맵을 열거나 편집으로 돌아올 때 게임이 부르는 에셋 정리(한 번에 120~200ms)를 건너뜁니다. |
+
+### 그래픽
+
+| 기능 | 하는 일 |
+|---|---|
+| 멀티스레드 그리기 | 게임 폴더의 `boot.config`에 `force-gfx-jobs=legacy` 한 줄을 넣어 그리기 준비를 여러 코어에 나눕니다. 측정: D3D11 기준 140 → 160fps. 원래 파일은 백업해 두고, 모드를 끄면 되돌립니다. |
+
+## 모드를 끄면
+
+UMM에서 끄면 모든 변경을 즉시 되돌립니다(패치, GC 상태, 작업 스레드, 설정 창). 멀티스레드 그리기는 다음 실행부터 원래대로 돌아갑니다.
+
+## 그래도 끊긴다면
+
+- 전체 화면 필터가 아주 많이 겹치는 구간은 그래픽카드 성능 한계입니다.
+- 백그라운드 프로그램이 순간적으로 CPU를 가져가 끊길 수 있습니다.
+- Steam 실행 옵션에 `-force-d3d12 -force-gfx-jobs native`가 있으면 곡 중 60~80ms씩 멈출 수 있습니다. 빼는 것을 권합니다.
+
+## 두 가지 버전
+
+| | 플레이어용 | 개발자용 |
 |---|---|---|
-| 그리기 비용 | 해상도 낮춤, 렌더러 1만 3천 개 컬링 | 변화 없음 |
-| GPU | PresentMon | 대기 0ms, 병목 아님 |
-| 파티클 / 애니메이터 | 씬 스캔 | 20개 / 0개 |
-| 설치된 다른 모드 9개 | 전부 제거 후 플레이 | 동일 |
-| 애니메이션(tween) | 매 프레임 PauseAll | 154 -> 159fps (3%) |
-| 맵 이벤트 적용 + 타일 색칠 | 함수 자체를 차단 | 평균 +4%, 최악 프레임 -22% |
-| BlendModeEffect | 함수 차단 | +1% |
-| scrFloor.Update | 함수 차단 | +2% |
+| 위의 모든 기능 | O | O |
+| 끊김 기록, 함수별 시간 측정, 진단 단축키(F6~F9) | | O |
 
-### 측정에서 배운 것
-초당 수만 번 호출되는 함수에 Harmony로 시간 측정을 붙이면, **측정 비용이 실제 비용을
-덮어버립니다.** 이 때문에 한동안 `ColorFloor`와 `TweenColor`를 범인으로 오해했습니다.
-차단 A/B(그 일을 아예 안 하게 하고 FPS를 보는 것)로 바꾼 뒤에야 GC에 도달했습니다.
-
-## 남은 문제
-
-맵 중간중간의 순간 끊김은 아직 해결되지 않았습니다. GC 멈춤은 평균을 크게 올렸지만
-그 끊김은 잡지 못했습니다. 위 표대로 그리기/이벤트/색칠/애니메이션/모드는 전부
-배제되었으므로, 남은 후보는 맵이 특정 지점에서 리소스를 새로 불러오는 경우입니다.
-
-또 하나: 곡이 끝나도 GC 멈춤이 풀리지 않는 경우가 있습니다.
-`scrController.gameworld`, `scnEditor.playMode`, `paused`, 곡 위치 이동 네 가지를
-모두 보고 판단하는데, 에디터에서 완주했을 때 어떤 값이 남아 있는지 확인이 필요합니다.
-현재는 240초 시간 제한으로 안전만 확보해 둔 상태입니다.
+일반 플레이에는 **플레이어용**을 쓰세요. 개발자용은 끊김 원인을 추적할 때 씁니다.
 
 ## 빌드
 
-.NET SDK 8.0 이상. `StutterFix.csproj`의 `GameManaged` 경로를 게임 설치 경로에 맞게 수정.
+.NET SDK 8.0 이상. `StutterFix.csproj`의 `GameManaged` 경로를 게임 설치 경로에 맞게 고칩니다.
 
 ```bash
-dotnet build -c Release
+./pack.sh
 ```
 
-`bin/Release/StutterFix.dll`과 `Info.json`을 `<게임 폴더>/Mods/StutterFix/`에 넣으면 설치됩니다.
+두 버전을 빌드해 `dist/`에 UMM 설치용 zip을 만듭니다.
 
 ## 환경
+
 - ADOFAI r148 / Unity 6000.3.10f1 (Mono)
 - Unity Mod Manager 0.32.5
+
+---
+
+## English
+
+Stutter Fix reduces mid-play hitches and level loading times on heavy custom levels in A Dance of Fire and Ice. Visuals and judgement are unchanged.
+
+**Install:** download `StutterFix-x.y.z-player.zip` from Releases and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** in game to open the settings window (Korean/English).
+
+**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, parallel PNG decoding for decoration images on level load, skipping asset unloads, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
