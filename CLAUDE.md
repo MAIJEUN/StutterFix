@@ -43,7 +43,7 @@ METHOD=scrCamera bin/Debug/net8.0/ILScan.exe <dll> ZZZ     # 타입의 메서드
 | DOTween `ReorganizeActiveTweens` O(n²) | 한 프레임 382ms (4981회) | 효과 도는 동안 `isUpdateLoop=true` (`TweenFix`) |
 | 편집 복귀 시 `UnloadUnusedAssets` | 매번 120ms | 건너뛰기 |
 | 한 프레임에 효과 수십 개 몰림 | | 프레임당 예산으로 분산 (`EffectBudget`) |
-| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**. 아님으로 확인: 스크립트 콜백, 할당, 필터, 블렌드(일부만 줄어듦), 커스텀 프레임레이트 연출(7초에 1회 1.8ms). 남은 후보: 파티클 대기, 글자 캔버스 재구성 |
+| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**. 아님으로 확인: 스크립트 콜백, 할당, 필터, 블렌드(일부만 줄어듦), 커스텀 프레임레이트 연출, 파티클(늘 9400개), 폰트 재생성(0회). 다음: 다른 모드 전부 끄고 비교 |
 
 ## 측정에서 배운 것 (반복하지 말 것)
 
@@ -59,4 +59,7 @@ METHOD=scrCamera bin/Debug/net8.0/ILScan.exe <dll> ZZZ     # 타입의 메서드
 
 ## 사용자 PC
 
-i5-9400F / RTX 4060 Ti / DDR4-2666 24GB / 3440x1440 164Hz / Windows 10 Atlas OS. 다른 모드 9개 동시 사용(Quartz, AdofaiTweaks, XPerfect 등). 모드별 할당은 측정상 무시할 수준이다.
+i5-9400F / RTX 4060 Ti / DDR4-2666 24GB / 3440x1440 164Hz / Windows 10 Atlas OS. 다른 모드 9개 동시 사용(Quartz, AdofaiTweaks, XPerfect 등).
+`ModWatch`는 다른 모드의 **OnUpdate만** 잰다. Harmony로 게임 함수 안에 끼어든 비용은 전혀 안 잡힌다.
+학교 PC에서는 TextGenerator 폭주(글자 장식 매 프레임 34회 재설정)가 없었으므로 모드 탓일 가능성이 크다.
+모드 탓을 가리려면 다른 모드를 전부 끄고(게임 재시작) 같은 구간을 돌려 비교한다.
