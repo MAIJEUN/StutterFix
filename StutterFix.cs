@@ -398,7 +398,8 @@ namespace StutterFix
         private static void PlayerGUI()
         {
             GUILayout.Label("<b>Stutter Fix</b>  v" + Entry.Info.Version + "  ·  made by <b>naro</b> & <b>Claude</b>");
-            GUILayout.Label("고사양 커스텀 맵에서 플레이 중 순간적으로 멈추는 현상과 맵 로딩 시간을 줄입니다. 연출과 판정은 바꾸지 않습니다.");
+            GUILayout.Label(SettingsWindow.T("고사양 커스텀 맵에서 플레이 중 순간적으로 멈추는 현상과 맵 로딩 시간을 줄입니다. 연출과 판정은 바꾸지 않습니다.",
+                "Reduces hitches during play and loading times on heavy custom levels. Visuals and judgement are unchanged."));
             if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
             GUILayout.Space(8);
             WindowButton();
@@ -407,8 +408,9 @@ namespace StutterFix
         private static void WindowButton()
         {
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("설정 창 열기", GUILayout.Width(160), GUILayout.Height(30))) SettingsWindow.Toggle();
-            GUILayout.Label("   게임 중 언제든 <b>" + Config.WindowKey + "</b> 키로 열고 닫을 수 있습니다.", GUILayout.Height(30));
+            if (GUILayout.Button(SettingsWindow.T("설정 창 열기", "Open settings"), GUILayout.Width(160), GUILayout.Height(30))) SettingsWindow.Toggle();
+            GUILayout.Label(SettingsWindow.T("   게임 중 언제든 <b>" + Config.WindowKey + "</b> 키로 열고 닫을 수 있습니다.",
+                "   Press <b>" + Config.WindowKey + "</b> at any time in game to open or close it."), GUILayout.Height(30));
             GUILayout.EndHorizontal();
         }
 
@@ -545,6 +547,7 @@ namespace StutterFix
         public bool SkipSameText = true;
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;
+        public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }
