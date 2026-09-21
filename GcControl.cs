@@ -138,6 +138,14 @@ namespace StutterFix
             Resume("씬 바뀜");
         }
 
+        // 모드를 다시 불러오기 전에 부른다. GC를 멈춘 채로 두고 내려가면 새 모드가 그 사실을 모른다.
+        internal static void Shutdown()
+        {
+            UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= OnSceneChanged;
+            resumeCountdown = -1f;
+            Resume("모드 다시 불러오기");
+        }
+
         public static void AfterLoad() { endedByHook = false; Resume("맵 로딩"); }
 
         public static void OnSongEnd(MethodBase __originalMethod)

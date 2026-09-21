@@ -36,6 +36,7 @@ namespace StutterFix
             modEntry.OnSaveGUI = OnSaveGUI;
             modEntry.OnUpdate = OnUpdate;
             modEntry.OnToggle = (e, value) => true;
+            modEntry.OnUnload = Unload;   // 이것이 있어야 UMM이 게임을 켠 채로 새 DLL을 다시 불러온다
 
             try
             {
@@ -115,8 +116,70 @@ namespace StutterFix
             return Resources.UnloadUnusedAssets();
         }
 
+        // ── 게임을 켠 채로 다시 불러오기 ──────────────────────────────
+        // 고칠 때마다 게임을 껐다 켜고 맵을 다시 여는 것이 너무 느렸다.
+        // UMM은 모드가 OnUnload 를 주면 새 DLL을 다시 불러올 수 있다.
+        // 단, 내려가면서 게임에 걸어 둔 것을 전부 되돌려야 한다. 안 그러면 옛 코드가 계속 돈다.
+        //   - Harmony 패치 (이 모드가 쓰는 ID 전부. ID 없이 UnpatchAll 하면 남의 모드까지 지운다)
+        //   - GC 멈춤 상태, 씬/카메라 이벤트, PlayerLoop 표시, 다른 모드 갱신 함수 감싸기
+        private static readonly string[] HarmonyIds =
+        {
+            "StutterFix", "StutterFix.GcControl", "StutterFix.AllocScan", "StutterFix.SlowScan", "StutterFix.Profiler",
+        };
+
+        private static bool Unload(UnityModManager.ModEntry modEntry)
+        {
+            modEntry.Logger.Log("내리는 중 (다시 불러오기)");
+            Try(GcControl.Shutdown);
+            Try(RenderWatch.Shutdown);
+            Try(PhaseWatch.Uninstall);
+            Try(LoopProfiler.Shutdown);
+            Try(AllocScan.Shutdown);
+            Try(Profiler.Stop);
+            Try(ModWatch.Shutdown);
+            Try(SamplerWatch.Shutdown);
+            Try(EffectBudget.Reset);
+
+            foreach (var id in HarmonyIds)
+                Try(() => new Harmony(id).UnpatchAll(id));
+
+            return true;
+        }
+
+        private static void Try(Action a)
+        {
+            try { a(); }
+            catch (Exception ex) { Entry.Logger.Error("내리는 중 오류: " + ex.Message); }
+        }
+
+        internal static void RequestReload()
+        {
+            try
+            {
+                var type = typeof(UnityModManager.ModEntry);
+                var canReload = AccessTools.Property(type, "CanReload");
+                if (canReload != null && !(bool)canReload.GetValue(Entry, null))
+                    canReload.SetValue(Entry, true, null);
+
+                var reload = AccessTools.Method(type, "Reload");
+                if (reload == null) { Entry.Logger.Error("UMM에 Reload가 없음"); return; }
+                reload.Invoke(Entry, null);
+            }
+            catch (Exception ex)
+            {
+                Entry.Logger.Error("다시 불러오기 실패: " + ex);
+            }
+        }
+
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
+            // Ctrl+F5: 게임을 켠 채로 새 DLL을 불러온다. 옛 코드는 여기서 바로 빠져나가야 한다.
+            if ((Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) && Input.GetKeyDown(KeyCode.F5))
+            {
+                RequestReload();
+                return;
+            }
+
             GcControl.Tick(dt);
             EffectBudget.Tick();
             RenderWatch.Tick(dt);
@@ -159,6 +222,10 @@ namespace StutterFix
         private static void OnGUI(UnityModManager.ModEntry modEntry)
         {
             GUILayout.Label("고사양 맵의 프레임 문제를 줄입니다. 효과가 측정된 기능만 들어 있습니다.");
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("모드 다시 불러오기 (Ctrl+F5)", GUILayout.Width(220))) RequestReload();
+            GUILayout.Label("  게임을 켠 채로 새로 빌드한 DLL을 적용합니다. 설정 슬라이더는 기본값으로 돌아갑니다.");
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(10);
             GUILayout.Label("── 곡 중 GC 멈춤 (핵심) ──");

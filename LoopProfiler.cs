@@ -106,6 +106,8 @@ namespace StutterFix
             lastName = name;
         }
 
+        internal static void Shutdown() { if (installed) Uninstall(); }
+
         private static void Uninstall()
         {
             PlayerLoop.SetPlayerLoop(original);

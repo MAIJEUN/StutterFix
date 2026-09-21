@@ -27,6 +27,32 @@ namespace StutterFix
 
         internal static string Summary = "(아직 없음)";
 
+        // 다른 모드의 갱신 함수를 감싸 두었으므로, 내려갈 때 원래 것으로 돌려놓아야 한다.
+        // 그러지 않으면 다시 불러올 때마다 한 겹씩 더 감싸지고, 옛 코드가 계속 불린다.
+        private class Original
+        {
+            public UnityModManager.ModEntry Entry;
+            public Action<UnityModManager.ModEntry, float> Update, Late, Fixed;
+        }
+
+        private static readonly List<Original> originals = new List<Original>();
+
+        internal static void Shutdown()
+        {
+            foreach (var o in originals)
+            {
+                try
+                {
+                    o.Entry.OnUpdate = o.Update;
+                    o.Entry.OnLateUpdate = o.Late;
+                    o.Entry.OnFixedUpdate = o.Fixed;
+                }
+                catch { }
+            }
+            originals.Clear();
+            installed = false;
+        }
+
         internal static void Install()
         {
             if (installed) return;
@@ -39,6 +65,7 @@ namespace StutterFix
                     if (entry.Info.Id == Main.Entry.Info.Id) continue;
 
                     string id = entry.Info.Id;
+                    originals.Add(new Original { Entry = entry, Update = entry.OnUpdate, Late = entry.OnLateUpdate, Fixed = entry.OnFixedUpdate });
                     var update = entry.OnUpdate;
                     if (update != null)
                         entry.OnUpdate = (e, dt) => Measure(id, () => update(e, dt));

@@ -50,6 +50,14 @@ namespace StutterFix
             SubmitMs = (System.Diagnostics.Stopwatch.GetTimestamp() - preRenderStamp) * 1000f / System.Diagnostics.Stopwatch.Frequency;
         }
 
+        // 카메라 이벤트는 정적이라, 해제하지 않으면 다시 불러온 뒤에도 옛 코드가 계속 불린다.
+        internal static void Shutdown()
+        {
+            Camera.onPreCull -= OnPreCull;
+            Camera.onPreRender -= OnPreRender;
+            Camera.onPostRender -= OnPostRender;
+        }
+
         internal static void Install(Harmony harmony)
         {
             Camera.onPreCull += OnPreCull;

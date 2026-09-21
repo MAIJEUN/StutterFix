@@ -22,6 +22,14 @@ namespace StutterFix
             "Sort", "Blit", "Image", "Shader", "SetPass", "Gfx", "Material", "Transparent",
         };
 
+        internal static void Shutdown()
+        {
+            foreach (var r in recorders) { try { r.enabled = false; } catch { } }
+            recorders.Clear();
+            names.Clear();
+            Available = false;
+        }
+
         internal static void Install()
         {
             try

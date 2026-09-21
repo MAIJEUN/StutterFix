@@ -130,6 +130,8 @@ namespace StutterFix
             Main.Entry.Logger.Log("[할당추적] 코루틴 " + count + "개 감쌈");
         }
 
+        internal static void Shutdown() { Stop(); }
+
         private static void Stop()
         {
             if (!Running) return;

@@ -26,7 +26,7 @@ if [ -n "$errors" ]; then
 fi
 
 if cp bin/Debug/StutterFix.dll "$mods/StutterFix.dll" 2>/dev/null; then
-  echo "빌드 성공, Mods 폴더에 설치함 (게임을 다시 켜야 적용)"
+  echo "빌드 성공, Mods 폴더에 설치함 (게임에서 Ctrl+F5 로 적용)"
 else
   echo "빌드 성공, 설치 실패: $mods 에 복사하지 못함" >&2
 fi

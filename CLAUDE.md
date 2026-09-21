@@ -17,7 +17,9 @@ Unity 6000.3.10f1, Mono, UMM 0.32.5, HarmonyLib, DOTween. 모드 대상은 netst
 
 ## 작업 순환
 
-1. 고친다 → `.claude/hooks/build-install.sh` 훅이 자동으로 빌드하고 Mods에 복사한다 (게임 재시작 필요).
+1. 고친다 → `.claude/hooks/build-install.sh` 훅이 자동으로 빌드하고 Mods에 복사한다.
+   게임에서 **Ctrl+F5**(또는 설정창의 "모드 다시 불러오기")를 누르면 게임을 켠 채로 새 DLL이 적용된다.
+   새로 게임에 무언가를 걸면(Harmony ID, 정적 이벤트, PlayerLoop, 다른 모드 감싸기) `Main.Unload`에 되돌리는 코드도 반드시 넣는다.
 2. 사용자가 게임을 켜고 맵을 돌린 뒤 "됐어"라고 한다.
 3. `/log` 스킬로 최근 판만 요약해 본다.
 4. `/ship` 은 사용자가 부를 때만: 빌드, 설치, 한국어 커밋(측정 근거 포함), 푸시.
