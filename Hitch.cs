@@ -72,7 +72,16 @@ namespace StutterFix
 
         internal static void Tick(float dt, bool playing)
         {
-            if (!Enabled) return;
+            // 곡 시작/끝에 해야 하는 실제 일(효과 나누기 초기화, 셰이더 준비)은 기록을 끄거나
+            // 플레이어용이어도 해야 한다. 측정과 로그는 개발자용에서 기록이 켜져 있을 때만.
+            if (!Edition.Dev || !Enabled)
+            {
+                if (playing && !wasPlaying) SongStarted();
+                if (!playing && wasPlaying) SongEnded();
+                wasPlaying = playing;
+                EffectScan.ResetFrame();
+                return;
+            }
 
             long stamp = Stopwatch.GetTimestamp();
             float realMs = lastStamp == 0 ? dt * 1000f : (stamp - lastStamp) * 1000f / Stopwatch.Frequency;
@@ -150,20 +159,28 @@ namespace StutterFix
             rateHeapMark = heap;
             rateTimer = 0f;
             reported = false;
-            EffectBudget.Reset();
-            EffectBudget.Suspend(3f);
+            SongStarted();
             ParticleTextWatch.Refresh();
-            ShaderWarm.MaybeRun();
             SlowScan.InstallOnce();
             Main.Entry.Logger.Log("[끊김] 기록 시작");
         }
 
+        private static void SongStarted()
+        {
+            EffectBudget.Reset();
+            EffectBudget.Suspend(3f);
+            ShaderWarm.MaybeRun();
+        }
+
+        private static void SongEnded() { EffectBudget.Reset(); }
+
         internal static void Report()
         {
+            if (!Edition.Dev || !Enabled) { SongEnded(); return; }
             if (songTime < 1f || reported) return;   // 곡이 끝나면 여러 경로에서 불릴 수 있다
             reported = true;
 
-            EffectBudget.Reset();
+            SongEnded();
             ModWatch.Report();
             Main.Entry.Logger.Log("[끊김] 같은 글자 건너뛰기 누적 " + TextFix.SkippedSameText + "회");
             Main.Entry.Logger.Log("[끊김] 색 바꾸기 나눔 " + RecolorSplit.SplitEffects + "번, 미룬 타일 " + RecolorSplit.DeferredTiles + "칸, 순서 맞추려 먼저 칠함 " + RecolorSplit.FlushedForOrder + "번" + (RecolorSplit.Patched ? "" : " (적용 안 됨)"));

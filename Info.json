@@ -1,9 +1,10 @@
 {
   "Id": "StutterFix",
-  "DisplayName": "Stutter Fix (Tween Capacity)",
-  "Author": "local",
-  "Version": "1.0.0",
+  "DisplayName": "Stutter Fix",
+  "Author": "pding4569",
+  "Version": "1.1.0",
   "ManagerVersion": "0.22.14.0",
   "AssemblyName": "StutterFix.dll",
-  "EntryMethod": "StutterFix.Main.Load"
+  "EntryMethod": "StutterFix.Main.Load",
+  "HomePage": "https://github.com/pding4569/StutterFix"
 }

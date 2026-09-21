@@ -10,10 +10,21 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <DebugType>none</DebugType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS0162</NoWarn>  <!-- Edition.Dev 상수로 막힌 코드 경고 -->
+  </PropertyGroup>
+
+  <!-- 기본은 개발자용(DEV). 플레이어용은 dotnet build -p:Edition=Player 로 bin/Player 에 따로 만든다. -->
+  <PropertyGroup Condition="'$(Edition)' != 'Player'">
+    <DefineConstants>$(DefineConstants);DEV</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Edition)' == 'Player'">
+    <OutputPath>bin/Player/</OutputPath>
+    <IntermediateOutputPath>obj/Player/</IntermediateOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="StutterFix.cs" />
+    <Compile Include="Edition.cs" />
     <Compile Include="Profiler.cs" />
     <Compile Include="SceneScan.cs" />
     <Compile Include="AbTest.cs" />

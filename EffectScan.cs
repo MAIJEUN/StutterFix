@@ -17,7 +17,7 @@ namespace StutterFix
     // 이름과 걸린 시간, 몇 번째 사용인지까지 남긴다.
     public static class EffectScan
     {
-        internal static bool Enabled = true;
+        internal static bool Enabled = Edition.Dev;   // 통계/로그. 효과 나누기는 이 값과 상관없이 돈다
         internal static float LogOverMs = 3f;
 
         internal static int StartedThisFrame;
@@ -56,7 +56,7 @@ namespace StutterFix
                 // StartEffect 28개가 합계 1ms인데 scrVfxPlus.Update 는 404ms였다.
                 // 시간이 효과 시작이 아니라 그 앞의 걸러내기에 있을 수 있으므로 그쪽도 같이 센다.
                 int checks = 0;
-                foreach (var m in baseType.GetMethods(AccessTools.all))
+                if (Edition.Dev) foreach (var m in baseType.GetMethods(AccessTools.all))
                 {
                     if (m.Name != "IsAllowedByVisualSettings" || m.IsAbstract) continue;
                     try

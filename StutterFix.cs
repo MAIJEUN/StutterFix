@@ -38,7 +38,8 @@ namespace StutterFix
             modEntry.OnToggle = OnToggle;
             modEntry.OnUnload = Unload;   // 이것이 있어야 UMM이 게임을 켠 채로 새 DLL을 다시 불러온다
 
-            LogLoadedCopies();
+            ApplyConfig();
+            if (Edition.Dev) LogLoadedCopies();
             InstallAll();
             BootConfig.Apply(Config.LegacyGfxJobs);
             modEntry.Logger.Log(BootConfig.Describe());
@@ -97,25 +98,31 @@ namespace StutterFix
             try
             {
                 var harmony = new Harmony(Entry.Info.Id);
+                // 실제 수정 (두 버전 공통)
                 PatchUnloadCallers(harmony);
                 TextFix.Install(harmony);
-                EffectScan.Install(harmony);
+                EffectScan.Install(harmony);   // 효과 나누기가 이 패치를 통해 돈다
                 RecolorSplit.Install(harmony);
-                StartProbe.Install(harmony);
                 ImagePrefetch.Install(harmony);
                 TweenFix.Install(harmony);
-                RenderWatch.Install(harmony);
-                RenderCallbackScan.Install(harmony);
-                FrameRateScreenWatch.Install(harmony);
-                ParticleTextWatch.Install(harmony);
                 GcControl.Install();
-                Entry.Logger.Log("켜짐: 패치 설치 완료");
+
+                // 측정 (개발자용만)
+                if (Edition.Dev)
+                {
+                    StartProbe.Install(harmony);
+                    RenderWatch.Install(harmony);
+                    RenderCallbackScan.Install(harmony);
+                    FrameRateScreenWatch.Install(harmony);
+                    ParticleTextWatch.Install(harmony);
+                }
+                Entry.Logger.Log("켜짐: 패치 설치 완료 (" + Edition.Name + ")");
             }
             catch (Exception ex)
             {
                 Entry.Logger.Error("harmony patch failed: " + ex);
             }
-            VerifyPatches();
+            if (Edition.Dev) VerifyPatches();
         }
 
         // ── 다시 불러오기가 엉뚱한 함수를 건 경우 ─────────────────────────
@@ -311,7 +318,7 @@ namespace StutterFix
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
             // Ctrl+F5: 게임을 켠 채로 새 DLL을 불러온다. 옛 코드는 여기서 바로 빠져나가야 한다.
-            if ((Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) && Input.GetKeyDown(KeyCode.F5))
+            if (Edition.Dev && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) && Input.GetKeyDown(KeyCode.F5))
             {
                 RequestReload();
                 return;
@@ -322,17 +329,21 @@ namespace StutterFix
             GcControl.Tick(dt);
             EffectBudget.Tick();
             RecolorSplit.Tick();
-            RenderWatch.Tick(dt);
-            ModWatch.Tick(dt);
-            AllocScan.Tick(dt);
-            AbTest.Tick(dt);
-            LoopProfiler.Tick(dt);
-            Profiler.Tick(dt);
 
-            if (Input.GetKeyDown(KeyCode.F7)) LoopProfiler.Toggle();
-            if (Input.GetKeyDown(KeyCode.F8)) AbTest.Toggle();
-            if (Input.GetKeyDown(KeyCode.F9)) AllocScan.Toggle();
-            if (Input.GetKeyDown(KeyCode.F6)) TextureCensus.Run();
+            if (Edition.Dev)
+            {
+                RenderWatch.Tick(dt);
+                ModWatch.Tick(dt);
+                AllocScan.Tick(dt);
+                AbTest.Tick(dt);
+                LoopProfiler.Tick(dt);
+                Profiler.Tick(dt);
+
+                if (Input.GetKeyDown(KeyCode.F7)) LoopProfiler.Toggle();
+                if (Input.GetKeyDown(KeyCode.F8)) AbTest.Toggle();
+                if (Input.GetKeyDown(KeyCode.F9)) AllocScan.Toggle();
+                if (Input.GetKeyDown(KeyCode.F6)) TextureCensus.Run();
+            }
 
             if (capacityApplied) return;
 
@@ -345,9 +356,12 @@ namespace StutterFix
         internal static void ApplyCapacity()
         {
             capacityApplied = true;
-            ModWatch.Install();   // 다른 모드들이 다 올라온 뒤에 감싼다
-            SamplerWatch.Install();
-            PhaseWatch.Install();  // 끊긴 프레임의 범인을 단계 단위로 지목하려면 항상 켜져 있어야 한다
+            if (Edition.Dev)
+            {
+                ModWatch.Install();   // 다른 모드들이 다 올라온 뒤에 감싼다
+                SamplerWatch.Install();
+                PhaseWatch.Install();  // 끊긴 프레임의 범인을 단계 단위로 지목하려면 항상 켜져 있어야 한다
+            }
             try
             {
                 DOTween.Init();
@@ -360,9 +374,72 @@ namespace StutterFix
             }
         }
 
+        // 설정 파일에 저장된 켜기/끄기를 각 기능에 반영한다.
+        internal static void ApplyConfig()
+        {
+            GcControl.Enabled = Config.GcPause;
+            EffectBudget.Enabled = Config.EffectSplit;
+            RecolorSplit.Enabled = Config.RecolorSplit;
+            TweenFix.Enabled = Config.TweenGuard;
+            TextFix.SkipSameText = Config.SkipSameText;
+            ImagePrefetch.Enabled = Config.ImagePrefetch;
+            ShaderWarm.Enabled = Config.ShaderWarm;
+        }
+
         private static void OnGUI(UnityModManager.ModEntry modEntry)
         {
-            GUILayout.Label("고사양 맵의 프레임 문제를 줄입니다. 효과가 측정된 기능만 들어 있습니다.");
+            if (Edition.Dev) DevGUI(); else PlayerGUI();
+        }
+
+        private static bool Option(bool value, string title, string detail)
+        {
+            bool v = GUILayout.Toggle(value, "  " + title);
+            if (!string.IsNullOrEmpty(detail)) GUILayout.Label("      " + detail);
+            return v;
+        }
+
+        // 플레이어용: 기능마다 켜기/끄기와 한 줄 설명만. 바꾸면 바로 저장된다.
+        private static void PlayerGUI()
+        {
+            GUILayout.Label("고사양 커스텀 맵의 끊김을 줄입니다. 화면에 보이는 결과는 바꾸지 않습니다. (" + Edition.Name + ")");
+            if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
+            GUILayout.Space(6);
+
+            var c = Config;
+            int beforeHash = (c.GcPause ? 1 : 0) | (c.EffectSplit ? 2 : 0) | (c.RecolorSplit ? 4 : 0) | (c.TweenGuard ? 8 : 0)
+                           | (c.SkipSameText ? 16 : 0) | (c.ImagePrefetch ? 32 : 0) | (c.ShaderWarm ? 64 : 0) | (c.SkipAssetUnload ? 128 : 0);
+
+            GUILayout.Label("── 플레이 중 ──");
+            c.GcPause = Option(c.GcPause, "곡을 플레이하는 동안 GC(메모리 정리)를 멈춘다",
+                "곡이 끝나고 " + GcControl.EndDelaySeconds.ToString("F0") + "초 뒤 한 번에 정리합니다. " + GcControl.Status);
+            c.EffectSplit = Option(c.EffectSplit, "한 프레임에 몰린 효과를 몇 프레임에 나눠 시작한다", null);
+            c.RecolorSplit = Option(c.RecolorSplit, "타일 수천 개의 색 바꾸기를 나눠 칠한다", "먼 타일이 몇 프레임 늦게 칠해질 뿐 결과는 같습니다.");
+            c.TweenGuard = Option(c.TweenGuard, "효과가 도는 동안 애니메이션 목록 재정렬을 막는다", null);
+            c.SkipSameText = Option(c.SkipSameText, "글자 장식에 같은 글자를 다시 넣으면 건너뛴다", "매 프레임 글자를 다시 넣는 모드(PACL2 등)와 같이 쓸 때 효과가 큽니다.");
+            c.ShaderWarm = Option(c.ShaderWarm, "곡 시작 때 셰이더를 미리 준비한다", null);
+
+            GUILayout.Space(6);
+            GUILayout.Label("── 맵 불러오기 ──");
+            c.ImagePrefetch = Option(c.ImagePrefetch, "장식 이미지를 여러 코어에서 미리 푼다",
+                "이미지가 많은 맵의 로딩이 빨라집니다. " + ImagePrefetch.Last);
+            c.SkipAssetUnload = Option(c.SkipAssetUnload, "맵을 불러올 때 사용하지 않는 에셋 정리를 건너뛴다", null);
+
+            GUILayout.Space(6);
+            GUILayout.Label("── 그래픽 (게임을 다시 켜야 적용) ──");
+            bool legacy = Option(c.LegacyGfxJobs, "그리기 명령을 여러 스레드로 만든다 (legacy 그래픽 작업)",
+                BootConfig.Status.Length > 0 ? BootConfig.Status : BootConfig.Describe());
+            bool legacyChanged = legacy != c.LegacyGfxJobs;
+            if (legacyChanged) { c.LegacyGfxJobs = legacy; BootConfig.Apply(legacy); }
+
+            int afterHash = (c.GcPause ? 1 : 0) | (c.EffectSplit ? 2 : 0) | (c.RecolorSplit ? 4 : 0) | (c.TweenGuard ? 8 : 0)
+                          | (c.SkipSameText ? 16 : 0) | (c.ImagePrefetch ? 32 : 0) | (c.ShaderWarm ? 64 : 0) | (c.SkipAssetUnload ? 128 : 0);
+            if (afterHash != beforeHash) ApplyConfig();
+            if (afterHash != beforeHash || legacyChanged) c.Save(Entry);
+        }
+
+        private static void DevGUI()
+        {
+            GUILayout.Label("고사양 맵의 프레임 문제를 줄입니다. 효과가 측정된 기능만 들어 있습니다. (" + Edition.Name + ")");
             if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
             if (ReloadProblem.Length > 0) GUILayout.Label("  ⚠ " + ReloadProblem);
             GUILayout.BeginHorizontal();
@@ -438,6 +515,8 @@ namespace StutterFix
             GUILayout.Label("── 맵 로딩 ──");
             Config.SkipAssetUnload = GUILayout.Toggle(Config.SkipAssetUnload,
                 $"  로딩 시 에셋 정리 건너뛰기 (지금까지 {skippedUnloads}회)");
+            ImagePrefetch.Enabled = GUILayout.Toggle(ImagePrefetch.Enabled, "  장식 이미지를 여러 코어에서 미리 푼다");
+            GUILayout.Label("    " + ImagePrefetch.Last);
 
             GUILayout.Space(10);
             GUILayout.Label("── DOTween 용량 ──");
@@ -481,6 +560,15 @@ namespace StutterFix
         public int SequenceCapacity = 25000;
         public bool SkipAssetUnload = true;
         public bool LegacyGfxJobs = true;   // boot.config 로 그래픽 작업 분산(legacy)을 켠다
+
+        // 기능별 켜기/끄기 (플레이어용 설정 화면에서 바꾸고 저장된다)
+        public bool GcPause = true;
+        public bool EffectSplit = true;
+        public bool RecolorSplit = true;
+        public bool TweenGuard = true;
+        public bool SkipSameText = true;
+        public bool ImagePrefetch = true;
+        public bool ShaderWarm = true;
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }
     }
