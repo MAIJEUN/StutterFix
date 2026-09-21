@@ -181,9 +181,35 @@ namespace StutterFix
                 uint n = UnityEngine.FrameTimingManager.GetLatestTimings(1, timings);
                 if (n == 0) return "GPU 시간 못 읽음";
                 var t = timings[0];
+                LastGpuMs = t.gpuFrameTime;
                 return string.Format("CPU {0:F1}ms, GPU {1:F1}ms", t.cpuFrameTime, t.gpuFrameTime);
             }
             catch { return "GPU 시간 못 읽음"; }
+        }
+
+        internal static double LastGpuMs;
+        private static float lastHeavyLog = -999f;
+
+        // 36초 구간: 필터 11개, 카메라 크기 17~19로 똑같은데 GPU가 6ms -> 33ms로 1초 동안 뛰었다.
+        // 어떤 필터가 켜져 있었고 직전에 무엇이 바뀌었는지, 카메라가 몇 개 도는지 GPU가 무거운 끊김에만 남긴다.
+        // 필터 목록은 길어서 1초에 한 번만 붙인다.
+        private static string HeavyGpuDetail()
+        {
+            if (LastGpuMs < 15 || Time.realtimeSinceStartup - lastHeavyLog < 1f) return "";
+            lastHeavyLog = Time.realtimeSinceStartup;
+            var sb = new System.Text.StringBuilder();
+            sb.Append("\n[끊김]    GPU 무거움: 카메라 ").Append(Camera.allCamerasCount).Append("개, 화면 ")
+              .Append(Screen.width).Append('x').Append(Screen.height)
+              .Append(", 마지막 필터 전환 ").Append(lastChange).Append(' ').Append(sinceChange.ToString("F1")).Append("초 전 | 켜진 필터: ");
+            bool first = true;
+            foreach (var b in camFx)
+            {
+                if (b == null || !b.enabled || b is Camera) continue;
+                if (!first) sb.Append(", ");
+                sb.Append(b.GetType().Name.Replace("CameraFilterPack_", ""));
+                first = false;
+            }
+            return sb.ToString();
         }
 
         internal static string Info()
@@ -202,7 +228,7 @@ namespace StutterFix
                 }
 
                 return string.Format("카메라 크기 {0:F1}, 효과 {1}개, 블렌드 물체 {2}개, 버퍼 {3}개 | 걸러내기 {4:F1}ms, 그리기 준비 {5:F1}ms",
-                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, CullMs, SubmitMs) + " | " + GpuInfo();
+                    cam.orthographicSize, fx, BlendModeCount, TempRtThisFrame, CullMs, SubmitMs) + " | " + GpuInfo() + HeavyGpuDetail();
             }
             catch { return "?"; }
         }

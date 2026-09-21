@@ -47,10 +47,11 @@ namespace StutterFix
         // 곡이 시작되거나 다시 시작된 직후에는 나누지 않고 그대로 통과시킨다.
         private static float graceUntil;
         internal static void Suspend(float seconds) { graceUntil = Time.realtimeSinceStartup + seconds; }
+        internal static bool InGrace { get { return Time.realtimeSinceStartup < graceUntil; } }
 
         internal static bool ShouldRun(object instance, MethodBase method, object[] args)
         {
-            if (!Enabled || replaying) return true;
+            if (!Enabled || replaying || RecolorSplit.Replaying) return true;   // 색 바꾸기 조각은 이미 나눠진 것이다
             if (Time.realtimeSinceStartup < graceUntil) return true;
 
             if (Time.frameCount != frame)
@@ -143,6 +144,7 @@ namespace StutterFix
         internal static void Reset()
         {
             queue.Clear();
+            RecolorSplit.Reset();
             usedMs = 0;
             depth = 0;
             replaying = false;

@@ -153,6 +153,7 @@ namespace StutterFix
             EffectBudget.Reset();
             EffectBudget.Suspend(3f);
             ParticleTextWatch.Refresh();
+            ShaderWarm.MaybeRun();
             SlowScan.InstallOnce();
             Main.Entry.Logger.Log("[끊김] 기록 시작");
         }
@@ -165,6 +166,7 @@ namespace StutterFix
             EffectBudget.Reset();
             ModWatch.Report();
             Main.Entry.Logger.Log("[끊김] 같은 글자 건너뛰기 누적 " + TextFix.SkippedSameText + "회");
+            Main.Entry.Logger.Log("[끊김] 색 바꾸기 나눔 " + RecolorSplit.SplitEffects + "번, 미룬 타일 " + RecolorSplit.DeferredTiles + "칸, 순서 맞추려 먼저 칠함 " + RecolorSplit.FlushedForOrder + "번" + (RecolorSplit.Patched ? "" : " (적용 안 됨)"));
 
             if (recs.Count == 0)
             {

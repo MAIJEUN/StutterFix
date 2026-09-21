@@ -26,6 +26,8 @@
     <Compile Include="SlowScan.cs" />
     <Compile Include="EffectScan.cs" />
     <Compile Include="EffectBudget.cs" />
+    <Compile Include="RecolorSplit.cs" />
+    <Compile Include="ShaderWarm.cs" />
     <Compile Include="TweenFix.cs" />
     <Compile Include="RenderWatch.cs" />
     <Compile Include="SamplerWatch.cs" />

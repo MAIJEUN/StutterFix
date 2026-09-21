@@ -38,6 +38,7 @@ namespace StutterFix
             modEntry.OnToggle = OnToggle;
             modEntry.OnUnload = Unload;   // 이것이 있어야 UMM이 게임을 켠 채로 새 DLL을 다시 불러온다
 
+            LogLoadedCopies();
             InstallAll();
             BootConfig.Apply(Config.LegacyGfxJobs);
             modEntry.Logger.Log(BootConfig.Describe());
@@ -52,7 +53,9 @@ namespace StutterFix
         {
             if (value) InstallAll(); else UninstallAll();
             // 모드를 끄면 게임 파일도 원래대로 돌려놓는다(다음 실행부터 원래 방식).
-            BootConfig.Apply(value && Config.LegacyGfxJobs);
+            // 다시 불러오기도 내부에서 끄기 -> 켜기를 거치므로 그때는 건드리지 않는다
+            // (중간에 실패하면 legacy 줄이 빠진 채로 남았다).
+            if (!reloading) BootConfig.Apply(value && Config.LegacyGfxJobs);
             return true;
         }
 
@@ -97,6 +100,7 @@ namespace StutterFix
                 PatchUnloadCallers(harmony);
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);
+                RecolorSplit.Install(harmony);
                 TweenFix.Install(harmony);
                 RenderWatch.Install(harmony);
                 RenderCallbackScan.Install(harmony);
@@ -109,6 +113,68 @@ namespace StutterFix
             {
                 Entry.Logger.Error("harmony patch failed: " + ex);
             }
+            VerifyPatches();
+        }
+
+        // ── 다시 불러오기가 엉뚱한 함수를 건 경우 ─────────────────────────
+        // Harmony 는 걸어 둔 패치 함수를 "모듈 ID + 번호"로 기억했다가, 같은 원본을 다시 패치할 때 그 둘로 찾는다.
+        // Ctrl+F5 로 코드가 바뀐 DLL을 불러오자, 새 TextFix.SetTextPrefix 자리가 RenderWatch.OnPreCull(Camera c)로
+        // 풀렸다. 이전에 불러온 어셈블리의 같은 번호를 잡은 것이다. 그 결과 글자/애니메이션/색 패치가 전부 실패하고,
+        // 엉뚱하게 이어진 패치가 매 프레임 끊김 기록을 새로 시작시켜 파티클 검색이 10만 번 돌았다.
+        // 걸린 패치가 전부 지금 어셈블리의 함수인지 확인하고, 하나라도 아니면 전부 풀고 재시작을 요청한다.
+        internal static string ReloadProblem = "";
+
+        // 다시 불러오기가 왜 이전 DLL을 잡는지 보려고, 메모리에 올라온 이 모드의 사본과 모듈 ID를 남긴다.
+        private static void LogLoadedCopies()
+        {
+            try
+            {
+                foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    string n = a.GetName().Name;
+                    if (!n.StartsWith("StutterFix", StringComparison.Ordinal)) continue;
+                    Entry.Logger.Log("[사본] " + n + " 모듈 " + a.ManifestModule.Name + " ID " + a.ManifestModule.ModuleVersionId +
+                        (a == typeof(Main).Assembly ? " (지금 것)" : ""));
+                }
+            }
+            catch (Exception ex) { Entry.Logger.Error("[사본] " + ex.Message); }
+        }
+
+        private static void VerifyPatches()
+        {
+            try
+            {
+                var mine = typeof(Main).Assembly;
+                var ids = new HashSet<string>(HarmonyIds);
+                int ok = 0;
+                var bad = new List<string>();
+                foreach (var original in Harmony.GetAllPatchedMethods())
+                {
+                    var info = Harmony.GetPatchInfo(original);
+                    if (info == null) continue;
+                    var all = new List<Patch>();
+                    all.AddRange(info.Prefixes); all.AddRange(info.Postfixes);
+                    all.AddRange(info.Transpilers); all.AddRange(info.Finalizers);
+                    foreach (var p in all)
+                    {
+                        if (!ids.Contains(p.owner)) continue;
+                        MethodInfo pm = null;
+                        try { pm = p.PatchMethod; } catch { }
+                        if (pm != null && pm.DeclaringType != null && pm.DeclaringType.Assembly == mine) ok++;
+                        else if (bad.Count < 5) bad.Add(original.DeclaringType?.Name + "." + original.Name + " -> " +
+                            (pm == null ? "?" : pm.DeclaringType?.Assembly.GetName().Name + ":" + pm.DeclaringType?.Name + "." + pm.Name));
+                        else bad.Add("");
+                    }
+                }
+
+                if (bad.Count == 0) { ReloadProblem = ""; return; }
+
+                ReloadProblem = "다시 불러오기가 깨졌습니다 (패치 " + bad.Count + "개가 이전 DLL을 가리킴). 모드를 전부 껐습니다. 게임을 껐다 켜 주세요.";
+                Entry.Logger.Error(ReloadProblem + " 정상 " + ok + "개");
+                foreach (var b in bad) if (b.Length > 0) Entry.Logger.Error("  " + b);
+                UninstallAll();
+            }
+            catch (Exception ex) { Entry.Logger.Error("패치 확인 실패: " + ex.Message); }
         }
 
         // Resources.UnloadUnusedAssets 를 부르는 곳은 게임 전체에서 딱 세 군데다.
@@ -228,13 +294,17 @@ namespace StutterFix
 
                 var reload = AccessTools.Method(type, "Reload");
                 if (reload == null) { Entry.Logger.Error("UMM에 Reload가 없음"); return; }
+                reloading = true;
                 reload.Invoke(Entry, null);
             }
             catch (Exception ex)
             {
                 Entry.Logger.Error("다시 불러오기 실패: " + ex);
             }
+            finally { reloading = false; }
         }
+
+        private static bool reloading;
 
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
@@ -249,6 +319,7 @@ namespace StutterFix
 
             GcControl.Tick(dt);
             EffectBudget.Tick();
+            RecolorSplit.Tick();
             RenderWatch.Tick(dt);
             ModWatch.Tick(dt);
             AllocScan.Tick(dt);
@@ -291,6 +362,7 @@ namespace StutterFix
         {
             GUILayout.Label("고사양 맵의 프레임 문제를 줄입니다. 효과가 측정된 기능만 들어 있습니다.");
             if (LaunchWarning.Length > 0) GUILayout.Label(LaunchWarning);
+            if (ReloadProblem.Length > 0) GUILayout.Label("  ⚠ " + ReloadProblem);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("모드 다시 불러오기 (Ctrl+F5)", GUILayout.Width(220))) RequestReload();
             GUILayout.Label("  게임을 켠 채로 새로 빌드한 DLL을 적용합니다. 설정 슬라이더는 기본값으로 돌아갑니다.");
@@ -347,6 +419,10 @@ namespace StutterFix
             EffectBudget.BudgetMs = (int)GUILayout.HorizontalSlider(EffectBudget.BudgetMs, 3f, 60f, GUILayout.Width(200));
             GUILayout.EndHorizontal();
             GUILayout.Label("    지금까지 " + EffectBudget.DeferredTotal + "개 미룸, 대기 " + EffectBudget.QueueLength + "개");
+            RecolorSplit.Enabled = GUILayout.Toggle(RecolorSplit.Enabled,
+                "  타일 색 바꾸기를 " + RecolorSplit.ChunkTiles + "칸씩 나눠 칠한다" + (RecolorSplit.Patched ? "" : " (적용 안 됨)"));
+            GUILayout.Label("    지금까지 " + RecolorSplit.SplitEffects + "번 나눔, 타일 " + RecolorSplit.DeferredTiles + "칸 미룸, 순서 맞추려 먼저 칠함 " + RecolorSplit.FlushedForOrder + "번, 대기 " + RecolorSplit.Pending + "조각");
+            ShaderWarm.Enabled = GUILayout.Toggle(ShaderWarm.Enabled, "  곡 시작 때 셰이더를 미리 준비한다 (" + ShaderWarm.Last + ")");
 
             GUILayout.Space(10);
             GUILayout.Label("── 글자 장식 ──");

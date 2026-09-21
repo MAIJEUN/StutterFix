@@ -124,21 +124,27 @@ namespace StutterFix
             EffectBudget.Exit(ms);
             if (!Enabled) return;
 
-            StartedThisFrame++;
-            MsThisFrame += ms;
-
             string name = __instance != null ? __instance.GetType().Name : "?";
 
-            // 박자 끊김 프레임마다 효과가 4개씩 시작됐다. 시작 자체는 0ms라도, 그 효과가 화면에
-            // 만드는 결과가 비쌀 수 있다. 끊긴 프레임에 어떤 종류가 시작됐는지 이름을 모아 둔다.
-            if (namesThisFrame.Length < 300) namesThisFrame.Append(namesThisFrame.Length > 0 ? ", " : "").Append(name);
+            // 기본 클래스 -> 상속 클래스로 겹쳐 불리므로 바깥 호출만 센다 (예전엔 개수와 시간이 두 배로 찍혔다).
+            // 이름은 종류별 개수와 시간으로 묶는다. 순서대로 300자를 이어 붙이던 때는 103초 끊김의
+            // 주범(색 바꾸기 41ms 한 개)이 이동 효과 이름들에 밀려 잘려 나갔다.
+            if (EffectBudget.OuterCall)
+            {
+                StartedThisFrame++;
+                MsThisFrame += ms;
+                NameStat st;
+                if (!namesThisFrame.TryGetValue(name, out st)) { st = new NameStat(); namesThisFrame[name] = st; }
+                st.Count++;
+                st.Ms += ms;
+            }
             int n;
             useCount.TryGetValue(name, out n);
             useCount[name] = n + 1;
 
             // 처음 쓰는 효과인지 알아야 한다. 처음만 느리다면 미리 한 번 돌려두는 것으로 해결된다.
             // 2400번째 사용에도 그대로 느린 것이 확인됐으므로, 이제는 무엇을 얼마나 건드리는지를 본다.
-            if (ms >= LogOverMs)
+            if (ms >= LogOverMs && EffectBudget.OuterCall)
                 Main.Entry.Logger.Log(string.Format("[효과] {0} {1:F0}ms ({2}번째 사용) {3}", name, ms, n + 1, Detail(__instance)));
         }
 
@@ -167,7 +173,24 @@ namespace StutterFix
             catch { return ""; }
         }
 
-        private static readonly System.Text.StringBuilder namesThisFrame = new System.Text.StringBuilder();
+        private class NameStat { public int Count; public double Ms; }
+        // 매 프레임 비우지 않고 0으로 되돌려 재사용한다 (프레임마다 새로 만들면 그 자체가 할당이다)
+        private static readonly System.Collections.Generic.Dictionary<string, NameStat> namesThisFrame
+            = new System.Collections.Generic.Dictionary<string, NameStat>();
+
+        private static string NamesByCost()
+        {
+            var list = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, NameStat>>();
+            foreach (var kv in namesThisFrame) if (kv.Value.Count > 0) list.Add(kv);
+            list.Sort((a, b) => b.Value.Ms.CompareTo(a.Value.Ms));
+            var sb = new System.Text.StringBuilder();
+            foreach (var kv in list)
+            {
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(kv.Key.Replace("Plus", "")).Append(" ×").Append(kv.Value.Count).Append(' ').Append(kv.Value.Ms.ToString("F0")).Append("ms");
+            }
+            return sb.ToString();
+        }
 
         internal static int ChecksThisFrame;
         internal static double CheckMsThisFrame;
@@ -187,7 +210,7 @@ namespace StutterFix
         internal static string FrameSummary()
         {
             return string.Format("효과 {0}개 시작 {1:F0}ms [{4}], 걸러내기 {2}회 {3:F0}ms",
-                StartedThisFrame, MsThisFrame, ChecksThisFrame, CheckMsThisFrame, namesThisFrame);
+                StartedThisFrame, MsThisFrame, ChecksThisFrame, CheckMsThisFrame, NamesByCost());
         }
 
         internal static void ResetFrame()
@@ -196,7 +219,7 @@ namespace StutterFix
             MsThisFrame = 0;
             ChecksThisFrame = 0;
             CheckMsThisFrame = 0;
-            namesThisFrame.Length = 0;
+            foreach (var st in namesThisFrame.Values) { st.Count = 0; st.Ms = 0; }
         }
     }
 }
