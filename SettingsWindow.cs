@@ -90,18 +90,33 @@ namespace StutterFix
         }
 
         // 창 위를 누를 때 뒤의 게임 UI(에디터 버튼 등)가 같이 눌리지 않게 막는다.
-        private bool uiBlocked;
+        // 끈 이벤트 시스템을 직접 들고 있어야 한다. 끄는 순간 EventSystem.current 가 비어서,
+        // 예전에는 다시 켤 대상을 못 찾아 창을 닫은 뒤 게임 클릭이 영영 먹통이 됐다.
+        private UnityEngine.EventSystems.EventSystem blocked;
         private void SetUiBlocked(bool block)
         {
-            if (block == uiBlocked) return;
-            uiBlocked = block;
             try
             {
-                var es = UnityEngine.EventSystems.EventSystem.current;
-                if (es != null) es.enabled = !block;
+                if (block)
+                {
+                    if (blocked != null) return;
+                    var es = UnityEngine.EventSystems.EventSystem.current;
+                    if (es == null || !es.enabled) return;
+                    es.enabled = false;
+                    blocked = es;
+                }
+                else if (blocked != null)
+                {
+                    var es = blocked;
+                    blocked = null;
+                    if (es != null) es.enabled = true;   // 씬이 바뀌어 사라졌으면 할 일 없음
+                }
             }
-            catch { }
+            catch { blocked = null; }
         }
+
+        private void OnDisable() { SetUiBlocked(false); }
+        private void OnDestroy() { SetUiBlocked(false); }
 
         private void OnGUI()
         {
