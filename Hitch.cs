@@ -122,6 +122,7 @@ namespace StutterFix
                         r.Floor, songTime, r.Ms, r.HeapDelta, r.NativeDelta, r.Collects, AllocMBPerSec, ModWatch.Top, gfx - lastGfx));
                     Main.Entry.Logger.Log("[끊김]    직전 프레임 단계: " + PhaseWatch.TopOfLastFrame(3));
                     Main.Entry.Logger.Log("[끊김]    그리기: " + RenderWatch.Info());
+                    Main.Entry.Logger.Log("[끊김]    내부 구간: " + SamplerWatch.Top(6));
                     Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(5) + " | " + EffectScan.FrameSummary() + " | 살아있는 애니메이션 " + ActiveTweens());
                 }
             }

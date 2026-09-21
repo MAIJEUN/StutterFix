@@ -28,6 +28,7 @@
     <Compile Include="EffectBudget.cs" />
     <Compile Include="TweenFix.cs" />
     <Compile Include="RenderWatch.cs" />
+    <Compile Include="SamplerWatch.cs" />
   </ItemGroup>
 
   <PropertyGroup>
