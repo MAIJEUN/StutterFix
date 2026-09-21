@@ -167,11 +167,21 @@ namespace StutterFix
         public static void OnSongRestart(MethodBase __originalMethod)
         {
             Hitch.Report();
-            Resume(__originalMethod.Name);   // 재시작은 어차피 화면이 바뀌는 순간이라 바로 치운다
+            // 곡 시작(에디터 재생)은 한 프레임에 효과 컴포넌트 수만 개를 지우고 새로 붙인다(3.6초).
+            // 예전에는 여기서 GC를 켜 둔 채로 넘겨서, 그 도중에 GC가 2번 돌았다.
+            // 힙이 크면 지금 치우고(어차피 멈추는 순간), 그다음 곡 시작 내내 GC를 꺼 둔다.
+            // 재생이 시작되지 않으면 Tick 이 "곡 아님"을 보고 몇 초 뒤 다시 켠다.
+            if (!Paused || GC.GetTotalMemory(false) / 1048576 > RestartCollectMB)
+                Resume(__originalMethod.Name);
+            Pause();
+            pausedFor = 0f; PeakHeapMB = 0; quietTimer = 0f; quietHeapMark = GC.GetTotalMemory(false) / 1048576;
             EffectBudget.Reset();
             EffectBudget.Suspend(3f);
             endedByHook = false;
         }
+
+        // 다시 시작할 때 힙이 이보다 작으면 치우지 않고 GC를 계속 꺼 둔다.
+        internal static int RestartCollectMB = 2000;
 
         // 종료 함수가 불린 뒤에는 다시 멈추지 않는다.
         // 완주해도 에디터는 playMode를 켜 둔 채라서, 이것이 없으면 다음 프레임에 도로 멈춘다.

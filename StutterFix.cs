@@ -101,6 +101,8 @@ namespace StutterFix
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);
                 RecolorSplit.Install(harmony);
+                StartProbe.Install(harmony);
+                ImagePrefetch.Install(harmony);
                 TweenFix.Install(harmony);
                 RenderWatch.Install(harmony);
                 RenderCallbackScan.Install(harmony);

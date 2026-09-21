@@ -9,6 +9,7 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <DebugType>none</DebugType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,6 +29,9 @@
     <Compile Include="EffectBudget.cs" />
     <Compile Include="RecolorSplit.cs" />
     <Compile Include="ShaderWarm.cs" />
+    <Compile Include="StartProbe.cs" />
+    <Compile Include="PngDecoder.cs" />
+    <Compile Include="ImagePrefetch.cs" />
     <Compile Include="TweenFix.cs" />
     <Compile Include="RenderWatch.cs" />
     <Compile Include="SamplerWatch.cs" />
@@ -62,6 +66,10 @@
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
       <HintPath>$(GameManaged)\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameManaged)/UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
