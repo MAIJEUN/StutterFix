@@ -74,11 +74,49 @@ namespace StutterFix
                 big.Sort((a, b) => b.Key.CompareTo(a.Key));
                 for (int i = 0; i < big.Count && i < 15; i++)
                     log.Log(string.Format("[VRAM]   큰 것 {0,5:N0}MB  {1}", big[i].Key / 1048576.0, big[i].Value));
+
+                CountOthers(log);
             }
             catch (Exception ex)
             {
                 Main.Entry.Logger.Error("[VRAM] 세기 실패: " + ex.Message);
             }
         }
+
+        // 텍스처는 다 합쳐 100MB 안팎이었는데 게임은 VRAM을 5.3GB 쓴다. 이미지는 범인이 아니다.
+        // 이 맵은 오브젝트가 23만 개라 도형 데이터(메시)나 D3D12 드라이버가 잡아 두는 메모리가 유력하다.
+        private static void CountOthers(UnityModManagerNet.UnityModManager.ModEntry.ModLogger log)
+        {
+            try
+            {
+                long meshBytes = 0; int meshCount = 0, meshBig = 0;
+                var meshNames = new Dictionary<string, Group>();
+                foreach (var m in Resources.FindObjectsOfTypeAll<Mesh>())
+                {
+                    if (m == null) continue;
+                    long b = UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(m);
+                    meshBytes += b; meshCount++;
+                    if (b >= 1048576) meshBig++;
+                    string key = string.IsNullOrEmpty(m.name) ? "(이름 없음)" : m.name;
+                    Group g;
+                    if (!meshNames.TryGetValue(key, out g)) { g = new Group(); meshNames[key] = g; }
+                    g.Bytes += b; g.Count++;
+                }
+
+                long gfxDriver = UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver();
+                log.Log(string.Format("[VRAM] 메시 {0:N0}개, 합계 {1:N0}MB (1MB 넘는 것 {2}개) | 그래픽 드라이버가 잡은 메모리 {3:N0}MB",
+                    meshCount, meshBytes / 1048576.0, meshBig, gfxDriver / 1048576.0));
+
+                var list = new List<KeyValuePair<string, Group>>(meshNames);
+                list.Sort((a, b) => b.Value.Bytes.CompareTo(a.Value.Bytes));
+                for (int i = 0; i < list.Count && i < 10; i++)
+                    log.Log(string.Format("[VRAM]   메시 {0,-30} {1,7:N0}MB  {2}개", list[i].Key, list[i].Value.Bytes / 1048576.0, list[i].Value.Count));
+            }
+            catch (Exception ex)
+            {
+                log.Error("[VRAM] 메시 세기 실패: " + ex.Message);
+            }
+        }
+
     }
 }
