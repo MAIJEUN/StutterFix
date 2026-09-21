@@ -80,3 +80,17 @@ PerfView.exe /AcceptEULA /NoGui /LogFile:...\save.log UserCommand SaveCPUStacks 
   그 순간 게임 전체 CPU가 거의 0이면 원인은 게임 바깥(드라이버, VRAM 이동, OS)이다.
 - 끊김 로그의 실제 시각과 기록 시작 시각을 빼서 위치를 맞춘다.
 - VRAM 확인: `Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory` (게임의 SharedUsage가 0보다 크면 VRAM이 넘친 것).
+
+## D3D12 곡 중 멈춤 (조사 기록)
+
+- ThreadTime 기록(CSwitch/ReadyThread, `tracerpt`로 CSV 변환)으로 확인: 멈춘 60~70ms 동안 **메인 스레드가 커널 대기(이유 0, Executive)**,
+  하드웨어 인터럽트(스레드 0)가 깨움. 작업 스레드 6개는 메인 스레드를 기다림(이유 37).
+- 잠들기 직전 스택: `RenderOffscreenCameras → ParticleSystemGeometryJob::ScheduleJobs → DynamicVBOBufferManager::AcquireExclusive
+  → D3D12DynamicVBOScratchMemory::Reserve → GfxDeviceD3D12::ReserveScratchMemorySlow → CreateCommittedResource
+  → dxgkrnl CreateAllocation → dxgmms2 VidMm CommitLocalBackingStore`. 곡 중 초당 5~9번 새 그래픽 메모리를 잡는다.
+- 공유 메모리 590MB는 넘침이 아니라 D3D12 업로드 힙(원래 시스템 램). 곡 내내 변하지 않았고 복사 엔진도 0%였다.
+- 유니티 숨은 옵션(엔진 기계어로 단위 확인): `-d3d12-min-scratch-memory <바이트, 4MiB 올림>`,
+  `-d3d12-min-client-scratch-memory <바이트, 1MiB 올림>`, `-d3d12-scratch-release-delay <프레임>`.
+  세 개 다 넣어도(64MB/256MB/30000) 해결되지 않았고 프레임이 떨어졌다. 쓰지 않는다.
+- `-force-gfx-jobs` 값: off / split / legacy / native. 지원 안 되는 조합은 "is not supported ... Reverting" 로그 후 되돌린다.
+- 결과: D3D12+native → 28~40초와 127~130초 멈춤 / D3D12만 → 28~40초 멈춤 / D3D11 → 28~40초 깨끗하나 프레임 140.

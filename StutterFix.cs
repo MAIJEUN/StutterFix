@@ -70,11 +70,11 @@ namespace StutterFix
                 {
                     string args = string.Join(" ", Environment.GetCommandLineArgs()).ToLowerInvariant();
                     var found = new List<string>();
-                    if (args.Contains("-force-d3d12")) found.Add("-force-d3d12");
-                    if (args.Contains("-force-gfx-jobs")) found.Add("-force-gfx-jobs");
+                    // 문제였던 것은 D3D12 위의 native 그래픽 작업이다. legacy/split 은 따로 시험 중이라 경고하지 않는다.
+                    if (args.Contains("-force-gfx-jobs native")) found.Add("-force-gfx-jobs native");
                     if (found.Count > 0)
                         launchWarning = "  ⚠ Steam 실행 옵션에 " + string.Join(", ", found.ToArray()) +
-                                        " 가 있습니다. VRAM이 빠듯하면 박자마다 60~80ms씩 멈춥니다. 빼는 것을 권합니다.";
+                                        " 가 있습니다. 곡 중 그래픽 메모리를 새로 잡다가 60~80ms씩 멈춥니다. 빼는 것을 권합니다.";
                 }
                 catch { }
                 return launchWarning;
