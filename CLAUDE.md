@@ -43,7 +43,7 @@ METHOD=scrCamera bin/Debug/net8.0/ILScan.exe <dll> ZZZ     # 타입의 메서드
 | DOTween `ReorganizeActiveTweens` O(n²) | 한 프레임 382ms (4981회) | 효과 도는 동안 `isUpdateLoop=true` (`TweenFix`) |
 | 편집 복귀 시 `UnloadUnusedAssets` | 매번 120ms | 건너뛰기 |
 | 한 프레임에 효과 수십 개 몰림 | | 프레임당 예산으로 분산 (`EffectBudget`) |
-| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**: 맵의 커스텀 프레임레이트 연출이 `scrCamera.UpdateCustomFrameRateScreen`에서 카메라 3개를 수동 `Camera.Render` |
+| 박자마다 75ms (28~40초 구간) | GPU 6~7ms, CPU가 `Camera.Render` 안 69ms | **조사 중**. 아님으로 확인: 스크립트 콜백, 할당, 필터, 블렌드(일부만 줄어듦), 커스텀 프레임레이트 연출(7초에 1회 1.8ms). 남은 후보: 파티클 대기, 글자 캔버스 재구성 |
 
 ## 측정에서 배운 것 (반복하지 말 것)
 

@@ -48,6 +48,7 @@ namespace StutterFix
                 RenderWatch.Install(harmony);
                 RenderCallbackScan.Install(harmony);
                 FrameRateScreenWatch.Install(harmony);
+                ParticleTextWatch.Install(harmony);
                 GcControl.Install();
             }
             catch (Exception ex)
@@ -139,6 +140,7 @@ namespace StutterFix
             Try(ModWatch.Shutdown);
             Try(SamplerWatch.Shutdown);
             Try(EffectBudget.Reset);
+            Try(ParticleTextWatch.Shutdown);
 
             foreach (var id in HarmonyIds)
                 Try(() => new Harmony(id).UnpatchAll(id));
@@ -261,6 +263,8 @@ namespace StutterFix
             RenderWatch.ForceFiltersOff = GUILayout.Toggle(RenderWatch.ForceFiltersOff,
                 "  맵이 거는 화면 필터를 전부 끈다 (원인 확인용, 화면이 달라집니다)");
             GUILayout.Label("    직전 프레임에 " + RenderWatch.ForcedOffCount + "개 껐음");
+            ParticleTextWatch.ForceParticlesOff = GUILayout.Toggle(ParticleTextWatch.ForceParticlesOff,
+                "  파티클을 전부 끈다 (원인 확인용)");
             RenderWatch.ForceBlendOff = GUILayout.Toggle(RenderWatch.ForceBlendOff,
                 "  블렌드 모드 장식을 전부 끈다 (원인 확인용)");
             GUILayout.Label("    블렌드 물체는 하나하나가 화면을 한 번씩 더 읽습니다 (지금 " + RenderWatch.BlendModeCount + "개)");
