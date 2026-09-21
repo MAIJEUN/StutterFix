@@ -7,9 +7,10 @@ namespace StutterFix
     // UMM 목록 안이 아니라 게임 화면 위에 따로 뜨는 설정 창 (기본 단축키 Insert).
     //
     // 플레이어가 기술 용어 없이 "무엇이 좋아지는지"만 보고 고를 수 있게 한다. 한국어/English 전환.
-    // IMGUI 로 그리되 기본 회색 상자는 쓰지 않는다. 둥근 카드(테두리 포함), 그림자, 그라데이션 로고,
-    // 움직이는 스위치, 얇은 스크롤바를 직접 만든 텍스처로 그린다. 글꼴은 윈도우의 Segoe UI + 맑은 고딕.
-    // 화면 높이에 맞춰 크기를 키우고, 처음 열 때 가운데에 놓는다. 제목줄을 잡고 끌 수 있다.
+    // 모양은 반투명 유리: 뒤가 비치는 어두운 판, 위쪽의 옅은 빛, 흰색 반투명 테두리, 흰 계열만 쓰는 절제된 색.
+    // (뒤를 실제로 흐리게 하려면 매 프레임 화면을 떠야 하는데, 그러면 창 자신까지 찍혀 깜빡이고 프레임도 잡아먹는다.
+    //  대신 창을 열면 배경을 살짝 어둡게 해서 읽기 쉽게 한다.)
+    // IMGUI 로 그리되 기본 회색 상자는 쓰지 않는다. 글꼴은 윈도우의 Segoe UI + 맑은 고딕.
     public class SettingsWindow : MonoBehaviour
     {
         internal static SettingsWindow Instance;
@@ -47,13 +48,16 @@ namespace StutterFix
 
         internal static string T(string ko, string en) { return English ? en : ko; }
 
-        // ── 색 ─────────────────────────────────────────────────────────
-        private static readonly Color Bg = Hex(0x121318), Card = Hex(0x1E212A), CardHover = Hex(0x252935),
-            Border = Hex(0x2B2F3D), Text = Hex(0xEEF0F6), Dim = Hex(0x8C91A5), Faint = Hex(0x5D6275),
-            Accent = Hex(0x8AB4FF), Accent2 = Hex(0xB59CFF), Good = Hex(0x5FD39B), Off = Hex(0x3A3E4E);
+        // ── 색 (흰색의 투명도만으로 층을 나눈다) ────────────────────────
+        private static Color White(float a) { return new Color(1f, 1f, 1f, a); }
+        private static readonly Color Glass = new Color(0.075f, 0.08f, 0.1f, 0.70f);
+        private static readonly Color Text = White(0.93f), Dim = White(0.56f), Faint = White(0.34f);
+        private static readonly Color Line = White(0.10f), Rim = White(0.16f);
+        private static readonly Color CardFill = White(0.045f), CardHoverFill = White(0.075f), CardRim = White(0.08f);
+        private static readonly Color OnTrack = new Color(0.86f, 0.92f, 1f, 0.92f), OffTrack = White(0.14f);
+        private static readonly Color Ink = new Color(0.09f, 0.1f, 0.12f, 1f);
 
-        private static Color Hex(int rgb) { return new Color(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, 1f); }
-        private static string HexStr(Color c) { return ColorUtility.ToHtmlStringRGB(c); }
+        private static string HexStr(Color c) { return ColorUtility.ToHtmlStringRGBA(c); }
 
         // ── 상태 ───────────────────────────────────────────────────────
         private Rect rect;
@@ -63,20 +67,21 @@ namespace StutterFix
         private bool cursorWas;
         private bool built;
         private float scale = 1f;
+        private float fade;   // 열릴 때 서서히 나타나게
         private readonly Dictionary<string, float> anim = new Dictionary<string, float>();
 
         private Font font;
-        private GUIStyle sWindow, sShadow, sTitle, sSub, sH1, sLead, sBody, sDim, sSmall, sCard, sNav, sNavOn, sBtn, sPrimary, sClose,
-            sSeg, sSegOn, sBadge, sStat, sStatLabel, sScroll, sThumb;
-        private Texture2D tWhite, tLogo, tGradient;
+        private GUIStyle sWindow, sShadow, sTitle, sSub, sH1, sLead, sBody, sDim, sSmall, sTag, sCard, sNav, sNavOn,
+            sPrimary, sClose, sSeg, sSegOn, sSegBox, sStat, sStatLabel, sScroll, sThumb;
+        private Texture2D tWhite, tMark, tSheen;
 
-        private const float W = 920f, H = 600f, SideW = 210f, HeaderH = 64f;
+        private const float W = 900f, H = 590f, SideW = 200f, HeaderH = 62f;
 
         private void SetOpen(bool open)
         {
             if (open == Open) return;
             Open = open;
-            if (open) cursorWas = Cursor.visible;
+            if (open) { cursorWas = Cursor.visible; fade = 0f; }
             else { Cursor.visible = cursorWas; SetUiBlocked(false); }
         }
 
@@ -87,6 +92,7 @@ namespace StutterFix
             if (!Open) return;
             if (Input.GetKeyDown(KeyCode.Escape)) { SetOpen(false); return; }
             Cursor.visible = true;   // 곡 중에는 게임이 커서를 숨긴다
+            fade = Mathf.MoveTowards(fade, 1f, Time.unscaledDeltaTime * 6f);
         }
 
         // 창 위를 누를 때 뒤의 게임 UI(에디터 버튼 등)가 같이 눌리지 않게 막는다.
@@ -131,18 +137,29 @@ namespace StutterFix
             rect.y = Mathf.Clamp(rect.y, 0, Mathf.Max(0, sh - rect.height));
 
             var oldMatrix = GUI.matrix;
+            var oldColor = GUI.color;
             var oldFont = GUI.skin.font;
             var oldBar = GUI.skin.verticalScrollbar;
             var oldThumb = GUI.skin.verticalScrollbarThumb;
-            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
             GUI.skin.font = font;
             GUI.skin.verticalScrollbar = sScroll;         // 스크롤바 손잡이 모양은 이름으로 찾으므로 잠깐 바꿔 끼운다
             GUI.skin.verticalScrollbarThumb = sThumb;
             try
             {
+                float ease = Mathf.SmoothStep(0, 1, fade);
+
+                // 배경을 살짝 어둡게 (화면 전체, 배율 적용 전 좌표)
+                if (Event.current.type == EventType.Repaint)
+                {
+                    GUI.color = new Color(0, 0, 0, 0.32f * ease);
+                    GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), tWhite);
+                }
+
+                GUI.matrix = Matrix4x4.TRS(new Vector3(0, (1 - ease) * 12f * scale, 0), Quaternion.identity, new Vector3(scale, scale, 1f));
+                GUI.color = new Color(1, 1, 1, ease);
                 SetUiBlocked(rect.Contains(Event.current.mousePosition));
                 if (Event.current.type == EventType.Repaint)
-                    sShadow.Draw(new Rect(rect.x - 28, rect.y - 18, rect.width + 56, rect.height + 56), false, false, false, false);
+                    sShadow.Draw(new Rect(rect.x - 30, rect.y - 20, rect.width + 60, rect.height + 60), false, false, false, false);
                 rect = GUI.Window(0x5F1A, rect, DrawWindow, GUIContent.none, sWindow);
             }
             finally
@@ -150,42 +167,58 @@ namespace StutterFix
                 GUI.skin.verticalScrollbar = oldBar;
                 GUI.skin.verticalScrollbarThumb = oldThumb;
                 GUI.skin.font = oldFont;
+                GUI.color = oldColor;
                 GUI.matrix = oldMatrix;
             }
         }
 
+        // 창 내용은 OnGUI 가 끝난 뒤 따로 그려지므로, 스킨 바꿔 끼우기를 여기서 다시 한다.
         private void DrawWindow(int id)
         {
+            var oldBar = GUI.skin.verticalScrollbar;
+            var oldThumb = GUI.skin.verticalScrollbarThumb;
+            GUI.skin.verticalScrollbar = sScroll;
+            GUI.skin.verticalScrollbarThumb = sThumb;
+            try { DrawContents(); }
+            finally
+            {
+                GUI.skin.verticalScrollbar = oldBar;
+                GUI.skin.verticalScrollbarThumb = oldThumb;
+            }
+        }
+
+        private void DrawContents()
+        {
+            // 위쪽의 옅은 빛 반사
+            if (Event.current.type == EventType.Repaint) GUI.DrawTexture(new Rect(1, 1, W - 2, 140), tSheen);
+
             // ── 제목줄
-            GUI.DrawTexture(new Rect(22, 17, 30, 30), tLogo);
-            GUI.Label(new Rect(64, 12, 300, 24), "Stutter Fix", sTitle);
-            GUI.Label(new Rect(64, 35, 400, 18), T("끊김 줄이기", "Stutter reduction") + "  ·  v" + Main.Entry.Info.Version, sSub);
+            GUI.DrawTexture(new Rect(24, 20, 22, 22), tMark);
+            GUI.Label(new Rect(56, 12, 300, 22), "Stutter Fix", sTitle);
+            GUI.Label(new Rect(56, 33, 400, 18), T("끊김 줄이기", "Stutter reduction") + "   v" + Main.Entry.Info.Version, sSub);
 
-            float segX = W - 244;
-            if (GUI.Button(new Rect(segX, 16, 84, 32), "한국어", English ? sSeg : sSegOn)) SetLanguage("ko");
-            if (GUI.Button(new Rect(segX + 88, 16, 84, 32), "English", English ? sSegOn : sSeg)) SetLanguage("en");
-            if (GUI.Button(new Rect(W - 54, 16, 34, 32), "×", sClose)) SetOpen(false);
+            float segX = W - 236;
+            GUI.Box(new Rect(segX, 15, 172, 32), GUIContent.none, sSegBox);
+            if (GUI.Button(new Rect(segX + 3, 18, 82, 26), "한국어", English ? sSeg : sSegOn)) SetLanguage("ko");
+            if (GUI.Button(new Rect(segX + 87, 18, 82, 26), "English", English ? sSegOn : sSeg)) SetLanguage("en");
+            if (GUI.Button(new Rect(W - 50, 15, 32, 32), "×", sClose)) SetOpen(false);
 
-            Fill(new Rect(0, HeaderH - 1, W, 1), Border);
-            if (Event.current.type == EventType.Repaint) GUI.DrawTexture(new Rect(0, HeaderH - 1, W * 0.45f, 1), tGradient);
+            Fill(new Rect(20, HeaderH - 1, W - 40, 1), Line);
 
             // ── 왼쪽 메뉴
-            Fill(new Rect(SideW - 1, HeaderH, 1, H - HeaderH - 12), Border);
+            Fill(new Rect(SideW - 1, HeaderH + 18, 1, H - HeaderH - 36), Line);
             string[] pages = { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("정보", "About") };
-            GUI.Label(new Rect(26, HeaderH + 18, 160, 18), T("메뉴", "MENU"), sSmall);
             for (int i = 0; i < pages.Length; i++)
             {
-                var r = new Rect(14, HeaderH + 42 + i * 44, SideW - 28, 38);
+                var r = new Rect(14, HeaderH + 20 + i * 42, SideW - 30, 36);
                 if (GUI.Button(r, pages[i], i == page ? sNavOn : sNav)) { page = i; scroll = Vector2.zero; }
-                if (i == page && Event.current.type == EventType.Repaint)
-                    GUI.DrawTexture(new Rect(r.x + 6, r.y + 10, 3, 18), tWhite, ScaleMode.StretchToFill, true, 0, Accent, 0, 1.5f);
             }
 
-            GUI.Label(new Rect(26, H - 60, SideW - 30, 18), "made by <b>naro</b> & <b>Claude</b>", sSmall);
-            GUI.Label(new Rect(26, H - 40, SideW - 30, 18), English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name, sSmall);
+            GUI.Label(new Rect(26, H - 56, SideW - 30, 18), "naro & Claude", sSmall);
+            GUI.Label(new Rect(26, H - 38, SideW - 30, 18), English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name, sSmall);
 
             // ── 본문
-            var body = new Rect(SideW + 30, HeaderH + 24, W - SideW - 46, H - HeaderH - 38);
+            var body = new Rect(SideW + 28, HeaderH + 22, W - SideW - 44, H - HeaderH - 36);
             GUILayout.BeginArea(body);
             scroll = GUILayout.BeginScrollView(scroll, false, false, GUIStyle.none, sScroll, GUIStyle.none);
             GUILayout.BeginVertical(GUILayout.Width(body.width - 20));
@@ -217,13 +250,13 @@ namespace StutterFix
             bool jobs = d.Contains("Jobified") || d.Contains("Split");
 
             GUILayout.BeginHorizontal();
-            Stat(on + " / 9", T("켜진 기능", "Features on"), on == 9 ? Good : Accent);
-            GUILayout.Space(12);
-            Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"), GcControl.Paused ? Accent : Dim);
-            GUILayout.Space(12);
-            Stat(jobs ? T("켜짐", "On") : T("꺼짐", "Off"), T("멀티스레드 그리기", "Multithreaded rendering"), jobs ? Good : Dim);
+            Stat(on + "/9", T("켜진 기능", "Features on"));
+            GUILayout.Space(10);
+            Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"));
+            GUILayout.Space(10);
+            Stat(jobs ? T("켜짐", "On") : T("꺼짐", "Off"), T("멀티스레드 그리기", "Multithreaded rendering"));
             GUILayout.EndHorizontal();
-            GUILayout.Space(12);
+            GUILayout.Space(10);
 
             InfoCard(new[]
             {
@@ -232,9 +265,9 @@ namespace StutterFix
             });
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button(T("모두 권장값으로", "Reset to recommended"), sPrimary, GUILayout.Width(200), GUILayout.Height(38))) ResetDefaults();
+            if (GUILayout.Button(T("모두 권장값으로", "Reset to recommended"), sPrimary, GUILayout.Width(180), GUILayout.Height(36))) ResetDefaults();
             GUILayout.Space(14);
-            GUILayout.Label(T("창 열기/닫기", "Open / close") + "   <b><color=#" + HexStr(Text) + ">" + Main.Config.WindowKey + "</color></b>", sDim, GUILayout.Height(38));
+            GUILayout.Label(T("창 열기/닫기", "Open / close") + "   <color=#" + HexStr(Text) + ">" + Main.Config.WindowKey + "</color>", sDim, GUILayout.Height(36));
             GUILayout.EndHorizontal();
         }
 
@@ -247,7 +280,7 @@ namespace StutterFix
             ch |= Option("gc", ref c.GcPause, T("메모리 정리 미루기", "Defer memory cleanup"),
                 T("플레이 중 게임이 메모리를 정리하느라 잠깐 멈추는 것을 막습니다. 곡이 끝나고 몇 초 뒤 한 번에 정리합니다.",
                   "Stops the game from pausing to clean up memory mid-song. Cleanup runs once, a few seconds after the level ends."),
-                T("효과 가장 큼", "Biggest impact"));
+                T("효과 가장 큼", "biggest impact"));
             ch |= Option("fx", ref c.EffectSplit, T("효과 몰림 나누기", "Spread effect bursts"),
                 T("한 순간에 효과 수십 개가 동시에 시작될 때, 몇 프레임에 나눠 시작해 화면이 멈추지 않게 합니다.",
                   "When dozens of effects start on the same beat, starts them over a few frames instead of freezing one frame."), null);
@@ -291,7 +324,7 @@ namespace StutterFix
             if (Option("jobs", ref v, T("멀티스레드 그리기", "Multithreaded rendering"),
                 T("화면을 그리는 준비 작업을 여러 CPU 코어에 나눠 프레임을 높이고 끊김을 줄입니다. 게임 폴더의 boot.config 에 한 줄을 넣고, 모드를 끄면 원래대로 돌려놓습니다.",
                   "Splits render preparation across CPU cores for higher, steadier FPS. Adds one line to the game's boot.config and restores it when the mod is turned off."),
-                T("권장", "Recommended")))
+                T("권장", "recommended")))
             {
                 c.LegacyGfxJobs = v;
                 BootConfig.Apply(v);
@@ -305,9 +338,9 @@ namespace StutterFix
 
         private void PageAbout()
         {
-            Heading("Stutter Fix", "v" + Main.Entry.Info.Version + "  ·  " + (English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name));
+            Heading("Stutter Fix", "v" + Main.Entry.Info.Version + "   " + (English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name));
             GUILayout.BeginVertical(sCard);
-            GUILayout.Label("made by <b>naro</b> & <b>Claude</b>  <color=#" + HexStr(Dim) + ">(Anthropic)</color>", sBody);
+            GUILayout.Label("naro & Claude", sBody);
             GUILayout.Space(4);
             GUILayout.Label(T("실제 맵에서 끊긴 순간을 하나씩 측정해 원인을 찾고, 원인마다 고친 모드입니다.",
                 "Built by measuring each real hitch in real levels, finding its cause, and fixing it."), sDim);
@@ -333,32 +366,32 @@ namespace StutterFix
         private void Heading(string title, string lead)
         {
             GUILayout.Label(title, sH1);
-            GUILayout.Space(2);
+            GUILayout.Space(4);
             GUILayout.Label(lead, sLead);
             GUILayout.Space(18);
         }
 
-        private bool Option(string key, ref bool value, string title, string desc, string badge)
+        private bool Option(string key, ref bool value, string title, string desc, string tag)
         {
             GUILayout.BeginHorizontal(sCard);
             GUILayout.BeginVertical();
             GUILayout.BeginHorizontal();
             GUILayout.Label(title, sBody, GUILayout.ExpandWidth(false));
-            if (badge != null) { GUILayout.Space(8); GUILayout.Label(badge, sBadge, GUILayout.ExpandWidth(false)); }
+            if (tag != null) { GUILayout.Space(10); GUILayout.Label(tag, sTag, GUILayout.ExpandWidth(false)); }
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             GUILayout.Space(4);
             GUILayout.Label(desc, sDim);
             GUILayout.EndVertical();
-            GUILayout.Space(20);
-            GUILayout.BeginVertical(GUILayout.Width(52));
+            GUILayout.Space(22);
+            GUILayout.BeginVertical(GUILayout.Width(44));
             GUILayout.FlexibleSpace();
-            Rect r = GUILayoutUtility.GetRect(52, 28, GUILayout.Width(52), GUILayout.Height(28));
+            Rect r = GUILayoutUtility.GetRect(44, 24, GUILayout.Width(44), GUILayout.Height(24));
             GUILayout.FlexibleSpace();
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
             Rect card = GUILayoutUtility.GetLastRect();
-            GUILayout.Space(10);
+            GUILayout.Space(8);
 
             DrawSwitch(key, r, value);
 
@@ -380,17 +413,18 @@ namespace StutterFix
             if (!anim.TryGetValue(key, out t)) t = target;
             t = Mathf.MoveTowards(t, target, Time.unscaledDeltaTime * 7f);
             anim[key] = t;
+            float k = Mathf.SmoothStep(0, 1, t);
 
-            var track = new Rect(r.x, r.y + 1, 50, 26);
-            GUI.DrawTexture(track, tWhite, ScaleMode.StretchToFill, true, 0, Color.Lerp(Off, Accent, t), 0, 13);
-            float kx = Mathf.Lerp(track.x + 3, track.xMax - 23, Mathf.SmoothStep(0, 1, t));
-            GUI.DrawTexture(new Rect(kx, track.y + 3, 20, 20), tWhite, ScaleMode.StretchToFill, true, 0, Color.white, 0, 10);
+            var track = new Rect(r.x, r.y + 1, 44, 22);
+            GUI.DrawTexture(track, tWhite, ScaleMode.StretchToFill, true, 0, Color.Lerp(OffTrack, OnTrack, k), 0, 11);
+            float kx = Mathf.Lerp(track.x + 3, track.xMax - 19, k);
+            GUI.DrawTexture(new Rect(kx, track.y + 3, 16, 16), tWhite, ScaleMode.StretchToFill, true, 0, Color.Lerp(White(0.75f), Ink, k), 0, 8);
         }
 
-        private void Stat(string value, string label, Color valueColor)
+        private void Stat(string value, string label)
         {
-            GUILayout.BeginVertical(sCard, GUILayout.ExpandWidth(true), GUILayout.Height(84));
-            GUILayout.Label("<color=#" + HexStr(valueColor) + ">" + value + "</color>", sStat);
+            GUILayout.BeginVertical(sCard, GUILayout.ExpandWidth(true), GUILayout.Height(80));
+            GUILayout.Label(value, sStat);
             GUILayout.Space(2);
             GUILayout.Label(label, sStatLabel);
             GUILayout.EndVertical();
@@ -406,22 +440,22 @@ namespace StutterFix
                 {
                     GUILayout.Space(10);
                     Rect line = GUILayoutUtility.GetRect(1, 1, GUILayout.ExpandWidth(true), GUILayout.Height(1));
-                    Fill(line, Border);
+                    Fill(line, Line);
                     GUILayout.Space(10);
                 }
-                GUILayout.Label(kv[i].ToUpperInvariant(), sSmall);
+                GUILayout.Label(kv[i], sSmall);
                 GUILayout.Space(3);
                 GUILayout.Label(kv[i + 1], sDim);
             }
             GUILayout.EndVertical();
-            GUILayout.Space(12);
+            GUILayout.Space(10);
         }
 
         private void Fill(Rect r, Color c)
         {
             if (Event.current.type != EventType.Repaint) return;
             var old = GUI.color;
-            GUI.color = c;
+            GUI.color = new Color(c.r, c.g, c.b, c.a * old.a);
             GUI.DrawTexture(r, tWhite);
             GUI.color = old;
         }
@@ -454,60 +488,54 @@ namespace StutterFix
             if (font == null) font = GUI.skin.font;
 
             tWhite = Texture2D.whiteTexture;
-            tLogo = Logo(64);
-            tGradient = Gradient(64);
+            tMark = Mark(44);
+            tSheen = Sheen(128);
 
-            sWindow = Styled(Round(Bg, Border, 16, 1, 0), 18);
+            sWindow = Styled(Round(Glass, Rim, 18, 1), 20);
             sWindow.padding = new RectOffset(0, 0, 0, 0);
-            sShadow = Styled(Shadow(40, 28), 40);
-            sCard = Styled(Round(Card, Border, 12, 1, 0), 14);
+            sShadow = Styled(Shadow(44, 30), 44);
+            sCard = Styled(Round(CardFill, CardRim, 12, 1), 14);
             sCard.padding = new RectOffset(18, 18, 14, 15);
-            sCard.hover.background = Round(CardHover, Hex(0x363B4E), 12, 1, 0);
+            sCard.hover.background = Round(CardHoverFill, White(0.12f), 12, 1);
 
-            sTitle = Label(17, Text, FontStyle.Bold);
-            sSub = Label(12, Dim, FontStyle.Normal);
-            sH1 = Label(26, Text, FontStyle.Bold);
-            sLead = Label(14, Dim, FontStyle.Normal); sLead.wordWrap = true;
+            sTitle = Label(16, Text, FontStyle.Bold);
+            sSub = Label(12, Faint, FontStyle.Normal);
+            sH1 = Label(24, Text, FontStyle.Normal);
+            sLead = Label(13, Dim, FontStyle.Normal); sLead.wordWrap = true;
             sBody = Label(15, Text, FontStyle.Bold); sBody.wordWrap = true;
             sDim = Label(13, Dim, FontStyle.Normal); sDim.wordWrap = true;
-            sSmall = Label(11, Faint, FontStyle.Bold);
-            sStat = Label(26, Text, FontStyle.Bold);
-            sStatLabel = Label(12, Dim, FontStyle.Normal);
+            sSmall = Label(11, Faint, FontStyle.Normal);
+            sTag = Label(11, Faint, FontStyle.Normal); sTag.padding = new RectOffset(0, 0, 4, 0);
+            sStat = Label(22, Text, FontStyle.Normal);
+            sStatLabel = Label(12, Faint, FontStyle.Normal);
 
-            sNav = Styled(null, 12);
-            sNav.normal.textColor = Dim; sNav.fontSize = 14; sNav.alignment = TextAnchor.MiddleLeft; sNav.padding = new RectOffset(20, 8, 0, 0);
-            sNav.hover.background = Round(Card, Color.clear, 10, 0, 0); sNav.hover.textColor = Text;
-            sNavOn = new GUIStyle(sNav) { fontStyle = FontStyle.Bold };
-            sNavOn.normal.background = Round(Hex(0x222738), Color.clear, 10, 0, 0); sNavOn.normal.textColor = Text;
+            sNav = Styled(null, 10);
+            sNav.normal.textColor = Dim; sNav.fontSize = 14; sNav.alignment = TextAnchor.MiddleLeft; sNav.padding = new RectOffset(14, 8, 0, 0);
+            sNav.hover.background = Round(White(0.04f), Color.clear, 9, 0); sNav.hover.textColor = Text;
+            sNavOn = new GUIStyle(sNav);
+            sNavOn.normal.background = Round(White(0.09f), White(0.06f), 9, 1); sNavOn.normal.textColor = Text;
             sNavOn.hover.background = sNavOn.normal.background; sNavOn.hover.textColor = Text;
 
-            sBtn = Styled(Round(Card, Border, 10, 1, 0), 12);
-            sBtn.normal.textColor = Text; sBtn.alignment = TextAnchor.MiddleCenter; sBtn.fontSize = 14;
-            sBtn.hover.background = Round(CardHover, Hex(0x363B4E), 10, 1, 0); sBtn.hover.textColor = Text;
-            sPrimary = new GUIStyle(sBtn) { fontStyle = FontStyle.Bold };
-            sPrimary.normal.background = GradientRound(Accent, Accent2, 10); sPrimary.normal.textColor = Hex(0x10121A);
-            sPrimary.hover.background = GradientRound(Color.Lerp(Accent, Color.white, 0.15f), Color.Lerp(Accent2, Color.white, 0.15f), 10);
-            sPrimary.hover.textColor = Hex(0x10121A);
+            sPrimary = Styled(Round(White(0.9f), Color.clear, 10, 0), 12);
+            sPrimary.normal.textColor = Ink; sPrimary.alignment = TextAnchor.MiddleCenter; sPrimary.fontSize = 14; sPrimary.fontStyle = FontStyle.Bold;
+            sPrimary.hover.background = Round(White(1f), Color.clear, 10, 0); sPrimary.hover.textColor = Ink;
 
-            sSeg = new GUIStyle(sBtn) { fontSize = 13 };
-            sSeg.normal.background = null; sSeg.normal.textColor = Dim;
-            sSeg.hover.background = Round(Card, Color.clear, 10, 0, 0); sSeg.hover.textColor = Text;
-            sSegOn = new GUIStyle(sBtn) { fontSize = 13, fontStyle = FontStyle.Bold };
-            sSegOn.normal.background = Round(Hex(0x222738), Hex(0x3A4870), 10, 1, 0); sSegOn.hover.background = sSegOn.normal.background;
+            sSegBox = Styled(Round(White(0.05f), White(0.08f), 10, 1), 12);
+            sSeg = Styled(null, 8);
+            sSeg.normal.textColor = Dim; sSeg.alignment = TextAnchor.MiddleCenter; sSeg.fontSize = 13;
+            sSeg.hover.textColor = Text;
+            sSegOn = new GUIStyle(sSeg);
+            sSegOn.normal.background = Round(White(0.14f), Color.clear, 8, 0); sSegOn.normal.textColor = Text;
+            sSegOn.hover.background = sSegOn.normal.background;
 
-            sClose = new GUIStyle(sBtn) { fontSize = 22 };
-            sClose.normal.background = null; sClose.normal.textColor = Dim;
-            sClose.hover.background = Round(Hex(0x3A2A33), Color.clear, 10, 0, 0); sClose.hover.textColor = Hex(0xFF8FA3);
-            sClose.padding = new RectOffset(0, 0, 0, 4);
+            sClose = Styled(null, 10);
+            sClose.normal.textColor = Dim; sClose.alignment = TextAnchor.MiddleCenter; sClose.fontSize = 22; sClose.padding = new RectOffset(0, 0, 0, 4);
+            sClose.hover.background = Round(White(0.08f), Color.clear, 9, 0); sClose.hover.textColor = Text;
 
-            sBadge = Styled(Round(Hex(0x243150), Color.clear, 9, 0, 0), 9);
-            sBadge.normal.textColor = Accent; sBadge.fontSize = 11; sBadge.fontStyle = FontStyle.Bold;
-            sBadge.padding = new RectOffset(9, 9, 3, 4); sBadge.margin = new RectOffset(0, 0, 2, 0);
-
-            sScroll = new GUIStyle { fixedWidth = 6, margin = new RectOffset(10, 0, 0, 0), border = new RectOffset(3, 3, 3, 3) };
-            sScroll.normal.background = Round(Hex(0x191C24), Color.clear, 3, 0, 0);
-            sThumb = new GUIStyle { fixedWidth = 6, border = new RectOffset(3, 3, 3, 3) };
-            sThumb.normal.background = Round(Off, Color.clear, 3, 0, 0);
+            sScroll = new GUIStyle { fixedWidth = 4, margin = new RectOffset(12, 0, 0, 0), border = new RectOffset(2, 2, 2, 2) };
+            sScroll.normal.background = null;
+            sThumb = new GUIStyle { fixedWidth = 4, border = new RectOffset(2, 2, 2, 2) };
+            sThumb.normal.background = Round(White(0.18f), Color.clear, 2, 0);
         }
 
         private GUIStyle Label(int size, Color color, FontStyle style)
@@ -545,27 +573,8 @@ namespace StutterFix
             return Mathf.Sqrt(ox * ox + oy * oy) + Mathf.Min(Mathf.Max(qx, qy), 0) - r;
         }
 
-        // 채움색 + 테두리(두께 bw) 둥근 사각형. 9칸 나누기로 늘여 쓴다. inset 은 가장자리 여백.
-        private static Texture2D Round(Color fill, Color border, int r, int bw, int inset)
-        {
-            int size = r * 2 + 4 + inset * 2;
-            var t = NewTex(size, size);
-            var px = new Color[size * size];
-            for (int y = 0; y < size; y++)
-                for (int x = 0; x < size; x++)
-                {
-                    float d = RoundDist(x + 0.5f, y + 0.5f, size, r + inset) + inset;
-                    float a = Mathf.Clamp01(0.5f - d);
-                    Color c = bw > 0 ? Color.Lerp(border, fill, Mathf.Clamp01(-d - bw + 0.5f)) : fill;
-                    c.a *= a;
-                    px[y * size + x] = c;
-                }
-            t.SetPixels(px);
-            t.Apply(false, false);
-            return t;
-        }
-
-        private static Texture2D GradientRound(Color a, Color b, int r)
+        // 채움색 + 테두리(두께 bw) 둥근 사각형. 9칸 나누기로 늘여 쓴다. 두 색 모두 투명도를 가질 수 있다.
+        private static Texture2D Round(Color fill, Color border, int r, int bw)
         {
             int size = r * 2 + 4;
             var t = NewTex(size, size);
@@ -574,8 +583,18 @@ namespace StutterFix
                 for (int x = 0; x < size; x++)
                 {
                     float d = RoundDist(x + 0.5f, y + 0.5f, size, r);
-                    Color c = Color.Lerp(a, b, x / (float)(size - 1));
-                    c.a = Mathf.Clamp01(0.5f - d);
+                    float cover = Mathf.Clamp01(0.5f - d);
+                    Color c = fill;
+                    if (bw > 0)
+                    {
+                        float inner = Mathf.Clamp01(-d - bw + 0.5f);   // 1 이면 테두리 안쪽
+                        // 테두리를 채움 위에 겹쳐 그린 색
+                        float ba = border.a * (1 - inner);
+                        float a = ba + fill.a * (1 - ba);
+                        Color rgb = a > 0 ? (border * ba + fill * fill.a * (1 - ba)) / a : fill;
+                        c = new Color(rgb.r, rgb.g, rgb.b, a);
+                    }
+                    c.a *= cover;
                     px[y * size + x] = c;
                 }
             t.SetPixels(px);
@@ -583,39 +602,45 @@ namespace StutterFix
             return t;
         }
 
-        private static Texture2D Gradient(int w)
+        // 위에서 아래로 사라지는 옅은 빛 (유리 윗면의 반사)
+        private static Texture2D Sheen(int h)
         {
-            var t = NewTex(w, 1);
-            for (int x = 0; x < w; x++)
+            var t = NewTex(1, h);
+            for (int y = 0; y < h; y++)
             {
-                float k = x / (float)(w - 1);
-                Color c = Color.Lerp(Accent, Accent2, k);
-                c.a = 1f - k;
-                t.SetPixel(x, 0, c);
+                float k = y / (float)(h - 1);                // 0 = 아래, 1 = 위 (텍스처 좌표)
+                t.SetPixel(0, y, White(0.07f * k * k));
             }
             t.Apply(false, false);
             return t;
         }
 
-        // 그라데이션 둥근 사각형 안에 흰 막대 세 개(프레임 그래프 모양)
-        private static Texture2D Logo(int s)
+        // 제목 옆의 작은 표시: 흰 막대 세 개 (프레임 그래프)
+        private static Texture2D Mark(int s)
         {
             var t = NewTex(s, s);
             for (int y = 0; y < s; y++)
                 for (int x = 0; x < s; x++)
                 {
-                    float d = RoundDist(x + 0.5f, y + 0.5f, s, s * 0.28f);
-                    Color c = Color.Lerp(Accent, Accent2, (x + (s - y)) / (2f * s));
-                    float u = x / (float)s, v = y / (float)s;
-                    bool bar = (u > 0.25f && u < 0.36f && v > 0.27f && v < 0.52f)
-                            || (u > 0.445f && u < 0.555f && v > 0.27f && v < 0.73f)
-                            || (u > 0.64f && u < 0.75f && v > 0.27f && v < 0.62f);
-                    if (bar) c = Color.Lerp(c, Color.white, 0.92f);
-                    c.a = Mathf.Clamp01(0.5f - d);
-                    t.SetPixel(x, y, c);
+                    float u = (x + 0.5f) / s, v = (y + 0.5f) / s;
+                    float a = 0;
+                    a = Mathf.Max(a, Bar(u, v, 0.14f, 0.30f, 0.52f));
+                    a = Mathf.Max(a, Bar(u, v, 0.42f, 0.58f, 0.92f));
+                    a = Mathf.Max(a, Bar(u, v, 0.70f, 0.86f, 0.72f));
+                    t.SetPixel(x, y, White(a * 0.92f));
                 }
             t.Apply(false, false);
             return t;
+        }
+
+        // 아래에서 top 높이까지 올라오는 둥근 막대
+        private static float Bar(float u, float v, float x0, float x1, float top)
+        {
+            float w = x1 - x0, r = w / 2f, cx = (x0 + x1) / 2f;
+            float bottom = 0.08f;
+            float cy = Mathf.Clamp(v, bottom + r, top - r);
+            float d = Mathf.Sqrt((u - cx) * (u - cx) + (v - cy) * (v - cy)) - r;
+            return Mathf.Clamp01(0.5f - d * 44f);
         }
 
         // 창 뒤의 부드러운 그림자
@@ -628,7 +653,7 @@ namespace StutterFix
                 {
                     float d = RoundDist(x + 0.5f, y + 0.5f, n, blur + 6) + blur;
                     float a = Mathf.Clamp01(1f - d / blur);
-                    t.SetPixel(x, y, new Color(0, 0, 0, a * a * 0.5f));
+                    t.SetPixel(x, y, new Color(0, 0, 0, a * a * 0.45f));
                 }
             t.Apply(false, false);
             return t;

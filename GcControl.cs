@@ -67,7 +67,8 @@ namespace StutterFix
                     new[] { "scrController", "Fail2Action" },
                     new[] { "scrController", "OnLandOnPortal" }, // 완주(포탈 도착)
                     new[] { "scrController", "QuitToMainMenu" },
-                    new[] { "scrController", "Checkpoint_Exit" },
+                    // Checkpoint_Exit 는 넣으면 안 된다. 중간부터 시작할 때 체크포인트 상태에서 플레이로 넘어가며 불리는
+                    // 상태 종료 함수(카메라 끄기, 볼륨 되돌리기)다. 곡 끝으로 오인해 3초 뒤 곡 도중에 정리하고, 그 곡 내내 GC를 안 멈췄다.
                     new[] { "scnEditor", "QuitToMenu" },
                     new[] { "scnEditor", "TryQuitToMenu" },
                     new[] { "scnEditor", "SaveAndQuit" },
