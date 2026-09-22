@@ -78,7 +78,8 @@ namespace StutterFix
                 else if (mi.Name == "UpdateScreenClamp") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(ClampNow)); c.opcode = OpCodes.Call; n++; }
                 else if (mi.Name == "UpdatePosition") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(UpdateNow)); c.opcode = OpCodes.Call; n++; }
             }
-            Patched = n >= 2; PatchedCount = n;
+            PatchedCount += n;
+            Patched = PatchedCount >= 2;   // SetPosition 과 UpdatePosition 두 군데를 각각 고친다
             return code;
         }
 
