@@ -130,14 +130,19 @@ namespace StutterFix
             return __exception;
         }
 
+        // (개발자용) 마무리 계산에 실제로 얼마나 쓰는지
+        internal static double FlushMs;
+
         private static void Flush()
         {
+            long t0 = Edition.Dev ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             for (int i = 0; i < dirty.Count; i++)
             {
                 var d = dirty[i];
                 if (d == null) continue;
                 try { clamp(d); update(d); Flushed++; } catch { }
             }
+            if (Edition.Dev) FlushMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             dirty.Clear();
             inList.Clear();
 
@@ -146,10 +151,10 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Calls == 0) return "미룬 것 없음";
-            return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 프레임 단위로 묶으면 {3}번) | 편집기 피벗 갱신 {4}번을 {5}번으로{6}",
-                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)");
+            return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 프레임 단위로 묶으면 {3}번, 마무리에 쓴 시간 {7:F0}ms) | 편집기 피벗 갱신 {4}번을 {5}번으로{6}",
+                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs);
         }
 
-        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; frameSet.Clear(); }
+        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; frameSet.Clear(); }
     }
 }
