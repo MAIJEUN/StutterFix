@@ -59,16 +59,12 @@ namespace StutterFix
             }
             if (queue.Count == 0) return;
             if (!active || suspended) { queue.Clear(); return; }
-            // 맵을 불러온 직후에는 장식 수천 개가 한꺼번에 들어온다. 한 프레임에 다 바꾸면 60ms 넘게 걸려서
-            // (편집 화면에서 곡 시작 전에 끊김으로 잡혔다) 한 프레임에 3ms 까지만 하고 나머지는 다음 프레임으로 넘긴다.
-            long t0 = System.Diagnostics.Stopwatch.GetTimestamp(), limit = System.Diagnostics.Stopwatch.Frequency * 3 / 1000;
-            int done = 0;
-            while (done < queue.Count)
-            {
-                TrySwap(queue[done++]);
-                if ((done & 15) == 0 && System.Diagnostics.Stopwatch.GetTimestamp() - t0 > limit) break;
-            }
-            queue.RemoveRange(0, done);
+            // 들어온 것을 한 프레임에 다 바꾼다. 한 프레임에 3ms 씩 나눠 본 적이 있는데, 그러면 아직 안 바뀐 장식들이
+            // 그동안 화면 복사 방식으로 그려져서(1755개면 한 프레임 90ms) 곡 시작 직후 여러 프레임이 느려졌다.
+            // 맵 불러오기/곡 시작 때 한 번에 몰려 오지만 그 순간은 불러오기로 적히므로, 한 번에 끝내는 편이 낫다.
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int i = 0; i < queue.Count; i++) TrySwap(queue[i]);   // 도중에 더 들어온 것도 같이 처리된다
+            queue.Clear();
             ModCost.Add(SettingsWindow.T("블렌드 장식 바꾸기", "Blend swap"), (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
         }
 
