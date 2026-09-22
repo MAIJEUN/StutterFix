@@ -104,6 +104,7 @@ namespace StutterFix
                 EffectScan.Install(harmony);   // 효과 나누기가 이 패치를 통해 돈다
                 RecolorSplit.Install(harmony);
                 ImagePrefetch.Install(harmony);
+                FastBlend.Install(harmony);
                 TweenFix.Install(harmony);
                 GcControl.Install();
                 SettingsWindow.Create();
@@ -280,6 +281,7 @@ namespace StutterFix
             Try(SamplerWatch.Shutdown);
             Try(EffectBudget.Reset);       // 색 나누기 대기열도 같이 비운다
             Try(ImagePrefetch.Stop);       // 이미지 작업 스레드와 풀어 둔 메모리
+            Try(FastBlend.Uninstall);      // 바꿔 끼운 블렌드 장식 재질을 원래대로
             Try(SettingsWindow.Destroy);
             Try(PerfOverlay.Destroy);
             Try(ParticleTextWatch.Shutdown);
@@ -335,6 +337,7 @@ namespace StutterFix
             GcControl.Tick(dt);
             EffectBudget.Tick();
             RecolorSplit.Tick();
+            FastBlend.Tick();
 
             if (Edition.Dev)
             {
@@ -397,6 +400,7 @@ namespace StutterFix
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
             ShaderWarm.Enabled = Config.ShaderWarm;
+            FastBlend.Enabled = Config.FastBlend;
             ImagePrefetch.MaxSide = Config.ImageMaxSide;
         }
 
@@ -491,6 +495,7 @@ namespace StutterFix
                 "  타일 색 바꾸기를 " + RecolorSplit.ChunkTiles + "칸씩 나눠 칠한다" + (RecolorSplit.Patched ? "" : " (적용 안 됨)"));
             GUILayout.Label("    지금까지 " + RecolorSplit.SplitEffects + "번 나눔, 타일 " + RecolorSplit.DeferredTiles + "칸 미룸, 순서 맞추려 먼저 칠함 " + RecolorSplit.FlushedForOrder + "번, 대기 " + RecolorSplit.Pending + "조각");
             ShaderWarm.Enabled = GUILayout.Toggle(ShaderWarm.Enabled, "  곡 시작 때 셰이더를 미리 준비한다 (" + ShaderWarm.Last + ")");
+            Main.Config.FastBlend = FastBlend.Enabled = GUILayout.Toggle(FastBlend.Enabled, "  블렌드 장식을 화면 복사 없이 그린다 (지금 " + FastBlend.Count + "개)");
 
             GUILayout.Space(10);
             GUILayout.Label("── 글자 장식 ──");
@@ -558,6 +563,7 @@ namespace StutterFix
         public bool SkipSameText = true;
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;
+        public bool FastBlend = true;       // 더하기 블렌드 장식을 화면 복사 없이 그리기
         public int ImageMaxSide = 0;        // 큰 이미지 줄이기: 0 끔, 4096, 2048 (긴 변 기준)
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;

@@ -1,25 +1,67 @@
 using System.Collections.Generic;
 using BlendModes;
+using HarmonyLib;
 using UnityEngine;
 
 namespace StutterFix
 {
     // 블렌드 장식을 화면 복사 없이 그리기.
     //
-    // 게임의 블렌드 장식(BlendModeEffect)은 모드와 상관없이 전부 "화면을 복사해서 섞는" 셰이더(…/Grab)를 쓴다.
-    // 장식 하나를 그릴 때마다 화면 전체(3440x1440)를 복사하므로, 화면에 1500개가 보이면 그 복사만으로 90ms 가 된다.
+    // 게임의 블렌드 장식(BlendModeEffect, "Blend Modes" 에셋)은 모드와 상관없이 전부 "화면을 복사해서 섞는" 셰이더
+    // (Hidden/BlendModes/SpritesDefault/Grab)를 쓴다. 장식 하나를 그릴 때마다 화면 전체를 복사하므로, 3440x1440 에
+    // 1500개가 보이면(CICADA3302 초반) 그 복사만으로 프레임이 90ms 가 됐다.
     // 그런데 몇몇 모드는 복사 없이 그래픽카드의 기본 섞기만으로 같은 값이 나온다 (a = 장식 알파, s = 장식 색, d = 화면):
     //   Linear Dodge(더하기) : d + a*s                      = Blend SrcAlpha One          (Particles/Additive)
-    //   Screen              : d + a*s*(1-d)                = Blend One OneMinusSrcColor  (Particles/Additive (Soft), s 에 a 를 곱해 둠)
+    //   Screen              : d + a*s*(1-d)                = Blend One OneMinusSrcColor  (Particles/Additive (Soft))
     //   Multiply            : d * lerp(1, s, a)            = Blend Zero SrcColor         (Particles/Multiply)
-    // 이 셋은 게임에 들어 있는 기본 셰이더로 재질만 바꿔 끼운다. Difference/Overlay 등은 복사가 꼭 필요해서 그대로 둔다.
-    // (한 번만 복사하는 UnifiedGrab 은 빠르지만, 뒤에 그려진 것을 못 봐서 모양이 달라졌다)
+    // 게임에 들어 있는 기본 셰이더로 재질만 바꿔 끼운다. 이 게임 빌드에는 더하기용만 들어 있다(스크린/곱하기는 없음).
+    // 같은 프레임을 두 방식으로 그려 비교했을 때 세 장면 모두 픽셀 차이 0 이었다.
+    // Difference/Overlay 등은 복사가 꼭 필요해서 그대로 둔다. 한 번만 복사하는 UnifiedGrab 은 모양이 달라져서 쓰지 않는다.
+    //
+    // 바꾸는 법: 블렌드 효과 컴포넌트를 끄고(끌 때 에셋이 원래 재질로 되돌린다) 렌더러에 우리 재질을 끼운다.
+    // 게임이 블렌드 모드를 바꾸면(scrVisualDecoration.SetBlendMode) 컴포넌트가 다시 켜지고 재질을 새로 만드는데,
+    // 그 순간(SetMaterialProperties)을 잡아 다음 프레임에 다시 판단한다. 모드가 없음이 되면 게임이 알아서 일반 재질로 바꾼다.
+    // 건너뛰는 것: 스프라이트가 아닌 것, 스프라이트 마스크를 쓰는 것(우리 셰이더는 마스크를 모름), 에셋 마스크,
+    //             점 샘플링인데 이미지가 점 샘플링이 아닌 것(에셋은 셰이더에서 점 샘플링을 하지만 우리 셰이더는 못 한다).
     internal static class FastBlend
     {
+        internal static bool Enabled;
+        private static bool active;       // 지금 바꿔 끼우는 중인가 (Enabled 가 바뀌면 따라간다)
+        private static bool suspended;    // 비교 촬영 중에는 잠깐 멈춘다
+
         private static Material add, screen, multiply;
         private static bool looked;
-        private static readonly Dictionary<BlendModeEffect, Renderer> swapped = new Dictionary<BlendModeEffect, Renderer>();
-        internal static bool On { get { return swapped.Count > 0; } }
+        private static readonly HashSet<BlendModeEffect> swapped = new HashSet<BlendModeEffect>();
+        private static readonly List<BlendModeEffect> queue = new List<BlendModeEffect>();
+        internal static int Count { get { return swapped.Count; } }
+        internal static string Status = "";
+
+        internal static void Install(Harmony h)
+        {
+            h.Patch(AccessTools.Method(typeof(BlendModeEffect), "SetMaterialProperties"),
+                postfix: new HarmonyMethod(typeof(FastBlend), nameof(AfterMaterial)));
+        }
+
+        internal static void Uninstall() { if (active) RestoreAll(); active = false; }
+
+        // 에셋이 재질을 새로 정했다: 다음 프레임에 우리 것으로 바꿀 수 있는지 본다
+        private static void AfterMaterial(BlendModeEffect __instance)
+        {
+            if (active && !suspended && __instance != null) queue.Add(__instance);
+        }
+
+        internal static void Tick()
+        {
+            if (Enabled != active)
+            {
+                active = Enabled;
+                if (active) SwapAll(); else RestoreAll();
+            }
+            if (queue.Count == 0) return;
+            if (active && !suspended)
+                for (int i = 0; i < queue.Count; i++) TrySwap(queue[i]);
+            queue.Clear();
+        }
 
         private static Material Make(string shader)
         {
@@ -37,7 +79,7 @@ namespace StutterFix
             add = Make("Legacy Shaders/Particles/Additive");
             screen = Make("Legacy Shaders/Particles/Additive (Soft)");
             multiply = Make("Legacy Shaders/Particles/Multiply");
-            Main.Entry.Logger.Log(string.Format("[블렌드] 대신 쓸 셰이더: 더하기 {0}, 스크린 {1}, 곱하기 {2}", add != null, screen != null, multiply != null));
+            if (Edition.Dev) Main.Entry.Logger.Log(string.Format("[블렌드] 대신 쓸 셰이더: 더하기 {0}, 스크린 {1}, 곱하기 {2}", add != null, screen != null, multiply != null));
         }
 
         private static Material For(BlendMode mode)
@@ -51,39 +93,75 @@ namespace StutterFix
             }
         }
 
-        internal static void Toggle()
+        private static bool IsOurs(Material m) { return m != null && (m == add || m == screen || m == multiply); }
+
+        private static bool TrySwap(BlendModeEffect b)
         {
             try
             {
-                if (On) { Restore(); return; }
+                if (b == null || !b.enabled) return false;
                 Look();
-                int skipped = 0;
-                var cams = new List<string>();
-                foreach (var c in Camera.allCameras) cams.Add(c.name + (c.allowHDR ? "(HDR)" : ""));
-                foreach (var b in Object.FindObjectsByType<BlendModeEffect>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                var mat = For(b.BlendMode);
+                if (mat == null || b.MaskMode != MaskMode.Disabled) return false;
+                var r = b.GetComponent<SpriteRenderer>();
+                if (r == null || r.maskInteraction != SpriteMaskInteraction.None) return false;
+                if (b.UsePointSampling)
                 {
-                    if (b == null || !b.enabled) continue;
-                    var mat = For(b.BlendMode);
-                    var r = b.GetComponent<Renderer>();
-                    if (mat == null || r == null || b.MaskMode != MaskMode.Disabled) { skipped++; continue; }
-                    b.enabled = false;            // 먼저 끈다 (끌 때 에셋이 원래 재질로 되돌린다)
-                    r.sharedMaterial = mat;
-                    swapped[b] = r;
+                    var sp = r.sprite;
+                    if (sp == null || sp.texture == null || sp.texture.filterMode != FilterMode.Point) return false;
                 }
-                Main.Entry.Logger.Log(string.Format("[블렌드] 복사 없이 그리기 켬: {0}개 바꿈, {1}개 그대로 | 카메라 {2}", swapped.Count, skipped, string.Join(", ", cams)));
+                b.enabled = false;            // 먼저 끈다 (끌 때 에셋이 원래 재질로 되돌린다)
+                r.sharedMaterial = mat;
+                swapped.Add(b);
+                return true;
             }
-            catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드] 복사 없이 그리기 실패: " + ex); }
+            catch { return false; }
         }
 
-        // (개발자용) 같은 장면을 원래 방식과 복사 없는 방식으로 한 장씩 찍어 비교한다. 게임을 일시정지한 채로 쓴다.
-        // %TEMP%\StutterFix-blend\ 에 원래.png, 새방식.png, 차이.png(차이를 8배로 키움)를 남기고 로그에 수치를 적는다.
+        private static void SwapAll()
+        {
+            int n = 0;
+            try
+            {
+                foreach (var b in Object.FindObjectsByType<BlendModeEffect>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    if (TrySwap(b)) n++;
+            }
+            catch { }
+            Status = n + "";
+            if (Edition.Dev) Main.Entry.Logger.Log("[블렌드] 복사 없이 그리기 켬: " + n + "개 바꿈");
+        }
+
+        private static void RestoreAll()
+        {
+            int n = 0;
+            foreach (var b in swapped)
+            {
+                if (b == null) continue;
+                try
+                {
+                    // 그 사이 게임이 모드를 없음으로 바꿨다면 이미 일반 재질이다. 우리 재질을 쓰고 있을 때만 되돌린다.
+                    var r = b.GetComponent<SpriteRenderer>();
+                    if (r == null || !IsOurs(r.sharedMaterial)) continue;
+                    b.enabled = true;
+                    b.SetMaterialDirty();
+                    n++;
+                }
+                catch { }
+            }
+            swapped.Clear();
+            queue.Clear();
+            if (Edition.Dev) Main.Entry.Logger.Log("[블렌드] 복사 없이 그리기 끔: " + n + "개 원래대로");
+        }
+
+        // ── (개발자용) 비교 촬영 ──────────────────────────────────────
+        // 같은 프레임을 원래 방식과 복사 없는 방식으로 두 번 그려 비교한다.
+        // %TEMP%\StutterFix-blend\ 에 원래/새방식/차이(8배) png 를 남기고 로그에 수치를 적는다.
         internal static void Compare(MonoBehaviour host)
         {
             if (host != null) host.StartCoroutine(CompareRun());
         }
 
-        // 게임 카메라들을 깊이 순서대로 한 장에 직접 그린다 (화면 UI 는 빠진다). 같은 프레임 안에서 두 번 부르면
-        // 시간이 흐르지 않으므로 재질만 다른 똑같은 장면이 나온다.
+        // 게임 카메라들을 깊이 순서대로 한 장에 직접 그린다 (화면 UI 는 빠진다).
         private static Texture2D RenderCams()
         {
             int w = Screen.width, h = Screen.height;
@@ -104,18 +182,18 @@ namespace StutterFix
 
         private static System.Collections.IEnumerator CompareRun()
         {
-            if (On) { Restore(); yield return null; yield return null; }   // 원래 재질은 다음 Update 에 돌아온다
+            suspended = true;
+            if (swapped.Count > 0) { RestoreAll(); yield return null; yield return null; }   // 원래 재질은 다음 Update 에 돌아온다
             yield return new WaitForEndOfFrame();
             Texture2D a = null, b = null;
-            try { a = RenderCams(); Toggle(); b = RenderCams(); }
+            try { a = RenderCams(); SwapAll(); b = RenderCams(); }
             catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드 비교] 그리기 실패: " + ex.Message); }
-            if (On) Restore();
+            if (!active) RestoreAll();
+            suspended = false;
             if (a == null || b == null) yield break;
             try
             {
-                var orig = a;
-                var fast = b;
-                var po = orig.GetPixels32(); var pf = fast.GetPixels32();
+                var po = a.GetPixels32(); var pf = b.GetPixels32();
                 int n = Mathf.Min(po.Length, pf.Length), over2 = 0, over8 = 0, max = 0;
                 long sum = 0, brightO = 0, brightF = 0;
                 var diff = new Color32[n];
@@ -131,32 +209,18 @@ namespace StutterFix
                 string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StutterFix-blend");
                 string stamp = System.DateTime.Now.ToString("HHmmss");
                 System.IO.Directory.CreateDirectory(dir);
-                var dt = new Texture2D(orig.width, orig.height);
+                var dt = new Texture2D(a.width, a.height);
                 dt.SetPixels32(diff); dt.Apply();
-                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "원래-" + stamp + ".png"), orig.EncodeToPNG());
-                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "새방식-" + stamp + ".png"), fast.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "원래-" + stamp + ".png"), a.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "새방식-" + stamp + ".png"), b.EncodeToPNG());
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "차이-" + stamp + ".png"), dt.EncodeToPNG());
                 Object.Destroy(dt);
                 Main.Entry.Logger.Log(string.Format("[블렌드 비교] {0}x{1} | 평균 차이 {2:F3}/255, 최대 {3}/255 | 2 넘게 다른 픽셀 {4:F2}%, 8 넘게 {5:F2}% | 전체 밝기 원래 {6:F2} 새 {7:F2} | {8} ({9})",
-                    orig.width, orig.height, (double)sum / n, max, 100.0 * over2 / n, 100.0 * over8 / n,
+                    a.width, a.height, (double)sum / n, max, 100.0 * over2 / n, 100.0 * over8 / n,
                     (double)brightO / n / 3, (double)brightF / n / 3, dir, stamp));
             }
             catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드 비교] 실패: " + ex.Message); }
             Object.Destroy(a); Object.Destroy(b);
-        }
-
-        private static void Restore()
-        {
-            int n = 0;
-            foreach (var kv in swapped)
-            {
-                if (kv.Key == null) continue;
-                kv.Key.enabled = true;
-                kv.Key.SetMaterialDirty();
-                n++;
-            }
-            swapped.Clear();
-            Main.Entry.Logger.Log("[블렌드] 복사 없이 그리기 끔: " + n + "개 원래대로");
         }
     }
 }

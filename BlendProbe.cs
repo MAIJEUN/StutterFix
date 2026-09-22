@@ -14,7 +14,7 @@ namespace StutterFix
     //
     //   F10        : 지금 켜진 블렌드 장식을 모드/설정/셰이더별로 세어 로그에 적는다 (화면에 보이는 수 포함)
     //   Shift+F10  : 실험 - 모든 블렌드 장식을 "한 번만 복사" 로 바꾼다 / 다시 누르면 원래대로
-    //   F11        : 실험 - 더하기/스크린/곱하기 장식을 복사 없이 그리기 (FastBlend) / 다시 누르면 원래대로
+    //   F11        : 블렌드 장식 빠르게 그리기(FastBlend) 켜기/끄기 (이번 실행만, 저장 안 함)
     //   Shift+F11  : 같은 프레임을 원래/복사 없는 방식으로 두 번 그려 비교 (%TEMP%StutterFix-blend)
     internal static class BlendProbe
     {
@@ -26,7 +26,7 @@ namespace StutterFix
             if (Input.GetKeyDown(KeyCode.F11))
             {
                 if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) FastBlend.Compare(PerfOverlay.Instance);
-                else { FastBlend.Toggle(); Report(); }
+                else { FastBlend.Enabled = !FastBlend.Enabled; Main.Entry.Logger.Log("[블렌드] 복사 없이 그리기 " + (FastBlend.Enabled ? "켬" : "끔") + " (저장 안 함)"); }
             }
             if (!Input.GetKeyDown(KeyCode.F10)) return;
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);

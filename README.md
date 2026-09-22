@@ -27,6 +27,7 @@ made by **naro** & **Claude**
 | 애니메이션 처리 최적화 | 효과가 많을 때 DOTween이 목록을 반복 재정렬하느라 멈추는 것을 막습니다. 측정: 한 프레임 435ms 중 382ms가 재정렬이던 것을 제거 |
 | 글자 장식 최적화 | 같은 글자를 매 프레임 다시 쓰는 글자 장식을 건너뜁니다. PACL2 같은 모드와 함께 쓸 때 효과가 큽니다. |
 | 그래픽 미리 준비 | 곡 시작 때 셰이더를 미리 준비합니다. |
+| 블렌드 장식 빠르게 그리기 | 더하기(Linear Dodge) 블렌드 장식을 화면 복사 없이 그래픽카드 기본 섞기로 그립니다. 원래는 장식 하나마다 화면 전체를 복사했습니다. 측정: 블렌드 장식 1,500개가 보이는 장면(3440×1440)에서 약 11fps → 크게 상승, 같은 프레임 비교에서 픽셀 차이 0 |
 
 ### 맵 불러오기
 
@@ -83,4 +84,4 @@ Stutter Fix reduces mid-play hitches and level loading times on heavy custom lev
 
 **Install:** download `StutterFix-x.y.z-player.zip` from Releases and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** in game to open the settings window (Korean/English).
 
-**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, parallel PNG decoding for decoration images on level load, skipping asset unloads, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
+**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, drawing additive blend-mode decorations with hardware blending instead of a full-screen grab per object (pixel-identical), parallel PNG decoding for decoration images on level load, skipping asset unloads, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
