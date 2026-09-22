@@ -127,7 +127,8 @@ namespace StutterFix
             }
 
             double total = (Stopwatch.GetTimestamp() - drainStart) * 1000.0 / Stopwatch.Frequency;
-            ModCost.Add(SettingsWindow.T("밀린 효과 실행", "Deferred effects"), total);
+            // 밀린 효과를 실행한 시간은 게임 효과 자체의 비용이다(효과 시간으로 따로 잡힌다). 모드 작업으로 세면
+            // 모니터가 "모드 작업 (밀린 효과 실행)" 이라고 모드 탓으로 보여 줘서 뺐다. 실시간 모니터에는 "효과 몰림" 으로 나온다.
             if (total > BudgetMs * 2)
                 Main.Entry.Logger.Log(string.Format(
                     "[효과나누기] 밀린 것 {0}개 처리에 {1:F0}ms (예산 {2:F0}ms), 실패 {3}개, 최악 {4} {5:F0}ms, 남은 대기 {6}개",

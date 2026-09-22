@@ -98,7 +98,7 @@ namespace StutterFix
         public static TweenerCore<Color, Color, ColorOptions> DoneC(TweenerCore<Color, Color, ColorOptions> t) { var c = Pre(t); var r = t.Done(); Post(c); return r; }
         public static Tweener DoneT(Tweener t) { var c = Pre(t); var r = t.Done(); Post(c); return r; }
 
-        private class Case { public Info Info; public object PredEnd, PredFormula; }
+        private class Case { public Info Info; public object PredEnd, PredFormula; public string Ease; }
 
         private static Case Pre(Tween t)
         {
@@ -108,7 +108,7 @@ namespace StutterFix
             try
             {
                 if (t.onUpdate == null && t.onComplete == null) NoCallback++;
-                return new Case { Info = info, PredEnd = info.End, PredFormula = Formula(t, info.Get(), info.End) };
+                return new Case { Info = info, PredEnd = info.End, PredFormula = Formula(t, info.Get(), info.End), Ease = easeTypeRef(t) + "(끝점 " + EaseAtEnd(t).ToString("R") + ")" };
             }
             catch { return null; }
         }
@@ -133,7 +133,7 @@ namespace StutterFix
                     else
                     {
                         Mismatch++;
-                        if (FirstMismatch.Length == 0) FirstMismatch = c.Info.Kind + " 실제 " + Show(actual) + ", 목표 " + Show(c.PredEnd) + ", 계산 " + Show(c.PredFormula) + ", 다시 넣으면 " + Show(again);
+                        if (FirstMismatch.Length == 0) FirstMismatch = c.Info.Kind + "/" + c.Ease + " 실제 " + Show(actual) + ", 목표 " + Show(c.PredEnd) + ", 계산 " + Show(c.PredFormula) + ", 다시 넣으면 " + Show(again);
                         c.Info.Set(actual);   // 게임 값을 되돌린다
                     }
                 }
@@ -141,18 +141,36 @@ namespace StutterFix
             catch { }
         }
 
+        // DOTween 의 이징 함수를 그대로 불러 끝점(시간=길이=1) 값을 구한다. 1 이 아닐 수 있다(1.000001 등).
+        private static MethodInfo easeEval;
+        private static readonly AccessTools.FieldRef<Tween, Ease> easeTypeRef = AccessTools.FieldRefAccess<Tween, Ease>("easeType");
+        private static readonly AccessTools.FieldRef<Tween, EaseFunction> customEaseRef = AccessTools.FieldRefAccess<Tween, EaseFunction>("customEase");
+        private static readonly AccessTools.FieldRef<Tween, float> overshootRef = AccessTools.FieldRefAccess<Tween, float>("easeOvershootOrAmplitude");
+        private static readonly AccessTools.FieldRef<Tween, float> periodRef = AccessTools.FieldRefAccess<Tween, float>("easePeriod");
+        internal static float EaseAtEnd(Tween t)
+        {
+            if (easeEval == null)
+            {
+                var em = AccessTools.TypeByName("DG.Tweening.Core.Easing.EaseManager");
+                easeEval = em == null ? null : AccessTools.Method(em, "Evaluate", new[] { typeof(Ease), typeof(EaseFunction), typeof(float), typeof(float), typeof(float), typeof(float) });
+                if (easeEval == null) return 1f;
+            }
+            return (float)easeEval.Invoke(null, new object[] { easeTypeRef(t), customEaseRef(t), 1f, 1f, overshootRef(t), periodRef(t) });
+        }
+
         // DOTween 플러그인과 같은 식: start + (end - start) * 1 (축 제한과 반올림 포함)
         private static object Formula(Tween t, object start, object end)
         {
+            float k = EaseAtEnd(t);
             if (start is float)
             {
                 float s = (float)start, e = (float)end;
-                return s + (e - s) * 1f;
+                return s + (e - s) * k;
             }
             if (start is Color)
             {
                 Color s = (Color)start, e = (Color)end;
-                return s + (e - s) * 1f;
+                return s + (e - s) * k;
             }
             if (start is Vector2)
             {
@@ -162,9 +180,9 @@ namespace StutterFix
                 Vector2 r;
                 switch (o.axisConstraint)
                 {
-                    case AxisConstraint.X: r = s; r.x = s.x + ch.x * 1f; if (o.snapping) r.x = Mathf.Round(r.x); break;
-                    case AxisConstraint.Y: r = s; r.y = s.y + ch.y * 1f; if (o.snapping) r.y = Mathf.Round(r.y); break;
-                    default: r = s + ch * 1f; if (o.snapping) { r.x = Mathf.Round(r.x); r.y = Mathf.Round(r.y); } break;
+                    case AxisConstraint.X: r = s; r.x = s.x + ch.x * k; if (o.snapping) r.x = Mathf.Round(r.x); break;
+                    case AxisConstraint.Y: r = s; r.y = s.y + ch.y * k; if (o.snapping) r.y = Mathf.Round(r.y); break;
+                    default: r = s + ch * k; if (o.snapping) { r.x = Mathf.Round(r.x); r.y = Mathf.Round(r.y); } break;
                 }
                 return r;
             }
