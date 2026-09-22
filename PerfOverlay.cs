@@ -241,6 +241,9 @@ namespace StutterFix
             else if (gpu <= 0 && cpuMain <= 0) { h.Cause = T("원인 불명", "Unknown"); h.Detail = T("프레임 시간을 아직 읽지 못했습니다", "Frame timing not available yet"); }
             else { h.Cause = T("게임 바깥", "Outside the game"); h.Detail = T("게임은 한가했습니다. 윈도우나 다른 프로그램일 수 있습니다", "The game was idle; likely Windows or another app"); }
             TitleOf(h);   // 알림 제목은 한 번만 만든다
+            if (Edition.Dev)   // 원인 분류가 무엇을 보고 정했는지 남긴다 ("원인 불명" 추적용)
+                Main.Entry.Logger.Log(string.Format("[모니터] {0:F0}ms -> {1} / gpu {2:F1} cpu {3:F1} (수집 {4}번) 효과 {5:F1} 모드 {6:F1}({7}) gc {8}",
+                    ms, h.Cause, gpu, cpuMain, timingSamples, fx, mod, modWhat, gcDelta));
             return h;
         }
 
