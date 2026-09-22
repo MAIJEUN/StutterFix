@@ -202,5 +202,56 @@ namespace StutterFix
                 dst[3] = trns != null && idx < trns.Length ? trns[idx] : (byte)255;
             }
         }
+
+        // 긴 변이 maxSide 를 넘으면 그 크기로 줄인다 (선택 기능 "큰 이미지 줄이기").
+        // 출력 한 픽셀이 덮는 입력 영역을 평균한다. RGBA 는 알파로 가중해서 평균해야 투명한 가장자리가 검게 번지지 않는다.
+        // 줄였으면 새 버퍼를 돌려주고 원래 버퍼는 풀어 준다. factor = 새 크기 / 원래 크기.
+        internal static bool Downscale(ref IntPtr pixels, ref int width, ref int height, int format, ref long size, int maxSide, out float factor)
+        {
+            factor = 1f;
+            int big = Math.Max(width, height);
+            if (maxSide <= 0 || big <= maxSide || pixels == IntPtr.Zero) return false;
+            factor = (float)maxSide / big;
+            int nw = Math.Max(1, (int)Math.Round(width * (double)factor)), nh = Math.Max(1, (int)Math.Round(height * (double)factor));
+            int bpp = format == FormatRGB24 ? 3 : 4;
+            long nsize = (long)nw * nh * bpp;
+            IntPtr dst = Marshal.AllocHGlobal((IntPtr)nsize);
+            try
+            {
+                byte* s0 = (byte*)pixels, d0 = (byte*)dst;
+                double sx = (double)width / nw, sy = (double)height / nh;
+                for (int y = 0; y < nh; y++)
+                {
+                    int y0 = (int)(y * sy), y1 = Math.Max(y0 + 1, Math.Min(height, (int)((y + 1) * sy)));
+                    for (int x = 0; x < nw; x++)
+                    {
+                        int x0 = (int)(x * sx), x1 = Math.Max(x0 + 1, Math.Min(width, (int)((x + 1) * sx)));
+                        double r = 0, g = 0, b = 0, a = 0, ur = 0, ug = 0, ub = 0; int n = 0;
+                        for (int yy = y0; yy < y1; yy++)
+                        {
+                            byte* p = s0 + ((long)yy * width + x0) * bpp;
+                            for (int xx = x0; xx < x1; xx++, p += bpp)
+                            {
+                                if (bpp == 4) { double al = p[3]; r += p[0] * al; g += p[1] * al; b += p[2] * al; a += al; ur += p[0]; ug += p[1]; ub += p[2]; }
+                                else { r += p[0]; g += p[1]; b += p[2]; }
+                                n++;
+                            }
+                        }
+                        byte* q = d0 + ((long)y * nw + x) * bpp;
+                        if (bpp == 4)
+                        {
+                            if (a > 0) { q[0] = (byte)(r / a + 0.5); q[1] = (byte)(g / a + 0.5); q[2] = (byte)(b / a + 0.5); }
+                            else { q[0] = (byte)(ur / n + 0.5); q[1] = (byte)(ug / n + 0.5); q[2] = (byte)(ub / n + 0.5); }   // 완전히 투명해도 원래 색을 둔다 (가장자리가 어둡게 번지지 않게)
+                            q[3] = (byte)(a / n + 0.5);
+                        }
+                        else { q[0] = (byte)(r / n + 0.5); q[1] = (byte)(g / n + 0.5); q[2] = (byte)(b / n + 0.5); }
+                    }
+                }
+            }
+            catch { Marshal.FreeHGlobal(dst); factor = 1f; return false; }
+            Marshal.FreeHGlobal(pixels);
+            pixels = dst; width = nw; height = nh; size = nsize;
+            return true;
+        }
     }
 }

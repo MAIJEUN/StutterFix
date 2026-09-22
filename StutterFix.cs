@@ -395,6 +395,7 @@ namespace StutterFix
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
             ShaderWarm.Enabled = Config.ShaderWarm;
+            ImagePrefetch.MaxSide = Config.ImageMaxSide;
         }
 
         private static void OnGUI(UnityModManager.ModEntry modEntry)
@@ -555,6 +556,7 @@ namespace StutterFix
         public bool SkipSameText = true;
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;
+        public int ImageMaxSide = 0;        // 큰 이미지 줄이기: 0 끔, 4096, 2048 (긴 변 기준)
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;
         public bool ShowOverlay = false;   // 예전 설정 (켜져 있었으면 아이콘 모드로 옮긴다)

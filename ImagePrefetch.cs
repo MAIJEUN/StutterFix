@@ -40,6 +40,7 @@ namespace StutterFix
             public int Width, Height, Format;
             public IntPtr Pixels;
             public long Size;
+            public float Factor = 1f;   // 큰 이미지 줄이기로 줄인 비율 (1 이면 그대로)
         }
 
         private static readonly object gate = new object();
@@ -78,9 +79,38 @@ namespace StutterFix
                 errorsField = AccessTools.Field(typeof(scnEditor), "errorImageResult");
                 if (result != null && errorsField != null)
                     harmony.Patch(result, prefix: new HarmonyMethod(typeof(ImagePrefetch), nameof(SkipDuplicateError)));
+
+                // 줄인 이미지의 스프라이트 크기 기준을 맞춘다 (texture, fileLastModified, isInternal, isFromBundle, pixelsPerUnit, spriteType)
+                var spriteType = AccessTools.TypeByName("CustomSprite") ?? AccessTools.TypeByName("ADOFAI.CustomSprite");
+                if (spriteType != null) foreach (var ctor in spriteType.GetConstructors(AccessTools.all))
+                {
+                    var ps = ctor.GetParameters();
+                    if (ps.Length < 5 || ps[0].ParameterType != typeof(Texture2D) || ps[4].Name != "pixelsPerUnit") continue;
+                    harmony.Patch(ctor, prefix: new HarmonyMethod(typeof(ImagePrefetch), nameof(SpritePrefix)));
+                    Main.Entry.Logger.Log("[이미지] 스프라이트 크기 보정 설치 (큰 이미지 줄이기용)");
+                }
                 Main.Entry.Logger.Log("[이미지] 미리 풀기 설치" + (swapped == 2 ? "" : " (LoadTexture 모양이 달라 적용 안 됨)"));
             }
             catch (Exception ex) { Main.Entry.Logger.Error("[이미지] 설치 실패: " + ex.Message); }
+        }
+
+        // ── 큰 이미지 줄이기 (선택) ──────────────────────────────────────
+        // 이미지가 수천 장인 맵은 텍스처가 VRAM 을 넘쳐 GPU 가 프레임당 90ms 넘게 걸렸다(DDONGSSADA3302).
+        // 긴 변이 MaxSide 를 넘는 이미지를 작업 스레드에서 풀자마자 줄인다. VRAM 과 로딩 시간이 같이 준다.
+        // 스프라이트의 화면 크기는 "픽셀 수 / pixelsPerUnit(100)" 이라, 이미지만 줄이면 장식이 작아진다.
+        // 그래서 줄인 비율만큼 pixelsPerUnit 도 줄여서(CustomSprite 생성자) 화면 크기는 그대로 둔다. 화질만 낮아진다.
+        internal static int MaxSide;   // 0 = 끔
+        private static int shrunkCount;
+        private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
+
+        public static void SpritePrefix(Texture2D texture, ref float pixelsPerUnit) { AdjustPixelsPerUnit(texture, ref pixelsPerUnit); }
+
+        public static void AdjustPixelsPerUnit(Texture2D texture, ref float pixelsPerUnit)
+        {
+            float f;
+            if (texture == null || !shrunk.TryGetValue(texture, out f)) return;
+            shrunk.Remove(texture);
+            pixelsPerUnit *= f;
         }
 
         private static FieldInfo errorsField;
@@ -151,7 +181,7 @@ namespace StutterFix
                 lock (gate)
                 {
                     items = list; byPath = seen; next = 0; pendingBytes = 0; running = true; consumed = -1;
-                    used = fallback = notReady = 0; waitMs = 0;
+                    used = fallback = notReady = 0; waitMs = 0; shrunkCount = 0;
                 }
                 startTicks = Stopwatch.GetTimestamp();
                 putMs = fallbackMs = 0;
@@ -192,11 +222,13 @@ namespace StutterFix
                     it.State = 1;
                 }
 
-                int w = 0, h = 0, f = 0; IntPtr px = IntPtr.Zero; long size = 0; bool ok = false;
+                int w = 0, h = 0, f = 0; IntPtr px = IntPtr.Zero; long size = 0; bool ok = false; float factor = 1f;
                 try
                 {
                     int len = ReadInto(it.Path, ref fileBuf);
                     ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, out w, out h, out f, out px, out size);
+                    if (ok && MaxSide > 0 && PngDecoder.Downscale(ref px, ref w, ref h, f, ref size, MaxSide, out factor))
+                        Interlocked.Increment(ref shrunkCount);
                 }
                 catch { ok = false; }
 
@@ -208,7 +240,7 @@ namespace StutterFix
                     }
                     else if (ok)
                     {
-                        it.Width = w; it.Height = h; it.Format = f; it.Pixels = px; it.Size = size;
+                        it.Width = w; it.Height = h; it.Format = f; it.Pixels = px; it.Size = size; it.Factor = factor;
                         it.State = 2;
                         pendingBytes += size;
                     }
@@ -305,6 +337,7 @@ namespace StutterFix
             {
                 tex.Reinitialize(it.Width, it.Height, (TextureFormat)it.Format, false);
                 tex.LoadRawTextureData(it.Pixels, (int)it.Size);
+                if (it.Factor < 1f) shrunk[tex] = it.Factor;   // 스프라이트를 만들 때 크기 기준을 맞춘다
                 used++;
                 putMs += (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
                 return true;
@@ -328,7 +361,7 @@ namespace StutterFix
             if (running)
             {
                 double total = (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
-                Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초",
+                Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장" : ""),
                     used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart);
                 Main.Entry.Logger.Log("[이미지] " + Last);
             }

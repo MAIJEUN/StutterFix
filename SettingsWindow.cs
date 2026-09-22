@@ -350,6 +350,28 @@ namespace StutterFix
             ch |= Option("unload", ref c.SkipAssetUnload, T("불필요한 정리 건너뛰기", "Skip asset unload"),
                 T("맵을 열거나 편집으로 돌아올 때 게임이 하는 짧은 정리 작업을 건너뛰어 멈춤을 줄입니다.",
                   "Skips a short cleanup the game runs when opening a level or returning to the editor."), null);
+
+            // 큰 이미지 줄이기 (화질을 조금 내주고 VRAM 을 아낀다)
+            GUILayout.BeginVertical(sCard);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(T("큰 이미지 줄이기", "Downscale large images"), sBody, GUILayout.ExpandWidth(false));
+            GUILayout.Space(8);
+            GUILayout.Label("·  " + T("화질이 조금 낮아짐", "slightly lower quality"), sTag, GUILayout.ExpandWidth(false));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(4);
+            GUILayout.Label(T("장식 이미지가 수천 장인 맵은 그래픽 메모리(VRAM)가 넘쳐 GPU 가 크게 느려집니다. 긴 변이 기준보다 큰 이미지를 줄여 불러옵니다. 장식의 화면 크기는 그대로이고 선명도만 낮아집니다. 게임을 다시 켠 뒤 연 맵부터 적용됩니다.",
+                "Levels with thousands of decoration images can overflow video memory (VRAM) and slow the GPU badly. Images larger than the limit are loaded smaller. Decorations keep their on-screen size; only sharpness drops. Applies to levels opened after restarting the game."), sDim);
+            GUILayout.Space(10);
+            int cap = c.ImageMaxSide >= 4096 ? 1 : c.ImageMaxSide > 0 ? 2 : 0;
+            if (Segment("imgcap", ref cap, new[] { T("끔", "Off"), T("긴 변 4096", "4096 px"), T("긴 변 2048", "2048 px") }))
+            {
+                c.ImageMaxSide = cap == 1 ? 4096 : cap == 2 ? 2048 : 0;
+                ch = true;
+            }
+            GUILayout.EndVertical();
+            GUILayout.Space(12);
+
             if (ch) Save();
             InfoCard(new[] { T("마지막 맵 불러오기", "Last level load"), LoadSummary() });
         }
