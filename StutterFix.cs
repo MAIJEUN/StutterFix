@@ -104,6 +104,7 @@ namespace StutterFix
                 EffectScan.Install(harmony);   // 효과 나누기가 이 패치를 통해 돈다
                 RecolorSplit.Install(harmony);
                 ZeroTween.Install(harmony);
+                MoveApply.Install(harmony);
                 ImagePrefetch.Install(harmony);
                 FastBlend.Install(harmony);
                 TweenFix.Install(harmony);
@@ -406,6 +407,7 @@ namespace StutterFix
             RecolorSplit.Enabled = Config.RecolorSplit;
             TweenFix.Enabled = Config.TweenGuard;
             ZeroTween.Enabled = Config.ZeroTween;
+            MoveApply.Enabled = Config.ZeroTween;   // 같은 스위치로 실험 (즉시 이동 최적화)
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
             ShaderWarm.Enabled = Config.ShaderWarm;

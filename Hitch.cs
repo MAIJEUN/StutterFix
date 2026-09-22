@@ -195,6 +195,7 @@ namespace StutterFix
             Main.Entry.Logger.Log("[끊김] 색 바꾸기 나눔 " + RecolorSplit.SplitEffects + "번, 미룬 타일 " + RecolorSplit.DeferredTiles + "칸, 순서 맞추려 먼저 칠함 " + RecolorSplit.FlushedForOrder + "번" + (RecolorSplit.Patched ? "" : " (적용 안 됨)"));
             if (Edition.Dev) { Main.Entry.Logger.Log("[끊김] 덮어쓰기 측정: " + MergeProbe.Summary()); MergeProbe.Reset(); }
             Main.Entry.Logger.Log("[끊김] 즉시 이동: " + ZeroTween.Summary()); ZeroTween.Reset();
+            Main.Entry.Logger.Log("[끊김] 장식 마무리: " + MoveApply.Summary()); MoveApply.Reset();
 
             if (recs.Count == 0)
             {

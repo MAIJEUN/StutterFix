@@ -64,6 +64,7 @@
     <Compile Include="VramGuard.cs" />
     <Compile Include="MergeProbe.cs" />
     <Compile Include="ZeroTween.cs" />
+    <Compile Include="MoveApply.cs" />
     <Compile Include="BootConfig.cs" />
   </ItemGroup>
 
