@@ -10,27 +10,33 @@ using UnityEngine;
 
 namespace StutterFix
 {
-    // 장식 이동의 "길이 0 인 즉시 이동" 을 애니메이션 없이 처리하기 위한 준비 (1단계: 검증만).
+    // 장식 이동의 "길이 0 인 즉시 이동" 을 애니메이션 없이 처리한다.
     //
     // 측정 (Arche): 장식 이동이 만든 애니메이션의 70% 가 길이 0. 229초 한 프레임에 4만 3천 개를 만들고, 게임용 DOTween 의
     // Done() 이 길이 0 이면 그 자리에서 Complete 한다(끝내기 44,081번 중 44,078번이 장식 이동 안). 다음 갱신 때 또 정리한다.
-    // 즉시 옮기기 하나에 "만들기 -> 끝내기 -> 정리" 가 다 일어나서 한 프레임 수백 ms 가 됐다.
+    // 즉시 옮기기 하나에 "만들기 -> 끝내기 -> 정리" 가 다 일어나서 한 프레임 수백 ms 가 됐다(효과 하나 539ms 도 있었다).
     //
     // 게임 코드의 모양 (IL 로 확인, 속성마다):
     //   DOTween.To(getter, setter, 목표값, 길이).SetEase(ease)[.SetOptions(축, 스냅)].OnUpdate(cb)[.OnComplete(cb)].Done()
     //   종류는 float, Vector2, Color 세 가지.
-    // 길이 0 이면 결과는 "목표값을 넣고 OnUpdate, OnComplete 를 부르는 것" 이어야 한다. 그런데 DOTween 이 0/0 을 어떻게 다루는지에
-    // 따라 값이 비트 단위로 다를 수 있어서, 바꾸기 전에 모든 즉시 이동에서 "우리가 계산한 값" 과 "DOTween 이 실제로 넣은 값" 을 비교한다.
-    // 이 단계에서는 게임 동작을 바꾸지 않는다(전부 원래 DOTween 으로 처리).
+    // 길이 0 이면 DOTween 이 하는 일은: 시작값 = getter(), 변화량 = 목표 - 시작(float 로 저장),
+    //   setter(시작 + 변화량 x 이징(끝점)), OnUpdate, OnComplete. 그리고 애니메이션은 죽는다.
+    // 그래서 To 에서는 애니메이션 대신 "대역" 하나를 돌려주고(뒤의 SetEase/SetOptions/OnUpdate/OnComplete 가 거기에 값을 적는다),
+    // Done 에서 위의 일을 똑같이 한다. 대역은 종류마다 하나를 돌려 쓴다(To 와 Done 사이에 다른 코드가 끼지 않는다).
+    // 게임이 저장해 둔 대역에 나중에 Kill 을 불러도, 대역은 꺼져 있어서 DOTween 이 아무것도 안 한다(원래도 이미 죽은 애니메이션).
+    //
+    // 검증 (같은 계산을 DOTween 결과와 비트 단위로 비교, Arche 264,739개):
+    //   처음엔 76개(모두 float)가 끝자리가 달랐다. DOTween 은 변화량을 float 필드에 저장하면서 한 번 반올림하는데 그걸 빼먹었다.
+    //   개발자용은 64개 중 1개를 계속 원래 DOTween 으로 처리하고 값을 비교해 로그에 남긴다.
     internal static class ZeroTween
     {
-        internal static long Checked, MatchEnd, MatchFormula, Mismatch, NoCallback, SameAfterSet;
-        internal static string FirstSameAfterSet = "";
-        internal static string FirstMismatch = "";
+        internal static bool Enabled = true;
+        internal static int SampleEvery = Edition.Dev ? 64 : 0;   // 이만큼에 한 번은 원래대로 처리해 비교한다 (0 = 안 함)
         internal static bool Patched;
 
-        private class Info { public Func<object> Get; public Action<object> Set; public object End; public string Kind; }
-        private static readonly Dictionary<Tween, Info> pending = new Dictionary<Tween, Info>();
+        internal static long Fast, Checked, Mismatch, NoCallback;
+        internal static string FirstMismatch = "";
+        private static long counter;
 
         internal static void Install(Harmony h)
         {
@@ -38,8 +44,14 @@ namespace StutterFix
             foreach (var m in typeof(ffxMoveDecorationsPlus).GetMethods(AccessTools.all))
                 if (m.Name == "StartEffect" && m.DeclaringType == typeof(ffxMoveDecorationsPlus) && !m.IsAbstract) start = m;
             if (start == null) return;
+            var em = AccessTools.TypeByName("DG.Tweening.Core.Easing.EaseManager");
+            var ev = em == null ? null : AccessTools.Method(em, "Evaluate", new[] { typeof(Ease), typeof(EaseFunction), typeof(float), typeof(float), typeof(float), typeof(float) });
+            if (ev == null) { Main.Entry.Logger.Log("[즉시 이동] 이징 함수를 못 찾아 적용 안 함"); return; }
+            easeEval = (EvalFn)Delegate.CreateDelegate(typeof(EvalFn), ev);
+            activeSetter = AccessTools.PropertySetter(typeof(Tween), "active");
+            if (activeSetter == null) { Main.Entry.Logger.Log("[즉시 이동] 대역을 만들 수 없어 적용 안 함"); return; }
             h.Patch(start, transpiler: new HarmonyMethod(typeof(ZeroTween), nameof(Transpiler)));
-            Main.Entry.Logger.Log("[즉시 이동 검증] 설치" + (Patched ? "" : " - 모양이 달라 적용 안 함"));
+            Main.Entry.Logger.Log("[즉시 이동] 설치" + (Patched ? "" : " - 모양이 달라 적용 안 함"));
         }
 
         public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
@@ -72,43 +84,158 @@ namespace StutterFix
             return code;
         }
 
-        // ── 만들기: 원래대로 만들고, 길이 0 이면 비교용 정보를 남긴다 ─────────────
+        // ── 이징 ─────────────────────────────────────────────────────
+        private delegate float EvalFn(Ease ease, EaseFunction custom, float time, float duration, float overshoot, float period);
+        private static EvalFn easeEval;
+        private static MethodInfo activeSetter;
+        private static readonly AccessTools.FieldRef<Tween, Ease> easeTypeRef = AccessTools.FieldRefAccess<Tween, Ease>("easeType");
+        private static readonly AccessTools.FieldRef<Tween, EaseFunction> customEaseRef = AccessTools.FieldRefAccess<Tween, EaseFunction>("customEase");
+        private static readonly AccessTools.FieldRef<Tween, float> overshootRef = AccessTools.FieldRefAccess<Tween, float>("easeOvershootOrAmplitude");
+        private static readonly AccessTools.FieldRef<Tween, float> periodRef = AccessTools.FieldRefAccess<Tween, float>("easePeriod");
+        private static float EaseAtEnd(Tween t) { return easeEval(easeTypeRef(t), customEaseRef(t), 1f, 1f, overshootRef(t), periodRef(t)); }
+
+        // DOTween 플러그인과 같은 계산. 변화량은 float 로 한 번 반올림해 둔다(DOTween 은 changeValue 필드에 저장한다).
+        private static float Calc(float s, float e, float k) { float ch = e - s; float m = ch * k; return s + m; }
+        private static Vector2 Calc(Vector2 s, Vector2 e, float k, VectorOptions o)
+        {
+            Vector2 ch = e - s, r;
+            switch (o.axisConstraint)
+            {
+                case AxisConstraint.X: r = s; r.x = s.x + ch.x * k; if (o.snapping) r.x = Mathf.Round(r.x); break;
+                case AxisConstraint.Y: r = s; r.y = s.y + ch.y * k; if (o.snapping) r.y = Mathf.Round(r.y); break;
+                default: r = s + ch * k; if (o.snapping) { r.x = Mathf.Round(r.x); r.y = Mathf.Round(r.y); } break;
+            }
+            return r;
+        }
+        private static Color Calc(Color s, Color e, float k) { Color ch = e - s; return s + ch * k; }
+
+        // ── 대역 ─────────────────────────────────────────────────────
+        private static TweenerCore<float, float, FloatOptions> pF;
+        private static TweenerCore<Vector2, Vector2, VectorOptions> pV;
+        private static TweenerCore<Color, Color, ColorOptions> pC;
+        private static DOGetter<float> gF; private static DOSetter<float> sF; private static float eF;
+        private static DOGetter<Vector2> gV; private static DOSetter<Vector2> sV; private static Vector2 eV;
+        private static DOGetter<Color> gC; private static DOSetter<Color> sC; private static Color eC;
+        private static readonly object[] on = { true }, off = { false };
+
+        private static T Proxy<T>(ref T p) where T : Tween
+        {
+            if (p == null) p = AccessTools.CreateInstance<T>();
+            p.onUpdate = null; p.onComplete = null;
+            easeTypeRef(p) = DOTween.defaultEaseType;
+            customEaseRef(p) = null;
+            overshootRef(p) = DOTween.defaultEaseOvershootOrAmplitude;
+            periodRef(p) = DOTween.defaultEasePeriod;
+            activeSetter.Invoke(p, on);
+            return p;
+        }
+
+        private static bool UseFast(float dur)
+        {
+            if (!Enabled || dur > 0f) return false;
+            counter++;
+            return SampleEvery <= 0 || counter % SampleEvery != 0;
+        }
+
         public static TweenerCore<float, float, FloatOptions> ToF(DOGetter<float> g, DOSetter<float> s, float end, float dur)
         {
-            var t = DOTween.To(g, s, end, dur);
-            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), Set = v => s((float)v), End = end, Kind = "float" };
-            return t;
+            if (!UseFast(dur)) return Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
+            var p = Proxy(ref pF);
+            p.plugOptions = default(FloatOptions);
+            gF = g; sF = s; eF = end;
+            return p;
         }
         public static TweenerCore<Vector2, Vector2, VectorOptions> ToV(DOGetter<Vector2> g, DOSetter<Vector2> s, Vector2 end, float dur)
         {
-            var t = DOTween.To(g, s, end, dur);
-            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), Set = v => s((Vector2)v), End = end, Kind = "Vector2" };
-            return t;
+            if (!UseFast(dur)) return Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
+            var p = Proxy(ref pV);
+            p.plugOptions = default(VectorOptions);
+            gV = g; sV = s; eV = end;
+            return p;
         }
         public static TweenerCore<Color, Color, ColorOptions> ToC(DOGetter<Color> g, DOSetter<Color> s, Color end, float dur)
         {
-            var t = DOTween.To(g, s, end, dur);
-            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), Set = v => s((Color)v), End = end, Kind = "Color" };
-            return t;
+            if (!UseFast(dur)) return Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
+            var p = Proxy(ref pC);
+            p.plugOptions = default(ColorOptions);
+            gC = g; sC = s; eC = end;
+            return p;
         }
 
-        // ── 끝내기: 예상값을 계산해 두고, 원래 Done 을 부른 직후 실제 값과 비교한다 (Done 은 그 자리에서 Complete 한다) ──
-        public static TweenerCore<float, float, FloatOptions> DoneF(TweenerCore<float, float, FloatOptions> t) { var c = Pre(t); var r = t.Done(); Post(c); return r; }
-        public static TweenerCore<Vector2, Vector2, VectorOptions> DoneV(TweenerCore<Vector2, Vector2, VectorOptions> t) { var c = Pre(t); var r = t.Done(); Post(c); return r; }
-        public static TweenerCore<Color, Color, ColorOptions> DoneC(TweenerCore<Color, Color, ColorOptions> t) { var c = Pre(t); var r = t.Done(); Post(c); return r; }
-        public static Tweener DoneT(Tweener t) { var c = Pre(t); var r = t.Done(); Post(c); return r; }
+        // ── Done ─────────────────────────────────────────────────────
+        public static TweenerCore<float, float, FloatOptions> DoneF(TweenerCore<float, float, FloatOptions> t)
+        {
+            if (t != null && ReferenceEquals(t, pF) && t.active) { Finish(t, 0); return t; }
+            var c = Pre(t); var r = t.Done(); Post(c); return r;
+        }
+        public static TweenerCore<Vector2, Vector2, VectorOptions> DoneV(TweenerCore<Vector2, Vector2, VectorOptions> t)
+        {
+            if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(t, 1); return t; }
+            var c = Pre(t); var r = t.Done(); Post(c); return r;
+        }
+        public static TweenerCore<Color, Color, ColorOptions> DoneC(TweenerCore<Color, Color, ColorOptions> t)
+        {
+            if (t != null && ReferenceEquals(t, pC) && t.active) { Finish(t, 2); return t; }
+            var c = Pre(t); var r = t.Done(); Post(c); return r;
+        }
+        public static Tweener DoneT(Tweener t)
+        {
+            if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(pV, 1); return t; }
+            var c = Pre(t); var r = t.Done(); Post(c); return r;
+        }
 
-        private class Case { public Info Info; public object PredEnd, PredFormula; public string Ease; }
+        // DOTween 의 Complete 와 같은 순서: 값 넣기 -> OnUpdate -> OnComplete. 대역은 콜백 전에 끈다(콜백 안에서 또 쓸 수 있게).
+        private static void Finish(Tween t, int kind)
+        {
+            var onUpdate = t.onUpdate; var onComplete = t.onComplete;
+            if (onUpdate == null && onComplete == null) NoCallback++;
+            try
+            {
+                float k = EaseAtEnd(t);
+                if (kind == 0) sF(Calc(gF(), eF, k));
+                else if (kind == 1) sV(Calc(gV(), eV, k, pV.plugOptions));
+                else sC(Calc(gC(), eC, k));
+            }
+            catch (Exception ex) { Log(ex); }
+            t.onUpdate = null; t.onComplete = null;
+            gF = null; sF = null; gV = null; sV = null; gC = null; sC = null;
+            activeSetter.Invoke(t, off);
+            Fast++;
+            if (onUpdate != null) { try { onUpdate(); } catch (Exception ex) { Log(ex); } }
+            if (onComplete != null) { try { onComplete(); } catch (Exception ex) { Log(ex); } }
+        }
+
+        private static int logged;
+        private static void Log(Exception ex) { if (logged++ < 5) Main.Entry.Logger.Log("[즉시 이동] 오류 (DOTween 안전 모드처럼 넘어감): " + ex.Message); }
+
+        // ── (개발자용) 비교: 표본은 원래 DOTween 으로 처리하고, 우리 계산과 결과를 비교한다 ─────────
+        private class Info { public Func<object> Get; public object End; }
+        private static readonly Dictionary<Tween, Info> sample = new Dictionary<Tween, Info>();
+        private class Case { public Info Info; public object Pred; public string Kind; }
+
+        private static T Remember<T>(T t, float dur, Func<object> get, object end) where T : Tween
+        {
+            if (dur <= 0f && t != null && SampleEvery > 0) sample[t] = new Info { Get = get, End = end };
+            return t;
+        }
 
         private static Case Pre(Tween t)
         {
             Info info;
-            if (t == null || !pending.TryGetValue(t, out info)) return null;
-            pending.Remove(t);
+            if (t == null || !sample.TryGetValue(t, out info)) return null;
+            sample.Remove(t);
             try
             {
-                if (t.onUpdate == null && t.onComplete == null) NoCallback++;
-                return new Case { Info = info, PredEnd = info.End, PredFormula = Formula(t, info.Get(), info.End), Ease = easeTypeRef(t) + "(끝점 " + EaseAtEnd(t).ToString("R") + ")" };
+                object s = info.Get(), pred;
+                float k = EaseAtEnd(t);
+                if (s is float) pred = Calc((float)s, (float)info.End, k);
+                else if (s is Color) pred = Calc((Color)s, (Color)info.End, k);
+                else
+                {
+                    var tc = t as TweenerCore<Vector2, Vector2, VectorOptions>;
+                    pred = Calc((Vector2)s, (Vector2)info.End, k, tc != null ? tc.plugOptions : default(VectorOptions));
+                }
+                return new Case { Info = info, Pred = pred, Kind = s.GetType().Name + "/" + easeTypeRef(t) };
             }
             catch { return null; }
         }
@@ -120,73 +247,13 @@ namespace StutterFix
             {
                 object actual = c.Info.Get();
                 Checked++;
-                bool e = Same(actual, c.PredEnd), f = Same(actual, c.PredFormula);
-                if (e) MatchEnd++;
-                if (f) MatchFormula++;
-                if (!e && !f)
+                if (!Same(actual, c.Pred))
                 {
-                    // 계산값을 같은 곳에 다시 넣고 읽어 본다. 실제 값과 같으면 "넣은 뒤 게임이 한 번 더 바꾸는" 차이라서
-                    // 우리 방식(같은 곳에 같은 계산값을 넣음)도 결과가 같다.
-                    c.Info.Set(c.PredFormula);
-                    object again = c.Info.Get();
-                    if (Same(again, actual)) { SameAfterSet++; if (FirstSameAfterSet.Length == 0) FirstSameAfterSet = c.Info.Kind + " " + Show(actual); }
-                    else
-                    {
-                        Mismatch++;
-                        if (FirstMismatch.Length == 0) FirstMismatch = c.Info.Kind + "/" + c.Ease + " 실제 " + Show(actual) + ", 목표 " + Show(c.PredEnd) + ", 계산 " + Show(c.PredFormula) + ", 다시 넣으면 " + Show(again);
-                        c.Info.Set(actual);   // 게임 값을 되돌린다
-                    }
+                    Mismatch++;
+                    if (FirstMismatch.Length == 0) FirstMismatch = c.Kind + " 실제 " + Show(actual) + ", 계산 " + Show(c.Pred);
                 }
             }
             catch { }
-        }
-
-        // DOTween 의 이징 함수를 그대로 불러 끝점(시간=길이=1) 값을 구한다. 1 이 아닐 수 있다(1.000001 등).
-        private static MethodInfo easeEval;
-        private static readonly AccessTools.FieldRef<Tween, Ease> easeTypeRef = AccessTools.FieldRefAccess<Tween, Ease>("easeType");
-        private static readonly AccessTools.FieldRef<Tween, EaseFunction> customEaseRef = AccessTools.FieldRefAccess<Tween, EaseFunction>("customEase");
-        private static readonly AccessTools.FieldRef<Tween, float> overshootRef = AccessTools.FieldRefAccess<Tween, float>("easeOvershootOrAmplitude");
-        private static readonly AccessTools.FieldRef<Tween, float> periodRef = AccessTools.FieldRefAccess<Tween, float>("easePeriod");
-        internal static float EaseAtEnd(Tween t)
-        {
-            if (easeEval == null)
-            {
-                var em = AccessTools.TypeByName("DG.Tweening.Core.Easing.EaseManager");
-                easeEval = em == null ? null : AccessTools.Method(em, "Evaluate", new[] { typeof(Ease), typeof(EaseFunction), typeof(float), typeof(float), typeof(float), typeof(float) });
-                if (easeEval == null) return 1f;
-            }
-            return (float)easeEval.Invoke(null, new object[] { easeTypeRef(t), customEaseRef(t), 1f, 1f, overshootRef(t), periodRef(t) });
-        }
-
-        // DOTween 플러그인과 같은 식: start + (end - start) * 1 (축 제한과 반올림 포함)
-        private static object Formula(Tween t, object start, object end)
-        {
-            float k = EaseAtEnd(t);
-            if (start is float)
-            {
-                float s = (float)start, e = (float)end;
-                return s + (e - s) * k;
-            }
-            if (start is Color)
-            {
-                Color s = (Color)start, e = (Color)end;
-                return s + (e - s) * k;
-            }
-            if (start is Vector2)
-            {
-                Vector2 s = (Vector2)start, e = (Vector2)end, ch = e - s;
-                var tc = t as TweenerCore<Vector2, Vector2, VectorOptions>;
-                var o = tc != null ? tc.plugOptions : default(VectorOptions);
-                Vector2 r;
-                switch (o.axisConstraint)
-                {
-                    case AxisConstraint.X: r = s; r.x = s.x + ch.x * k; if (o.snapping) r.x = Mathf.Round(r.x); break;
-                    case AxisConstraint.Y: r = s; r.y = s.y + ch.y * k; if (o.snapping) r.y = Mathf.Round(r.y); break;
-                    default: r = s + ch * k; if (o.snapping) { r.x = Mathf.Round(r.x); r.y = Mathf.Round(r.y); } break;
-                }
-                return r;
-            }
-            return end;
         }
 
         private static bool Same(object a, object b)
@@ -201,11 +268,10 @@ namespace StutterFix
 
         internal static string Summary()
         {
-            if (Checked == 0) return "검사한 즉시 이동 없음";
-            return string.Format("즉시 이동 {0}개 검사: 목표값과 같음 {1}, 계산식과 같음 {2}, 다시 넣으면 같아짐 {6}{7}, 정말 다름 {3}{4} | 콜백 없는 것 {5}",
-                Checked, MatchEnd, MatchFormula, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback, SameAfterSet, SameAfterSet > 0 ? " (예: " + FirstSameAfterSet + ")" : "");
+            return string.Format("애니메이션 없이 처리 {0}개 | 표본 비교 {1}개 중 다름 {2}{3} | 콜백 없는 것 {4}",
+                Fast, Checked, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback);
         }
 
-        internal static void Reset() { Checked = MatchEnd = MatchFormula = Mismatch = NoCallback = SameAfterSet = 0; FirstMismatch = FirstSameAfterSet = ""; pending.Clear(); }
+        internal static void Reset() { Fast = Checked = Mismatch = NoCallback = 0; FirstMismatch = ""; sample.Clear(); }
     }
 }

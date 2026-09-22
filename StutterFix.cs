@@ -103,6 +103,7 @@ namespace StutterFix
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);   // 효과 나누기가 이 패치를 통해 돈다
                 RecolorSplit.Install(harmony);
+                ZeroTween.Install(harmony);
                 ImagePrefetch.Install(harmony);
                 FastBlend.Install(harmony);
                 TweenFix.Install(harmony);
@@ -117,7 +118,7 @@ namespace StutterFix
                     StartProbe.Install(harmony);
                     Try(() => FilterTrace.Install(harmony));
                     Try(() => MergeProbe.Install(harmony));
-                    Try(() => ZeroTween.Install(harmony));
+
                     RenderWatch.Install(harmony);
                     RenderCallbackScan.Install(harmony);
                     FrameRateScreenWatch.Install(harmony);
@@ -404,6 +405,7 @@ namespace StutterFix
             EffectBudget.Enabled = Config.EffectSplit;
             RecolorSplit.Enabled = Config.RecolorSplit;
             TweenFix.Enabled = Config.TweenGuard;
+            ZeroTween.Enabled = Config.TweenGuard;   // 애니메이션 처리 최적화에 포함 (길이 0 즉시 이동을 애니메이션 없이)
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
             ShaderWarm.Enabled = Config.ShaderWarm;
