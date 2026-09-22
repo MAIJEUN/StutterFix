@@ -12,7 +12,7 @@ namespace StutterFix
     //   이미지 2,000장 맵: 어림 9.5GB. 원본에서 VRAM 95% 가 되며 카메라가 움직일 때마다 150~200ms 멈췄다. 3072 로 줄이자 해결.
     // 그래픽카드는 한꺼번에 화면에 쓰이는 이미지만 VRAM 에 올려 두기 때문에, 중요한 것은 전체 양이 아니라 그 순간의 양이다.
     //
-    // 그래서 지금은 처음에는 원본으로 불러오고, 플레이/편집 중에 "VRAM 90% 이상 + 45ms 넘는 멈춤(메모리 정리 아님)"이
+    // 그래서 지금은 처음에는 원본으로 불러오고, 플레이/편집 중에 "VRAM 90% 이상 + GPU 가 멈춘 45ms 넘는 끊김"이
     // 두 번 나오면 그 맵을 한 단계 낮춰 기억한다 (원본 -> 3072 -> 2048 -> 1536 -> 1024). 다음에 불러올 때 그 한도로 줄인다.
     // 알림으로 알려 주고, 설정 창에서 기억한 맵을 지울 수 있다.
     internal static class VramGuard
@@ -20,7 +20,7 @@ namespace StutterFix
         private static readonly int[] steps = { 0, 3072, 2048, 1536, 1024 };
         internal static string Level = "";
         internal static int CurrentCap;
-        private static int events, lastGc;
+        private static int events;
         private static bool noted;
 
         internal static int Next(int cap)
@@ -78,13 +78,16 @@ namespace StutterFix
         {
             bool want = Watching;
             SystemMonitor.Keep = want;
-            if (!want) return;
-            SystemMonitor.Start();
+            if (want) SystemMonitor.Start();
+        }
 
-            int gc = GC.CollectionCount(0);
-            bool gcRan = gc != lastGc;
-            lastGc = gc;
-            if (Time.unscaledDeltaTime < 0.045f || gcRan || PerfOverlay.IsLoadingNow || ImagePrefetch.Running) return;
+        // 실시간 모니터가 "GPU 과부하" 로 가린 끊김마다 불린다 (그 프레임의 GPU 시간이 70% 넘게 차지).
+        // 예전에는 "VRAM 90% + 45ms 넘는 프레임" 만 봐서, VRAM 이 높은 맵의 게임 처리(CPU) 끊김이나 효과 몰림까지
+        // VRAM 부족으로 잘못 기억했다(Arche: 효과 몰림 147ms, 게임 처리 100~120ms 인데 3072 로 기억).
+        // 이미지를 줄여도 CPU 끊김은 그대로이므로, GPU 가 멈춘 끊김만 센다.
+        internal static void GpuHitch(float ms)
+        {
+            if (!Watching || ms < 45f || PerfOverlay.IsLoadingNow || ImagePrefetch.Running) return;
             float used = SystemMonitor.VramUsedMB;
             long total = SystemInfo.graphicsMemorySize;
             if (used <= 0 || total <= 0 || used < total * 0.9f) return;

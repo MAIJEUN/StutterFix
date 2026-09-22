@@ -177,12 +177,23 @@ namespace StutterFix
                 var seen = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
                 var cached = spritesField != null ? spritesField.GetValue(__instance.imgHolder) as System.Collections.IDictionary : null;
 
+                // 같은 맵을 다시 여는데 이미 올라온 이미지가 지금 한도와 다른 크기면(자동이 이번부터 줄이기로 했거나 한도를 바꿈)
+                // 그 이미지를 내려서 새 한도로 다시 불러오게 한다. 예전에는 이미 올라온 이미지를 그대로 써서, 게임을 다시 켜기
+                // 전까지는 "줄임" 이라고 적고도 실제로는 원본이었다. 게임도 파일이 바뀌면 같은 방법(UnloadSprite)으로 다시 부른다.
+                bool reload = cached != null && string.Equals(__instance.levelPath, VramGuard.Level, StringComparison.OrdinalIgnoreCase) && sideNow != VramGuard.CurrentCap;
+                var unload = reload ? AccessTools.Method(typeof(TextureManager), "UnloadSprite") : null;
+                int unloaded = 0;
+
                 Action<ADOFAI.LevelEvent> add = ev =>
                 {
                     if (ev == null || !ev.ContainsKey("decorationImage")) return;
                     var img = ev["decorationImage"] as string;
                     if (string.IsNullOrEmpty(img) || img.StartsWith("prefab:", StringComparison.OrdinalIgnoreCase)) return;
-                    if (cached != null && cached.Contains(img)) return;   // 이미 불러온 이미지는 게임이 다시 풀지 않는다
+                    if (cached != null && cached.Contains(img))   // 이미 불러온 이미지는 게임이 다시 풀지 않는다
+                    {
+                        if (unload == null) return;
+                        try { unload.Invoke(__instance.imgHolder, new object[] { img }); unloaded++; } catch { return; }
+                    }
                     string path = Path.Combine(dir, img);
                     if (seen.ContainsKey(path)) return;
                     if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) return;   // JPG 등은 원래 방식
@@ -193,6 +204,7 @@ namespace StutterFix
                 foreach (var ev in __instance.decorations) add(ev);
                 foreach (var ev in __instance.events) if ((int)ev.eventType == 29) add(ev);
 
+                if (unloaded > 0) Main.Entry.Logger.Log("[이미지] 한도가 바뀌어 이미 올라온 이미지 " + unloaded + "장을 다시 불러옴 (긴 변 " + (sideNow > 0 ? sideNow.ToString() : "원본") + ")");
                 // 이미 올라온 이미지를 다시 쓰는 경우(같은 맵 다시 열기)에는 그때의 한도가 그대로 남는다
                 VramGuard.OnLevelLoaded(__instance.levelPath, sideNow, list.Count >= 8);
                 if (list.Count < 8) return;   // 몇 장 안 되면 그냥 원래대로

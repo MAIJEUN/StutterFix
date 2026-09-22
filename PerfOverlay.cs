@@ -151,6 +151,7 @@ namespace StutterFix
             show = Mathf.MoveTowards(show, on ? 1f : 0f, dt / (on ? 0.3f : 0.18f));
             open = Mathf.MoveTowards(open, Mode == 1 && iconOpen ? 1f : 0f, dt / 0.22f);
             if (on) { SystemMonitor.Start(); CaptureTiming(); }
+            else if (VramGuard.Watching) CaptureTiming();   // 모니터를 꺼 둬도 VRAM 부족 끊김을 가리려면 GPU 시간이 필요하다
             else if (show <= 0f) { if (!SystemMonitor.Keep) SystemMonitor.Stop(); UiInputBlock.Clear(this); }
 
             MeasureFrame();
@@ -275,7 +276,7 @@ namespace StutterFix
             avgMs = Mathf.Lerp(avgMs, Mathf.Min(ms, 1000f), sustained ? 0.25f : hitch ? 0.03f : 0.05f);
             CheckSlow();
             if (!hitch || sustained) return;
-            if (Mode == 0) { hitchCount++; return; }
+            if (Mode == 0 && !VramGuard.Watching) { hitchCount++; return; }
             // 모드 창(UMM, 이 모드의 설정 창)이 열려 있는 동안은 창 안에서 누르는 것(다른 모드 화면 열기, 설정 저장)이 멈춤을 만든다
             if (UmmOpen()) MarkLoading(T("모드 창 (UMM)", "Mod window (UMM)"));
             else if (SettingsWindow.Open) MarkLoading(T("설정 창", "Settings window"));
@@ -496,7 +497,7 @@ namespace StutterFix
             }
             else if (gcDelta > 0) { h.Cause = T("메모리 정리", "Memory cleanup"); h.Detail = T("게임이 GC 로 메모리를 정리했습니다", "The game ran a garbage collection"); }
             else if (fx > ms * 0.4f) { h.Cause = T("효과 몰림", "Effect burst"); h.Detail = T("한 번에 시작된 효과들이 ", "Effects starting at once took ") + fx.ToString("F0") + T("ms 걸렸습니다", "ms"); }
-            else if (gpu > ms * 0.7f) { h.Cause = T("GPU 과부하", "GPU overload"); h.Detail = T("그래픽카드가 ", "The GPU was busy for ") + gpu.ToString("F0") + T("ms 동안 바빴습니다 (필터가 많은 구간)", "ms (heavy filters)"); }
+            else if (gpu > ms * 0.7f) { h.Cause = T("GPU 과부하", "GPU overload"); h.Detail = T("그래픽카드가 ", "The GPU was busy for ") + gpu.ToString("F0") + T("ms 동안 바빴습니다 (필터가 많은 구간)", "ms (heavy filters)"); VramGuard.GpuHitch(ms); }
             else if (cpuMain > ms * 0.6f) { h.Cause = T("게임 처리", "Game logic"); h.Detail = T("게임 계산에 ", "Game code took ") + cpuMain.ToString("F0") + T("ms 걸렸습니다", "ms"); }
             else if (gpu <= 0 && cpuMain <= 0) { h.Cause = T("원인 불명", "Unknown"); h.Detail = T("프레임 시간을 아직 읽지 못했습니다", "Frame timing not available yet"); }
             else { h.Cause = T("게임 바깥", "Outside the game"); h.Detail = T("게임은 한가했습니다. 윈도우나 다른 프로그램일 수 있습니다", "The game was idle; likely Windows or another app"); }
