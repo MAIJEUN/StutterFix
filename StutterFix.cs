@@ -103,7 +103,6 @@ namespace StutterFix
                 TextFix.Install(harmony);
                 EffectScan.Install(harmony);   // 효과 나누기가 이 패치를 통해 돈다
                 RecolorSplit.Install(harmony);
-                MoveSplit.Install(harmony);
                 ImagePrefetch.Install(harmony);
                 FastBlend.Install(harmony);
                 TweenFix.Install(harmony);
@@ -340,7 +339,6 @@ namespace StutterFix
             GcControl.Tick(dt);
             EffectBudget.Tick();
             RecolorSplit.Tick();
-            MoveSplit.Tick();
             FastBlend.Tick();
             VramGuard.Tick();
             ImagePrefetch.LogAfterLoad();
@@ -402,7 +400,6 @@ namespace StutterFix
         {
             GcControl.Enabled = Config.GcPause;
             EffectBudget.Enabled = Config.EffectSplit;
-            MoveSplit.Enabled = Config.EffectSplit;   // 효과 몰림 나누기와 같은 스위치 (효과 하나 안을 나누는 것)
             RecolorSplit.Enabled = Config.RecolorSplit;
             TweenFix.Enabled = Config.TweenGuard;
             TextFix.SkipSameText = Config.SkipSameText;
