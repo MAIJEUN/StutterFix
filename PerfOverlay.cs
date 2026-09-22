@@ -246,7 +246,14 @@ namespace StutterFix
 
             // 게임·모드 시작 구간: 켠 뒤 최소 20초, 그리고 5초 연속 안정될 때까지. 모드 로딩 사이의 조용한 틈에
             // 끝났다고 보면, 뒤늦게 로딩하는 모드(Quartz 버전 불러오기 등)의 멈춤이 다시 "원인 불명" 으로 떴다.
-            if (startup) { smooth = ms < 50f ? smooth + ms / 1000f : 0f; if (smooth > 5f && Time.realtimeSinceStartup > 20f) startup = false; }
+            // 게임을 켠 직후(다른 모드들이 준비되는 동안)는 끊김으로 세지 않는다. 20초가 지나고 5초 동안 매끄러우면 끝.
+            // 그런데 켜자마자 맵을 열면 로딩/곡 준비의 긴 프레임 때문에 5초 연속이 계속 끊겨서, 첫 판 전체가
+            // "시작 중" 으로 빠졌다(첫 판 끊김 0). 맵을 불러오거나 곡을 시작하면 시작 단계는 끝난 것으로 본다.
+            if (startup)
+            {
+                smooth = ms < 50f ? smooth + ms / 1000f : 0f;
+                if ((smooth > 5f && Time.realtimeSinceStartup > 20f) || levelActivity) startup = false;
+            }
 
             graph[graphHead] = ms; graphHead = (graphHead + 1) % GraphN;
             recent[recentHead] = ms; recentHead = (recentHead + 1) % LowN;
@@ -403,7 +410,9 @@ namespace StutterFix
         private static int loadFrame = -1000;
         private static float loadTime = -999f;
         private static string loadWhat = "";
-        private bool startup = true;   // 게임을 켠 뒤 최소 20초 + 프레임이 5초 동안 안정될 때까지
+        private bool startup = true;   // 게임을 켠 뒤 최소 20초 + 프레임이 5초 동안 안정될 때까지 (맵을 열면 바로 끝)
+        private static bool levelActivity;   // 맵을 불러오거나 곡을 시작했다
+        internal static void LevelActivity() { levelActivity = true; }
         private float smooth;
 
         internal static void MarkLoading(string what)
@@ -421,7 +430,7 @@ namespace StutterFix
         // 첫 타일 전이라 입력에는 영향이 없으므로 따로 적고 끊김으로 세지 않는다.
         private static bool startPhase;
         private static float startPhaseAt;
-        internal static void BeginStartPhase() { startPhase = true; startPhaseAt = Time.realtimeSinceStartup; }
+        internal static void BeginStartPhase() { startPhase = true; startPhaseAt = Time.realtimeSinceStartup; levelActivity = true; }
         public static void EndStartPhase() { startPhase = false; }
         private static bool InStartPhase { get { return startPhase && Time.realtimeSinceStartup - startPhaseAt < 5f; } }
 

@@ -152,7 +152,7 @@ namespace StutterFix
             patched = false;   // 다시 켜면 다시 건다
         }
 
-        public static void AfterLoad() { endedByHook = false; PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); Resume("맵 로딩"); }
+        public static void AfterLoad() { endedByHook = false; PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); PerfOverlay.LevelActivity(); Resume("맵 로딩"); }
 
         public static void OnSongEnd(MethodBase __originalMethod)
         {
