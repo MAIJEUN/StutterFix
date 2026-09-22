@@ -20,7 +20,10 @@ namespace StutterFix
         internal static bool Enabled = true;
         internal static bool NoCollectDuringSong = true;  // 곡 중에는 조금씩 치우기도 하지 않는다
         internal static int HardLimitMB = 6000;           // 여기 넘으면 끊김을 감수하고 완전 정리
-        internal static float MaxPauseSeconds = 300f;     // 감지가 실패해도 이 시간이 지나면 반드시 정리
+        // 예전에는 300초(5분)였다. 여기 힙에서는 한 번 정리에 700ms 쯤 걸려서, 1시간짜리 맵이면 5분마다 크게 끊겼다.
+        // 곡이 끝난 걸 놓친 경우는 아래 "10초간 조용함" 이 잡으므로, 이 시간은 마지막 안전장치로만 둔다.
+        // 메모리는 HardLimitMB 가 따로 지킨다 (곡 중 쌓이는 양은 1분에 100MB 안팎이었다).
+        internal static float MaxPauseSeconds = 7200f;
         internal static float EndDelaySeconds = 3f;       // 곡이 끝나고 이만큼 기다렸다 정리한다
 
         // 완주 직후는 마무리 연출이 돌아가는 중이라, 그 순간 정리하면 연출이 끊긴다.
@@ -285,7 +288,10 @@ namespace StutterFix
                 quietTimer = 0f;
             }
 
-            if (heapNow > HardLimitMB)
+            // RAM 이 적은 컴퓨터에서는 한계를 낮춘다 (RAM 의 40%, 최소 1.5GB)
+            int limit = HardLimitMB;
+            try { int ram = SystemInfo.systemMemorySize; if (ram > 0) limit = Mathf.Min(limit, Mathf.Max(1500, ram * 2 / 5)); } catch { }
+            if (heapNow > limit)
             {
                 // 안전장치. 여기까지 오면 어쩔 수 없이 한 번 멈춘다.
                 Resume("힙 한계 " + heapNow + "MB");
