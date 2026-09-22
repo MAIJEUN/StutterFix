@@ -179,7 +179,16 @@ namespace StutterFix
         // 곡이 끝났다고 밀린 효과를 버리면 안 된다. 마지막 타일은 효과가 한꺼번에 몰려 나눠 두는 곳이라,
         // 예전에는 여기서 비워서 완주 연출이 이상하게 보였다. 남은 것은 다음 프레임들에서 마저 실행된다
         // (사라진 효과는 실행할 때 건너뛴다). 비우는 것은 재시작과 곡 시작 때만 한다.
-        private static void SongEnded() { }
+        // 곡이 끝나면 장식 이동 최적화가 실제로 무엇을 얼마나 줄였는지 한 줄 남긴다(플레이어용 로그로도 확인할 수 있게).
+        private static void SongEnded()
+        {
+            try
+            {
+                Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary());
+                ZeroTween.Reset(); MoveApply.Reset();
+            }
+            catch { }
+        }
 
         internal static bool Playing { get { return wasPlaying; } }   // 실시간 모니터가 곡 단위 통계를 낼 때 쓴다
 
@@ -194,8 +203,6 @@ namespace StutterFix
             Main.Entry.Logger.Log("[끊김] 같은 글자 건너뛰기 누적 " + TextFix.SkippedSameText + "회");
             Main.Entry.Logger.Log("[끊김] 색 바꾸기 나눔 " + RecolorSplit.SplitEffects + "번, 미룬 타일 " + RecolorSplit.DeferredTiles + "칸, 순서 맞추려 먼저 칠함 " + RecolorSplit.FlushedForOrder + "번" + (RecolorSplit.Patched ? "" : " (적용 안 됨)"));
             if (Edition.Dev) { Main.Entry.Logger.Log("[끊김] 덮어쓰기 측정: " + MergeProbe.Summary()); MergeProbe.Reset(); }
-            Main.Entry.Logger.Log("[끊김] 즉시 이동: " + ZeroTween.Summary()); ZeroTween.Reset();
-            Main.Entry.Logger.Log("[끊김] 장식 마무리: " + MoveApply.Summary()); MoveApply.Reset();
 
             if (recs.Count == 0)
             {
