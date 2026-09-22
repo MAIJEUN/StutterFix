@@ -138,6 +138,7 @@ namespace StutterFix
         private string sMsShort = "", sLowShort = "", sCpuShort = "", sGpuShort = "", sVramShort = "", sRamShort = "";
         private string[] sHist = new string[0], sHistMs = new string[0], sHistAgo = new string[0];
         private string sSongWorst = "", sSongCount = "";
+        private string sImg = "";   // 큰 이미지 줄이기 결과 (VRAM 줄 아래)
         private bool vramWarn;
 
         private void Update()
@@ -519,10 +520,16 @@ namespace StutterFix
                 sVramSub = vramWarn ? T("넘침 ", "spill ") + SystemMonitor.SharedGameMB.ToString("F0") + "MB"
                                     : T("게임 ", "game ") + (SystemMonitor.VramGameMB / 1024f).ToString("F1") + "GB";
                 // 큰 이미지 줄이기로 이번 맵에서 아낀 양 (자동이든 직접 고른 한도든)
+                // 큰 이미지 줄이기 결과는 VRAM 줄 아래 한 줄로 (끔이면 없음, 자동인데 줄인 것이 없으면 "원본")
+                sImg = "";
                 if (ImagePrefetch.LastShrunk > 0)
-                    sVramSub += T(" · 이미지 줄임 -", " · images -")
-                        + (ImagePrefetch.LastSavedMB >= 1024f ? (ImagePrefetch.LastSavedMB / 1024f).ToString("F1") + "GB" : ImagePrefetch.LastSavedMB.ToString("F0") + "MB")
-                        + " (" + ImagePrefetch.LastSide + ", " + ImagePrefetch.LastShrunk + T("장)", ")");
+                {
+                    string saved = ImagePrefetch.LastSavedMB >= 1024f ? (ImagePrefetch.LastSavedMB / 1024f).ToString("F1") + "GB" : ImagePrefetch.LastSavedMB.ToString("F0") + "MB";
+                    sImg = T("이미지 ", "Images ") + ImagePrefetch.LastShrunk + T("장을 긴 변 ", " capped at ") + ImagePrefetch.LastSide + T(" 으로 줄여 VRAM -", " px, VRAM -") + saved;
+                    sVramShort += " -" + (ImagePrefetch.LastSavedMB / 1024f).ToString("F1") + "G";
+                }
+                else if (ImagePrefetch.MaxSide != 0 && ImagePrefetch.AnyLoad)
+                    sImg = T("이미지 원본 그대로", "Images at full size") + (ImagePrefetch.MaxSide == ImagePrefetch.Auto ? T(" (자동)", " (auto)") : "");
             }
             else { sGpu = "-"; sGpuSub = T("읽을 수 없음", "n/a"); sVram = "-"; sVramSub = ""; sVramShort = "VRAM -"; vramWarn = false; }
             sGpuShort = "GPU " + sGpu;
@@ -652,7 +659,7 @@ namespace StutterFix
         }
 
         // ── 배치 ───────────────────────────────────────────────────────
-        private const float IconW = 64, MiniH = 46, PW = 256;
+        private const float IconW = 64, MiniH = 46, PW = 256, ImgLineH = 12;
         private float scale = 1f, sw, sh, warmedScale = -1f;
         private Rect widget;           // 끌어서 옮기는 본체(아이콘/미니/상세 패널)
         private bool right;
@@ -673,6 +680,7 @@ namespace StutterFix
             if (C.OvSession) h += 52;
             int rows = (C.OvCpu ? 1 : 0) + (C.OvGpu ? 1 : 0) + (C.OvVram ? 1 : 0) + (C.OvRam ? 1 : 0);
             h += rows * RowH;
+            if (C.OvVram && sImg.Length > 0) h += ImgLineH;
             if (C.OvGc) h += 26;
             if (C.OvHitchList) h += 34 + Mathf.Max(1, sHist.Length) * 18;
             return h + 34;                         // 아래 줄
@@ -928,7 +936,11 @@ namespace StutterFix
 
             if (C.OvCpu) cy = Row(ix, iw, cy, "CPU", sCpu, sCpuSub, cpuBar, false);
             if (C.OvGpu) cy = Row(ix, iw, cy, "GPU", sGpu, sGpuSub, gpuBar, false);
-            if (C.OvVram) cy = Row(ix, iw, cy, "VRAM", sVram, sVramSub, vramBar, vramWarn);
+            if (C.OvVram)
+            {
+                cy = Row(ix, iw, cy, "VRAM", sVram, sVramSub, vramBar, vramWarn);
+                if (sImg.Length > 0) { Label(new Rect(ix, cy - 5, iw, 14), sImg, sSmall); cy += ImgLineH; }
+            }
             if (C.OvRam) cy = Row(ix, iw, cy, "RAM", sRam, sRamSub, ramBar, false);
             if (C.OvGc)
             {

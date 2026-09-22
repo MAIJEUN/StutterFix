@@ -106,6 +106,7 @@ namespace StutterFix
         private static long savedBytes;
         // 마지막으로 불러온 맵에서 실제로 줄인 결과 (실시간 모니터 VRAM 줄에 보여 준다)
         internal static int LastSide, LastShrunk;
+        internal static bool AnyLoad;   // 미리 풀기로 맵을 한 번이라도 불러왔는가
         internal static float LastSavedMB;
         private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
 
@@ -383,7 +384,7 @@ namespace StutterFix
             if (running)
             {
                 double total = (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
-                LastSide = sideNow; LastShrunk = shrunkCount; LastSavedMB = Interlocked.Read(ref savedBytes) / 1048576f;
+                LastSide = sideNow; LastShrunk = shrunkCount; LastSavedMB = Interlocked.Read(ref savedBytes) / 1048576f; AnyLoad = true;
                 Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장 (긴 변 " + sideNow + ", VRAM 약 " + LastSavedMB.ToString("F0") + "MB 아낌)" : ""),
                     used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart);
                 Main.Entry.Logger.Log("[이미지] " + Last);
