@@ -58,9 +58,18 @@ namespace StutterFix
                 if (active) SwapAll(); else RestoreAll();
             }
             if (queue.Count == 0) return;
-            if (active && !suspended)
-                for (int i = 0; i < queue.Count; i++) TrySwap(queue[i]);
-            queue.Clear();
+            if (!active || suspended) { queue.Clear(); return; }
+            // 맵을 불러온 직후에는 장식 수천 개가 한꺼번에 들어온다. 한 프레임에 다 바꾸면 60ms 넘게 걸려서
+            // (편집 화면에서 곡 시작 전에 끊김으로 잡혔다) 한 프레임에 3ms 까지만 하고 나머지는 다음 프레임으로 넘긴다.
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp(), limit = System.Diagnostics.Stopwatch.Frequency * 3 / 1000;
+            int done = 0;
+            while (done < queue.Count)
+            {
+                TrySwap(queue[done++]);
+                if ((done & 15) == 0 && System.Diagnostics.Stopwatch.GetTimestamp() - t0 > limit) break;
+            }
+            queue.RemoveRange(0, done);
+            ModCost.Add(SettingsWindow.T("블렌드 장식 바꾸기", "Blend swap"), (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
         }
 
         private static Material Make(string shader)

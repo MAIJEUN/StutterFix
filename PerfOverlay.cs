@@ -416,7 +416,9 @@ namespace StutterFix
                 Main.Entry.Logger.Log(string.Format("[모니터] {0:F0}ms -> {1} / gpu {2:F1} cpu {3:F1} (수집 {4}번) 효과 {5:F1} 모드 {6:F1}({7}) gc {8}",
                     ms, h.Cause, gpu, cpuMain, timingSamples, fx, mod, modWhat, gcDelta));
             if (Edition.Dev && gpu > ms * 0.7f)
-                Main.Entry.Logger.Log("[모니터]   직전 필터 변화 (6프레임): " + FilterTrace.Recent(p.Frame, 6));
+                Main.Entry.Logger.Log("[모니터]   직전 필터 변화 (6프레임): " + FilterTrace.Recent(p.Frame, 6)
+                    + string.Format(" | VRAM 전체 {0:F0}/{1}MB, 게임 전용 {2:F0}MB, 게임 공유(시스템 RAM) {3:F0}MB",
+                        SystemMonitor.VramUsedMB, SystemInfo.graphicsMemorySize, SystemMonitor.VramGameMB, SystemMonitor.SharedGameMB));
             return h;
         }
 
