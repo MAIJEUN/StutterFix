@@ -22,9 +22,18 @@ namespace StutterFix
     {
         internal static bool Enabled = true;
         internal static bool Patched;
+        internal static int PatchedCount;
         internal static long Calls, Flushed;   // 미룬 횟수 / 실제로 한 횟수 (차이가 아낀 양)
 
         private static Action<scrDecoration> clamp, update;
+        // 편집기에서 플레이하면 SetPosition 마다 편집기 피벗 표시까지 갱신한다. 장식과 상관없는 전역 작업이라 효과당 한 번이면 된다.
+        private static Action<ADOFAI.DecorationPivot, bool> pivotCross;
+        private static bool pivotDirty;
+        internal static long PivotCalls, PivotDone;
+        // (측정) 프레임 단위로 묶으면 몇 번이 될지
+        private static readonly HashSet<scrDecoration> frameSet = new HashSet<scrDecoration>();
+        private static int frameNo = -1;
+        internal static long FrameUnique;
         private static readonly List<scrDecoration> dirty = new List<scrDecoration>();
         private static readonly HashSet<scrDecoration> inList = new HashSet<scrDecoration>();
         private static int depth;
@@ -39,6 +48,8 @@ namespace StutterFix
                 if (set == null || mClamp == null || mUpdate == null) { Main.Entry.Logger.Log("[장식 마무리] 대상 없음"); return; }
                 clamp = (Action<scrDecoration>)Delegate.CreateDelegate(typeof(Action<scrDecoration>), mClamp);
                 update = (Action<scrDecoration>)Delegate.CreateDelegate(typeof(Action<scrDecoration>), mUpdate);
+                var mPivot = AccessTools.Method(typeof(ADOFAI.DecorationPivot), "UpdatePivotCrossImage");
+                if (mPivot != null) pivotCross = (Action<ADOFAI.DecorationPivot, bool>)Delegate.CreateDelegate(typeof(Action<ADOFAI.DecorationPivot, bool>), mPivot);
 
                 MethodBase start = null;
                 foreach (var m in typeof(ffxMoveDecorationsPlus).GetMethods(AccessTools.all))
@@ -60,12 +71,21 @@ namespace StutterFix
             foreach (var c in code)
             {
                 var mi = c.operand as MethodInfo;
-                if (mi == null || mi.DeclaringType != typeof(scrDecoration)) continue;
-                if (mi.Name == "UpdateScreenClamp") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(ClampNow)); c.opcode = OpCodes.Call; n++; }
+                if (mi == null || (mi.DeclaringType != typeof(scrDecoration) && mi.DeclaringType != typeof(ADOFAI.DecorationPivot))) continue;
+                if (mi.Name == "UpdatePivotCrossImage" && pivotCross != null) { c.operand = AccessTools.Method(typeof(MoveApply), nameof(PivotNow)); c.opcode = OpCodes.Call; }
+                else if (mi.Name == "UpdateScreenClamp") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(ClampNow)); c.opcode = OpCodes.Call; n++; }
                 else if (mi.Name == "UpdatePosition") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(UpdateNow)); c.opcode = OpCodes.Call; n++; }
             }
-            Patched = n == 2;
+            Patched = n >= 2; PatchedCount = n;
             return code;
+        }
+
+        public static void PivotNow(ADOFAI.DecorationPivot p, bool arg)
+        {
+            PivotCalls++;
+            if (depth > 0 && Enabled) { pivotDirty = true; return; }
+            PivotDone++;
+            pivotCross(p, arg);
         }
 
         public static void ClampNow(scrDecoration d)
@@ -83,7 +103,10 @@ namespace StutterFix
         private static void Mark(scrDecoration d)
         {
             Calls++;
-            if (d != null && inList.Add(d)) dirty.Add(d);
+            if (d == null) return;
+            if (inList.Add(d)) dirty.Add(d);
+            if (UnityEngine.Time.frameCount != frameNo) { frameNo = UnityEngine.Time.frameCount; frameSet.Clear(); }
+            if (frameSet.Add(d)) FrameUnique++;   // 프레임 단위로 묶었다면 이만큼만 했을 것
         }
 
         public static void Enter() { if (Enabled) depth++; }
@@ -104,14 +127,21 @@ namespace StutterFix
             }
             dirty.Clear();
             inList.Clear();
+            if (pivotDirty)
+            {
+                pivotDirty = false;
+                PivotDone++;
+                try { pivotCross(ADOBase.editor != null ? ADOBase.editor.decPivot : null, true); } catch { }
+            }
         }
 
         internal static string Summary()
         {
             if (Calls == 0) return "미룬 것 없음";
-            return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약){3}", Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, Patched ? "" : " (적용 안 됨)");
+            return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 프레임 단위로 묶으면 {3}번) | 편집기 피벗 갱신 {4}번을 {5}번으로{6}",
+                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)");
         }
 
-        internal static void Reset() { Calls = Flushed = 0; }
+        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; frameSet.Clear(); }
     }
 }
