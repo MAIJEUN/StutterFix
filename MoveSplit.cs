@@ -36,16 +36,6 @@ namespace StutterFix
         internal static float FrameMs = 4f;   // 밀린 조각을 프레임마다 이만큼만 처리한다
 
         internal static long SplitEffects, DeferredDecos, Flushed;
-        // 검사용: 늦게 처리된 장식이 원래보다 얼마나 늦었나, 앞으로 감은 애니메이션이 원래 시간과 얼마나 맞나
-        internal static long LateDecos, CaughtTweens, InstantLate;
-        internal static double SumDelayMs, MaxDelayMs, MaxCatchErrMs;
-        internal static int MaxDelayFrames;
-        internal static string CheckSummary()
-        {
-            if (LateDecos == 0) return "늦게 처리된 장식 없음";
-            return string.Format("늦게 처리된 장식 {0}개: 평균 {1:F1}ms, 최대 {2:F1}ms ({3}프레임) 늦음 | 앞으로 감은 애니메이션 {4}개 (길이 0 인 즉시 이동 {5}개), 감은 뒤 시간 오차 최대 {6:F2}ms",
-                LateDecos, SumDelayMs / LateDecos, MaxDelayMs, MaxDelayFrames, CaughtTweens, InstantLate, MaxCatchErrMs);
-        }
         internal static bool Patched;
 
         private class Piece
@@ -55,8 +45,6 @@ namespace StutterFix
             public List<scrDecoration> List;
             public int Next;
             public float At;          // 원래 시작했어야 할 시각 (Time.time)
-            public float AtReal;      // 같은 시각 (실제 시간, 늦은 정도 재기용)
-            public int AtFrame;
             public bool Queued;
         }
 
@@ -126,7 +114,7 @@ namespace StutterFix
             var list = new List<scrDecoration>(src);
             if (pending.Count > 0) FlushOverlapping(list);
             if (!Enabled || !Hitch.Playing || EffectBudget.InGrace || list.Count < 16) return list;
-            var piece = new Piece { Effect = self, Planet = planet, List = list, At = Time.time, AtReal = Time.realtimeSinceStartup, AtFrame = Time.frameCount };
+            var piece = new Piece { Effect = self, Planet = planet, List = list, At = Time.time };
             return new Timed(piece, FirstMs, false);
         }
 
@@ -183,11 +171,7 @@ namespace StutterFix
             ModCost.Add(SettingsWindow.T("장식 이동 나눠 하기", "Split decoration moves"), used);
         }
 
-        internal static void Reset()
-        {
-            pending.Clear();
-            LateDecos = CaughtTweens = InstantLate = 0; SumDelayMs = MaxDelayMs = MaxCatchErrMs = 0; MaxDelayFrames = 0;   // 검사 수치는 곡마다
-        }
+        internal static void Reset() { pending.Clear(); }
 
         // 장식 목록. 시간이 다 되면 목록을 거기서 끝내고 나머지를 조각으로 남긴다.
         private sealed class Timed : IEnumerable<scrDecoration>, IEnumerator<scrDecoration>
@@ -233,15 +217,7 @@ namespace StutterFix
                     if (d == null) continue;   // 그 사이 사라진 장식
                     cur = d;
                     yielded++;
-                    if (late)
-                    {
-                        Snapshot(d);
-                        double delay = (Time.realtimeSinceStartup - pc.AtReal) * 1000.0;
-                        int frames = Time.frameCount - pc.AtFrame;
-                        LateDecos++; SumDelayMs += delay;
-                        if (delay > MaxDelayMs) MaxDelayMs = delay;
-                        if (frames > MaxDelayFrames) MaxDelayFrames = frames;
-                    }
+                    if (late) Snapshot(d);
                     return true;
                 }
                 if (pc.Queued) pending.Remove(pc);   // 다 끝났다
@@ -272,14 +248,7 @@ namespace StutterFix
                     foreach (var tw in t.Values)
                     {
                         if (tw == null || before.Contains(tw) || !tw.IsActive()) continue;
-                        float want = elapsed * tw.timeScale;
-                        tw.Goto(want, true);
-                        CaughtTweens++;
-                        float dur = tw.Duration(false);
-                        if (dur <= 0f) { InstantLate++; continue; }
-                        if (!tw.IsActive()) continue;   // 감다가 끝났다(원래도 이미 끝났을 시각)
-                        double err = Math.Abs(tw.Elapsed(false) - Math.Min(want, dur)) * 1000.0;
-                        if (err > MaxCatchErrMs) MaxCatchErrMs = err;
+                        tw.Goto(elapsed * tw.timeScale, true);
                     }
                 }
                 catch { }
