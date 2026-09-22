@@ -441,11 +441,15 @@ namespace StutterFix
             if (startSeq == int.MinValue) startSeq = seq;
             else if (seq != startSeq)   // 다음 타일로 넘어갔다 = 첫 타일을 쳤다
             {
+                // 첫 타일을 친 그 프레임까지는 구간에 넣는다. 맵의 시작 효과(CICADA 는 1,700개)는 첫 타일 이벤트라
+                // 바로 그 프레임에 몰리는데, 먼저 구간을 닫고 그 프레임을 판정해서 "게임 처리" 끊김으로 잡혔다.
                 startPhase = false;
+                startGraceFrame = Time.frameCount + 2;
                 Main.Entry.Logger.Log(string.Format("[모니터] 곡 시작 연출 구간 끝: 타일 {0} -> {1} ({2:F1}초)", startSeq, seq, Time.realtimeSinceStartup - startPhaseAt));
             }
         }
-        private static bool InStartPhase { get { return startPhase; } }
+        private static int startGraceFrame = -1;
+        private static bool InStartPhase { get { return startPhase || Time.frameCount <= startGraceFrame; } }
 
         // 끊김이 아닌 안내 (예: VRAM 부족으로 다음부터 이미지를 줄임). 모니터가 켜져 있으면 알림으로 뜬다.
         internal static void Notice(string cause, string detail)
@@ -473,7 +477,7 @@ namespace StutterFix
                     T("맵이나 곡을 준비하느라 멈췄습니다. 끊김으로 세지 않습니다", "Preparing a level or scene; not counted as a hitch"));
             if (InStartPhase)
                 return Loading(ms, T("곡 시작 연출", "Level start"),
-                    T("곡이 시작되며 맵의 첫 효과들이 한꺼번에 시작됐습니다. 첫 타일 전이라 끊김으로 세지 않습니다", "The level's opening effects all started at once, before the first tile; not counted as a hitch"));
+                    T("곡 시작과 첫 타일에서 맵의 시작 효과들이 한꺼번에 실행됐습니다. 끊김으로 세지 않습니다", "The level's opening effects ran all at once at the start / first tile; not counted as a hitch"));
             return null;
         }
 
