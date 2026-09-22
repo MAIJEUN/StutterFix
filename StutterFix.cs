@@ -405,7 +405,7 @@ namespace StutterFix
             EffectBudget.Enabled = Config.EffectSplit;
             RecolorSplit.Enabled = Config.RecolorSplit;
             TweenFix.Enabled = Config.TweenGuard;
-            ZeroTween.Enabled = Config.TweenGuard;   // 애니메이션 처리 최적화에 포함 (길이 0 즉시 이동을 애니메이션 없이)
+            ZeroTween.Enabled = Config.ZeroTween;
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
             ShaderWarm.Enabled = Config.ShaderWarm;
@@ -579,6 +579,7 @@ namespace StutterFix
         public bool EffectSplit = true;
         public bool RecolorSplit = true;
         public bool TweenGuard = true;
+        public bool ZeroTween = true;       // 길이 0 인 즉시 이동을 애니메이션 없이 처리
         public bool SkipSameText = true;
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;

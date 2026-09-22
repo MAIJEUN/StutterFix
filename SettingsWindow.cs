@@ -286,12 +286,12 @@ namespace StutterFix
 
             var c = Main.Config;
             int on = (c.GcPause ? 1 : 0) + (c.EffectSplit ? 1 : 0) + (c.RecolorSplit ? 1 : 0) + (c.TweenGuard ? 1 : 0) + (c.SkipSameText ? 1 : 0)
-                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
+                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
             string d = BootConfig.Describe();
             bool jobs = d.Contains("Jobified") || d.Contains("Split");
 
             GUILayout.BeginHorizontal();
-            Stat(on + " / 10", T("켜진 기능", "Features on"), true);
+            Stat(on + " / 11", T("켜진 기능", "Features on"), true);
             GUILayout.Space(14);
             Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"), false);
             GUILayout.Space(14);
@@ -394,6 +394,9 @@ namespace StutterFix
             ch |= Option("tween", ref c.TweenGuard, T("애니메이션 처리 최적화", "Animation list guard"),
                 T("효과가 많을 때 게임이 애니메이션 목록을 반복해서 다시 정리하느라 느려지는 문제를 막습니다.",
                   "Prevents the game from repeatedly re-sorting its animation list when many effects are running."), null);
+            ch |= Option("zerotween", ref c.ZeroTween, T("즉시 이동 최적화", "Instant moves"),
+                T("장식을 즉시 옮기는 이벤트를 애니메이션을 만들지 않고 바로 처리합니다. 결과 값은 게임과 똑같습니다(26만 개를 비교해 확인).",
+                  "Applies instant decoration moves directly instead of creating a zero-length animation. Values are identical to the game's (verified over 260,000 cases)."), null);
             ch |= Option("text", ref c.SkipSameText, T("글자 장식 최적화", "Text decoration skip"),
                 T("같은 글자를 매 프레임 다시 쓰는 글자 장식은 건너뜁니다. PACL2 같은 모드를 함께 쓸 때 효과가 큽니다.",
                   "Skips text decorations that are re-set to the same text every frame. Helps a lot with mods like PACL2."), null);
@@ -823,7 +826,7 @@ namespace StutterFix
         private void ResetDefaults()
         {
             var c = Main.Config;
-            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.ImagePrefetch = c.SkipAssetUnload = true;
+            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.ZeroTween = c.ImagePrefetch = c.SkipAssetUnload = true;
             if (!c.LegacyGfxJobs) { c.LegacyGfxJobs = true; BootConfig.Apply(true); }
             Save();
         }
