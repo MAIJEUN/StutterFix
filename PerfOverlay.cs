@@ -63,7 +63,7 @@ namespace StutterFix
         // 유니티가 늦게 주는 GPU/메인 스레드 시간: 최근 4프레임
         private readonly FrameTiming[] timing = new FrameTiming[1];
         private readonly float[] gpuRing = new float[4], cpuRing = new float[4];
-        private int timingHead;
+        private int timingHead, timingSamples;
 
         // 사용량 추이 (1초에 한 칸, 최근 60초)
         private readonly float[] hCpu = new float[HistN], hGpu = new float[HistN], hVram = new float[HistN], hRam = new float[HistN];
@@ -139,7 +139,10 @@ namespace StutterFix
                 if (FrameTimingManager.GetLatestTimings(1, timing) > 0)
                 {
                     gpuRing[timingHead] = (float)timing[0].gpuFrameTime;
-                    cpuRing[timingHead] = (float)timing[0].cpuMainThreadFrameTime;
+                    // 메인 스레드 시간이 비어 오는 환경이 있다. 그때는 전체 CPU 프레임 시간으로 대신한다
+                    double cm = timing[0].cpuMainThreadFrameTime;
+                    cpuRing[timingHead] = (float)(cm > 0 ? cm : timing[0].cpuFrameTime);
+                    timingSamples++;
                     timingHead = (timingHead + 1) % gpuRing.Length;
                 }
             }
