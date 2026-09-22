@@ -38,7 +38,7 @@ namespace StutterFix
         {
             if (Instance == null) return;
             SystemMonitor.Stop();
-            UiInputBlock.Set(Instance, false);
+            UiInputBlock.Remove(Instance);
             UnityEngine.Object.Destroy(Instance.gameObject);
             Instance = null;
         }
@@ -106,7 +106,7 @@ namespace StutterFix
             show = Mathf.MoveTowards(show, on ? 1f : 0f, dt / (on ? 0.3f : 0.18f));
             open = Mathf.MoveTowards(open, Mode == 1 && iconOpen ? 1f : 0f, dt / 0.22f);
             if (on) { SystemMonitor.Start(); CaptureTiming(); }
-            else if (show <= 0f) { SystemMonitor.Stop(); UiInputBlock.Set(this, false); }
+            else if (show <= 0f) { SystemMonitor.Stop(); UiInputBlock.Clear(this); }
 
             MeasureFrame();
             if (show <= 0f) return;
@@ -492,12 +492,12 @@ namespace StutterFix
             Vector2 m = ev.mousePosition;
             // 곡 중에는 게임이 커서를 숨긴다. 마우스 클릭을 박자 입력으로 쓰는 사람도 있어서, 그때 아이콘이
             // 클릭을 가로채면 안 된다. 커서가 보일 때(편집 화면, 메뉴, 설정 창)만 누르고 끌 수 있다.
-            if (!Cursor.visible && !dragging) { UiInputBlock.Set(this, false); return; }
+            if (!Cursor.visible && !dragging) { UiInputBlock.Clear(this); return; }
 
             Rect grab = mode == 3 ? new Rect(widget.x, widget.y, widget.width, 60) : widget;   // 상세는 머리만 잡힌다
             Rect hover = widget;
             if (mode == 1 && open > 0.5f) hover = Union(widget, PanelBesideRect(widget));
-            UiInputBlock.Set(this, hover.Contains(m) || dragging);
+            UiInputBlock.Place(this, new Rect(hover.x * scale, hover.y * scale, hover.width * scale, hover.height * scale));   // 뒤의 게임이 클릭을 받지 않게
 
             if (dragId == 0) dragId = GUIUtility.GetControlID(FocusType.Passive);
             switch (ev.type)
@@ -798,6 +798,6 @@ namespace StutterFix
             }
         }
 
-        private void OnDestroy() { SystemMonitor.Stop(); UiInputBlock.Set(this, false); }
+        private void OnDestroy() { SystemMonitor.Stop(); UiInputBlock.Remove(this); }
     }
 }

@@ -70,9 +70,30 @@ namespace StutterFix
                     prefix: new HarmonyMethod(typeof(ImagePrefetch), nameof(Begin)),
                     finalizer: new HarmonyMethod(typeof(ImagePrefetch), nameof(End)));
                 harmony.Patch(load, transpiler: new HarmonyMethod(typeof(ImagePrefetch), nameof(Transpiler)));
+
+                // 게임 버그: 없는 이미지를 장식 여러 개가 쓰면, 두 번째 실패에서 오류 목록 Dictionary.Add 가
+                // "같은 키" 예외를 내고 장식 불러오기가 통째로 멈춘다(DDONGSSADA3302 의 nev_text_-.png, 322/2770 에서 중단).
+                // 이미 적힌 이름이면 다시 적지 않게 한다. 실패한 이미지에서만 불리므로 비용은 없다.
+                var result = AccessTools.Method(typeof(scnEditor), "UpdateImageLoadResult");
+                errorsField = AccessTools.Field(typeof(scnEditor), "errorImageResult");
+                if (result != null && errorsField != null)
+                    harmony.Patch(result, prefix: new HarmonyMethod(typeof(ImagePrefetch), nameof(SkipDuplicateError)));
                 Main.Entry.Logger.Log("[이미지] 미리 풀기 설치" + (swapped == 2 ? "" : " (LoadTexture 모양이 달라 적용 안 됨)"));
             }
             catch (Exception ex) { Main.Entry.Logger.Error("[이미지] 설치 실패: " + ex.Message); }
+        }
+
+        private static FieldInfo errorsField;
+
+        public static bool SkipDuplicateError(scnEditor __instance, string name)
+        {
+            try
+            {
+                var errors = errorsField.GetValue(__instance) as System.Collections.IDictionary;
+                if (errors != null && name != null && errors.Contains(name)) return false;   // 이미 적혀 있다
+            }
+            catch { }
+            return true;
         }
 
         private static int swapped;

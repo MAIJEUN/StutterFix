@@ -136,10 +136,10 @@ namespace StutterFix
         }
 
         // 창 위를 누를 때 뒤의 게임 UI(에디터 버튼 등)가 같이 눌리지 않게 막는다 (실시간 모니터와 같이 쓴다).
-        private void SetUiBlocked(bool block) { UiInputBlock.Set(this, block); }
+        private void SetUiBlocked(bool block) { if (!block) UiInputBlock.Clear(this); }
 
-        private void OnDisable() { SetUiBlocked(false); }
-        private void OnDestroy() { SetUiBlocked(false); }
+        private void OnDisable() { UiInputBlock.Clear(this); }
+        private void OnDestroy() { UiInputBlock.Remove(this); }
 
         private void OnGUI()
         {
@@ -172,7 +172,9 @@ namespace StutterFix
                            * Matrix4x4.Translate(c + new Vector3(0, (1 - e) * 14f, 0))
                            * Matrix4x4.Scale(new Vector3(k, k, 1f))
                            * Matrix4x4.Translate(-c);
-                SetUiBlocked(!closing && rect.Contains(Event.current.mousePosition));
+                // 창이 있는 자리에 보이지 않는 UI 판을 깔아 뒤의 게임이 클릭을 받지 않게 한다
+                if (closing) UiInputBlock.Clear(this);
+                else UiInputBlock.Place(this, new Rect(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale));
                 if (Event.current.type == EventType.Repaint)
                     sShadow.Draw(new Rect(rect.x - 34, rect.y - 22, rect.width + 68, rect.height + 70), false, false, false, false);
                 rect = GUI.Window(0x5F1A, rect, DrawWindow, GUIContent.none, sWindow);
