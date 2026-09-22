@@ -8,15 +8,17 @@ namespace StutterFix
     // 게임 화면에 띄워 두는 실시간 모니터.
     //
     // 표시 방식 (Shift+Insert 로 차례로 바뀐다, 설정 창 "모니터" 에서도 고른다)
-    //   아이콘 : 화면 끝 가운데의 작은 탭. FPS, 상태 점(초록/주황/빨강), 작은 그래프. 누르면 상세 패널이 옆으로 펼쳐진다
-    //   미니   : 한 줄짜리 알약. FPS, 프레임 시간, 1% low, 그래프
-    //   상세   : FPS, 그래프, CPU/GPU/VRAM/RAM/GC, 최근 끊김 목록
-    // 아이콘/미니/패널 머리를 잡고 끌면 위아래로 옮겨지고, 화면 반대쪽으로 끌면 그쪽 끝에 붙는다.
-    // 불투명도, 크기, 보여 줄 항목은 설정 창에서 고친다.
+    //   아이콘 : 화면 끝의 작은 탭. FPS 와 고른 항목(프레임 시간, CPU, GPU, VRAM ...), 상태 점, 작은 그래프.
+    //            누르면 상세 패널이 옆으로 펼쳐진다
+    //   미니   : 한 줄짜리 알약. FPS 와 고른 항목을 칸으로 나눠 보여 주고 그래프를 붙인다
+    //   상세   : FPS, 그래프, 이번 곡 통계, CPU/GPU/VRAM/RAM(최근 60초 추이 포함), GC, 최근 끊김 목록
+    // 본체를 잡고 끌면 위아래로 옮겨지고, 화면 반대쪽으로 끌면 그쪽 끝에 붙는다.
     //
     // 끊김 원인 (그 프레임에 있었던 일로 가린다. 정밀 측정이 아니라 추정이다):
     //   GC 가 돌았다 -> 메모리 정리 / 효과 시작에 프레임의 40% 이상 -> 효과 몰림 /
     //   GPU 가 70% 이상 바빴다 -> GPU 과부하 / 메인 스레드가 60% 이상 -> 게임 처리 / 모두 아니다 -> 게임 바깥
+    // GPU·메인 스레드 시간은 유니티가 몇 프레임 늦게 준다. 끊긴 순간에만 요청하면 비어서 "원인 불명"이 떴다.
+    // 그래서 모니터가 켜져 있는 동안 매 프레임 수집하고, 최근 4프레임 중 가장 큰 값으로 가린다.
     //
     // 비용: 사용량은 SystemMonitor 가 작업 스레드에서 1초에 한 번 읽는다. 글자는 1초에 4번만 새로 만든다
     // (곡 중에는 GC 가 멈춰 있어서, 매 프레임 문자열을 만들면 그대로 쌓인다).
@@ -46,7 +48,7 @@ namespace StutterFix
         private static string T(string ko, string en) { return SettingsWindow.T(ko, en); }
 
         // ── 프레임 기록 ────────────────────────────────────────────────
-        private const int GraphN = 90, LowN = 300;
+        private const int GraphN = 90, LowN = 300, HistN = 60;
         private readonly float[] graph = new float[GraphN];
         private int graphHead;
         private readonly float[] recent = new float[LowN];
@@ -58,11 +60,27 @@ namespace StutterFix
         private int hitchCount;
         private float lastHitchTime = -999f, lastHitchMs;
 
-        private class HitchRec { public float Ms, Time; public string Cause, Detail, Title; public Color Tone; }
+        // 유니티가 늦게 주는 GPU/메인 스레드 시간: 최근 4프레임
+        private readonly FrameTiming[] timing = new FrameTiming[1];
+        private readonly float[] gpuRing = new float[4], cpuRing = new float[4];
+        private int timingHead;
+
+        // 사용량 추이 (1초에 한 칸, 최근 60초)
+        private readonly float[] hCpu = new float[HistN], hGpu = new float[HistN], hVram = new float[HistN], hRam = new float[HistN];
+        private int histHead, histCount;
+        private float histTimer;
+
+        // 이번 곡 통계
+        private bool wasPlaying;
+        private double songMs;
+        private int songFrames, songHitches;
+        private float songWorst;
+
+        private class HitchRec { public float Ms, Time; public int Count = 1; public string Cause, Detail, Title; public Color Tone; }
         private readonly List<HitchRec> history = new List<HitchRec>();   // 최근 끊김 (상세 패널 목록)
         private readonly List<HitchRec> toasts = new List<HitchRec>();    // 떠 있는 알림
         private readonly Dictionary<HitchRec, float> toastY = new Dictionary<HitchRec, float>();
-        private const float ToastLife = 3.2f;
+        private const float ToastLife = 4f;
 
         // ── 화면 상태 ──────────────────────────────────────────────────
         private float show;          // 전체가 나타난 정도
@@ -72,7 +90,8 @@ namespace StutterFix
         private float cpuBar, gpuBar, vramBar, ramBar, flash;
         private float textTimer;
         private string sFps = "-", sMs = "", sLow = "", sCpu = "", sCpuSub = "", sGpu = "", sGpuSub = "", sVram = "", sVramSub = "",
-            sRam = "", sRamSub = "", sGc = "", sGcSub = "", sFooter = "";
+            sRam = "", sRamSub = "", sGc = "", sGcSub = "", sFooter = "", sSong = "", sSongSub = "";
+        private string sMsShort = "", sLowShort = "", sCpuShort = "", sGpuShort = "", sVramShort = "", sRamShort = "";
         private string[] sHist = new string[0];
         private bool vramWarn;
 
@@ -86,7 +105,7 @@ namespace StutterFix
             bool on = Mode > 0;
             show = Mathf.MoveTowards(show, on ? 1f : 0f, dt / (on ? 0.3f : 0.18f));
             open = Mathf.MoveTowards(open, Mode == 1 && iconOpen ? 1f : 0f, dt / 0.22f);
-            if (on) SystemMonitor.Start();
+            if (on) { SystemMonitor.Start(); CaptureTiming(); }
             else if (show <= 0f) { SystemMonitor.Stop(); UiInputBlock.Set(this, false); }
 
             MeasureFrame();
@@ -94,15 +113,41 @@ namespace StutterFix
 
             cpuBar = Approach(cpuBar, Pct(SystemMonitor.CpuTotal), 8f);
             gpuBar = Approach(gpuBar, Pct(SystemMonitor.Gpu3D), 8f);
-            float vramTotal = SystemInfo.graphicsMemorySize;
-            vramBar = Approach(vramBar, vramTotal > 0 && SystemMonitor.VramUsedMB > 0 ? Mathf.Clamp01(SystemMonitor.VramUsedMB / vramTotal) : 0f, 8f);
+            vramBar = Approach(vramBar, VramFrac(), 8f);
             ramBar = Approach(ramBar, Pct(SystemMonitor.RamLoad), 8f);
             flash = Mathf.MoveTowards(flash, 0f, dt / 0.6f);
+
+            histTimer -= dt;
+            if (histTimer <= 0f)
+            {
+                histTimer = 1f;
+                hCpu[histHead] = Pct(SystemMonitor.CpuTotal); hGpu[histHead] = Pct(SystemMonitor.Gpu3D);
+                hVram[histHead] = VramFrac(); hRam[histHead] = Pct(SystemMonitor.RamLoad);
+                histHead = (histHead + 1) % HistN;
+                if (histCount < HistN) histCount++;
+            }
 
             textTimer -= dt;
             if (textTimer <= 0f) { textTimer = 0.25f; RefreshText(); }
         }
 
+        private void CaptureTiming()
+        {
+            try
+            {
+                FrameTimingManager.CaptureFrameTimings();
+                if (FrameTimingManager.GetLatestTimings(1, timing) > 0)
+                {
+                    gpuRing[timingHead] = (float)timing[0].gpuFrameTime;
+                    cpuRing[timingHead] = (float)timing[0].cpuMainThreadFrameTime;
+                    timingHead = (timingHead + 1) % gpuRing.Length;
+                }
+            }
+            catch { }
+        }
+
+        private static float Max(float[] a) { float m = 0; for (int i = 0; i < a.Length; i++) if (a[i] > m) m = a[i]; return m; }
+        private static float VramFrac() { float t = SystemInfo.graphicsMemorySize; return t > 0 && SystemMonitor.VramUsedMB > 0 ? Mathf.Clamp01(SystemMonitor.VramUsedMB / t) : 0f; }
         private static float Pct(float v) { return v < 0 ? 0f : Mathf.Clamp01(v / 100f); }
         private static float Approach(float cur, float target, float speed) { return cur + (target - cur) * (1f - Mathf.Exp(-speed * Time.unscaledDeltaTime)); }
         private static float EaseOut(float t) { t = 1f - Mathf.Clamp01(t); return 1f - t * t * t; }
@@ -124,51 +169,73 @@ namespace StutterFix
             recent[recentHead] = ms; recentHead = (recentHead + 1) % LowN;
             if (recentCount < LowN) recentCount++;
 
-            bool hitch = ms > Mathf.Max(25f, avgMs * 2.2f);
-            if (!hitch) { avgMs = Mathf.Lerp(avgMs, ms, 0.05f); return; }
+            // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
+            bool playing = Hitch.Playing;
+            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; }
+            wasPlaying = playing;
+            if (playing && ms < 1500f) { songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms; }
+
+            float limit = Mathf.Max(C != null ? C.AlertMs : 33f, avgMs * 2.2f);
+            bool hitch = ms > limit;
+            if (ms <= Mathf.Max(25f, avgMs * 2.2f)) avgMs = Mathf.Lerp(avgMs, ms, 0.05f);
+            if (!hitch) return;
             if (Mode == 0) { hitchCount++; return; }
 
             var h = Classify(ms, gcDelta);
             if (h == null) return;   // 불러오기
             hitchCount++;
+            if (playing) songHitches++;
             lastHitchTime = Time.unscaledTime;
             lastHitchMs = ms;
             flash = 1f;
             history.Insert(0, h);
             if (history.Count > 6) history.RemoveAt(history.Count - 1);
+
             if (C.HitchAlerts)
             {
-                toasts.Insert(0, h);
-                if (toasts.Count > 3) { toastY.Remove(toasts[3]); toasts.RemoveAt(3); }
+                // 같은 원인이 1.5초 안에 또 나면 새 카드를 쌓지 않고 "×2" 로 묶는다
+                var top = toasts.Count > 0 ? toasts[0] : null;
+                if (top != null && top.Cause == h.Cause && Time.unscaledTime - top.Time < 1.5f)
+                {
+                    top.Count++;
+                    top.Ms = Mathf.Max(top.Ms, ms);
+                    top.Time = Time.unscaledTime;
+                    top.Tone = top.Ms >= 50 ? Bad : Warn;
+                    top.Title = TitleOf(top);
+                }
+                else
+                {
+                    toasts.Insert(0, h);
+                    if (toasts.Count > 3) { toastY.Remove(toasts[3]); toasts.RemoveAt(3); }
+                }
             }
             textTimer = 0f;   // 목록을 바로 갱신
         }
-
-        private readonly FrameTiming[] timing = new FrameTiming[1];
 
         private HitchRec Classify(float ms, int gcDelta)
         {
             // 한참 멈춘 것은 끊김이 아니라 불러오기다
             if (ms > 1500f || ImagePrefetch.Running) return null;
 
-            float gpu = 0, cpuMain = 0;
-            try
-            {
-                FrameTimingManager.CaptureFrameTimings();
-                if (FrameTimingManager.GetLatestTimings(1, timing) > 0) { gpu = (float)timing[0].gpuFrameTime; cpuMain = (float)timing[0].cpuMainThreadFrameTime; }
-            }
-            catch { }
+            float gpu = Max(gpuRing), cpuMain = Max(cpuRing);
             float fx = (float)Math.Max(EffectScan.LastFrameEffectMs, EffectScan.FrameEffectMs);
 
             var h = new HitchRec { Ms = ms, Time = Time.unscaledTime, Tone = ms >= 50 ? Bad : Warn };
             if (gcDelta > 0) { h.Cause = T("메모리 정리", "Memory cleanup"); h.Detail = T("게임이 GC 로 메모리를 정리했습니다", "The game ran a garbage collection"); }
-            else if (fx > ms * 0.4f) { h.Cause = T("효과 몰림", "Effect burst"); h.Detail = T("효과 시작에 ", "Starting effects took ") + fx.ToString("F0") + "ms"; }
-            else if (gpu > ms * 0.7f) { h.Cause = T("GPU 과부하", "GPU overload"); h.Detail = T("그래픽카드가 ", "The GPU was busy for ") + gpu.ToString("F0") + T("ms 동안 바빴습니다", "ms"); }
-            else if (cpuMain > ms * 0.6f) { h.Cause = T("게임 처리", "Game logic"); h.Detail = T("게임 계산에 ", "Game code took ") + cpuMain.ToString("F0") + "ms"; }
-            else if (gpu <= 0 && cpuMain <= 0) { h.Cause = T("원인 불명", "Unknown"); h.Detail = T("이 환경에서는 프레임 시간을 읽을 수 없습니다", "Frame timing is not available here"); }
+            else if (fx > ms * 0.4f) { h.Cause = T("효과 몰림", "Effect burst"); h.Detail = T("한 번에 시작된 효과들이 ", "Effects starting at once took ") + fx.ToString("F0") + T("ms 걸렸습니다", "ms"); }
+            else if (gpu > ms * 0.7f) { h.Cause = T("GPU 과부하", "GPU overload"); h.Detail = T("그래픽카드가 ", "The GPU was busy for ") + gpu.ToString("F0") + T("ms 동안 바빴습니다 (필터가 많은 구간)", "ms (heavy filters)"); }
+            else if (cpuMain > ms * 0.6f) { h.Cause = T("게임 처리", "Game logic"); h.Detail = T("게임 계산에 ", "Game code took ") + cpuMain.ToString("F0") + T("ms 걸렸습니다", "ms"); }
+            else if (gpu <= 0 && cpuMain <= 0) { h.Cause = T("원인 불명", "Unknown"); h.Detail = T("프레임 시간을 아직 읽지 못했습니다", "Frame timing not available yet"); }
             else { h.Cause = T("게임 바깥", "Outside the game"); h.Detail = T("게임은 한가했습니다. 윈도우나 다른 프로그램일 수 있습니다", "The game was idle; likely Windows or another app"); }
-            h.Title = ms.ToString("F0") + "ms  ·  " + h.Cause;   // 알림 제목은 한 번만 만든다
+            h.Title = TitleOf(h);   // 알림 제목은 한 번만 만든다
             return h;
+        }
+
+        // "끊김 42ms · 효과 몰림  ×3" (정도는 글로도)
+        private static string TitleOf(HitchRec h)
+        {
+            string sev = h.Ms >= 100 ? T("큰 끊김", "Big hitch") : h.Ms >= 50 ? T("끊김", "Hitch") : T("짧은 끊김", "Short hitch");
+            return sev + " " + h.Ms.ToString("F0") + "ms  ·  " + h.Cause + (h.Count > 1 ? "  ×" + h.Count : "");
         }
 
         // ── 글자 (1초에 4번) ────────────────────────────────────────────
@@ -179,15 +246,18 @@ namespace StutterFix
             float avg = n > 0 ? sum / n : 0;
             sFps = avg > 0 ? (1000f / avg).ToString("F0") : "-";
             sMs = avg.ToString("F1") + " ms";
+            sMsShort = avg.ToString("F1") + "ms";
             if (recentCount >= 30)
             {
                 Array.Copy(recent, sortBuf, recentCount);
                 Array.Sort(sortBuf, 0, recentCount);
                 float p99 = sortBuf[Mathf.Clamp((int)(recentCount * 0.99f), 0, recentCount - 1)];
-                sLow = "1% " + (1000f / p99).ToString("F0");
+                sLow = "1% low " + (1000f / p99).ToString("F0");
+                sLowShort = "1% " + (1000f / p99).ToString("F0");
             }
 
             sCpu = Val(SystemMonitor.CpuTotal, "%");
+            sCpuShort = "CPU " + sCpu;
             sCpuSub = SystemMonitor.CpuGame >= 0 ? T("게임 ", "game ") + SystemMonitor.CpuGame.ToString("F0") + "%" : "";
             if (SystemMonitor.GpuAvailable)
             {
@@ -195,24 +265,48 @@ namespace StutterFix
                 sGpuSub = SystemMonitor.GpuGame >= 0 ? T("게임 ", "game ") + SystemMonitor.GpuGame.ToString("F0") + "%" : "";
                 float total = SystemInfo.graphicsMemorySize;
                 sVram = (SystemMonitor.VramUsedMB / 1024f).ToString("F1") + " / " + (total / 1024f).ToString("F1") + " GB";
+                sVramShort = "VRAM " + (SystemMonitor.VramUsedMB / 1024f).ToString("F1") + "G";
                 vramWarn = SystemMonitor.SharedGameMB > 400f;
                 sVramSub = vramWarn ? T("넘침 ", "spill ") + SystemMonitor.SharedGameMB.ToString("F0") + "MB"
                                     : T("게임 ", "game ") + (SystemMonitor.VramGameMB / 1024f).ToString("F1") + "GB";
             }
-            else { sGpu = "-"; sGpuSub = T("읽을 수 없음", "n/a"); sVram = "-"; sVramSub = ""; vramWarn = false; }
+            else { sGpu = "-"; sGpuSub = T("읽을 수 없음", "n/a"); sVram = "-"; sVramSub = ""; sVramShort = "VRAM -"; vramWarn = false; }
+            sGpuShort = "GPU " + sGpu;
             sRam = Val(SystemMonitor.RamLoad, "%");
+            sRamShort = "RAM " + sRam;
             sRamSub = SystemMonitor.RamGameMB > 0 ? T("게임 ", "game ") + (SystemMonitor.RamGameMB / 1024f).ToString("F1") + "GB" : "";
             sGc = GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle");
             sGcSub = T("힙 ", "heap ") + (GC.GetTotalMemory(false) / 1073741824f).ToString("F2") + "GB";
 
+            if (songFrames > 30)
+            {
+                sSong = (1000.0 * songFrames / songMs).ToString("F0") + " FPS";
+                sSongSub = T("가장 긴 프레임 ", "worst ") + songWorst.ToString("F0") + "ms  ·  " + T("끊김 ", "hitches ") + songHitches;
+            }
+            else { sSong = "-"; sSongSub = T("곡을 시작하면 셉니다", "starts counting when a level plays"); }
+
             if (sHist.Length != history.Count) sHist = new string[history.Count];
             for (int i = 0; i < history.Count; i++)
                 sHist[i] = history[i].Ms.ToString("F0") + "ms  " + history[i].Cause + "  ·  " + Ago(Time.unscaledTime - history[i].Time);
-            sFooter = T("끊김 ", "Hitches ") + hitchCount + "   ·   " + T("끌어서 옮기기", "drag to move");
+            sFooter = T("전체 끊김 ", "Hitches ") + hitchCount + "   ·   " + T("끌어서 옮기기", "drag to move");
         }
 
         private static string Ago(float s) { return s < 60 ? s.ToString("F0") + T("초 전", "s ago") : (s / 60f).ToString("F0") + T("분 전", "m ago"); }
         private static string Val(float v, string unit) { return v < 0 ? "-" : v.ToString("F0") + unit; }
+
+        // 아이콘/미니에 보여 줄 항목 (고른 순서대로)
+        private readonly List<string> compact = new List<string>(6);
+        private readonly List<float> compactLoad = new List<float>(6);   // 막대 색을 정하는 사용률 (-1 = 없음)
+        private void CollectCompact()
+        {
+            compact.Clear(); compactLoad.Clear();
+            if (C.CmMs) { compact.Add(sMsShort); compactLoad.Add(-1); }
+            if (C.CmLow) { compact.Add(sLowShort); compactLoad.Add(-1); }
+            if (C.CmCpu) { compact.Add(sCpuShort); compactLoad.Add(cpuBar); }
+            if (C.CmGpu) { compact.Add(sGpuShort); compactLoad.Add(gpuBar); }
+            if (C.CmVram) { compact.Add(sVramShort); compactLoad.Add(vramWarn ? 1f : vramBar); }
+            if (C.CmRam) { compact.Add(sRamShort); compactLoad.Add(ramBar); }
+        }
 
         // ── 모양 ───────────────────────────────────────────────────────
         private static Color Hex(int rgb, float a = 1f) { return new Color(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, a); }
@@ -220,10 +314,12 @@ namespace StutterFix
             Track = new Color(1, 1, 1, 0.10f), Bar = new Color(1, 1, 1, 0.85f), Good = Hex(0x5FD39B), Warn = Hex(0xF2B24B), Bad = Hex(0xFF6B6B),
             Base = new Color(0.06f, 0.065f, 0.08f, 1f);
 
+        private static Color LoadColor(float load, Color normal) { return load > 0.9f ? Bad : load > 0.75f ? Warn : normal; }
+
         private bool built;
         private Font font;
         private Texture2D tWhite;
-        private GUIStyle sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall;
+        private GUIStyle sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall, sCenterLine, sLine;
 
         private void Build()
         {
@@ -240,6 +336,8 @@ namespace StutterFix
             sDetail = Text(11, Dim, FontStyle.Normal); sDetail.wordWrap = true;
             sCenterBig = Text(19, Fg, FontStyle.Bold); sCenterBig.alignment = TextAnchor.MiddleCenter;
             sCenterSmall = Text(9, Faint, FontStyle.Bold); sCenterSmall.alignment = TextAnchor.MiddleCenter;
+            sCenterLine = Text(10, Dim, FontStyle.Bold); sCenterLine.alignment = TextAnchor.MiddleCenter;
+            sLine = Text(12, Fg, FontStyle.Bold); sLine.alignment = TextAnchor.MiddleCenter;
         }
 
         private GUIStyle Text(int size, Color c, FontStyle style)
@@ -271,18 +369,36 @@ namespace StutterFix
 
         private static void Label(Rect r, string s, GUIStyle st) { GUI.Label(r, s, st); }
 
+        private void WithColor(GUIStyle st, Color c, Rect r, string s)
+        {
+            var old = st.normal.textColor;
+            st.normal.textColor = c;
+            GUI.Label(r, s, st);
+            st.normal.textColor = old;
+        }
+
         // ── 배치 ───────────────────────────────────────────────────────
-        private const float IconW = 58, IconH = 66, MiniW = 262, MiniH = 46, PW = 252;
+        private const float IconW = 64, MiniH = 46, PW = 256;
         private float scale = 1f, sw, sh;
         private Rect widget;           // 끌어서 옮기는 본체(아이콘/미니/상세 패널)
         private bool right;
+
+        private float IconHeight() { return 62 + compact.Count * 15; }
+
+        private float MiniWidth()
+        {
+            float w = 16 + 96;                       // 점 + FPS
+            for (int i = 0; i < compact.Count; i++) w += 74;
+            return w + 70 + 14;                      // 그래프
+        }
 
         private float PanelHeight()
         {
             float h = 64;                          // FPS 머리
             if (C.OvGraph) h += 56;
+            if (C.OvSession) h += 44;
             int rows = (C.OvCpu ? 1 : 0) + (C.OvGpu ? 1 : 0) + (C.OvVram ? 1 : 0) + (C.OvRam ? 1 : 0);
-            h += rows * 34;
+            h += rows * 36;
             if (C.OvGc) h += 38;
             if (C.OvHitchList) h += 26 + Mathf.Max(1, sHist.Length) * 17;
             return h + 30;                         // 아래 줄
@@ -299,6 +415,7 @@ namespace StutterFix
             right = C.OverlayRight;
             if (Mode != 0) lastMode = Mode;
             int mode = lastMode;   // 사라지는 동안에는 마지막 모양을 유지한다
+            CollectCompact();
 
             var oldM = GUI.matrix; var oldC = GUI.color;
             float e = EaseOut(show);
@@ -308,7 +425,7 @@ namespace StutterFix
             try
             {
                 if (mode == 1) widget = IconRect();
-                else if (mode == 2) widget = EdgeRect(MiniW, MiniH, 12);
+                else if (mode == 2) widget = EdgeRect(MiniWidth(), MiniH, 12);
                 else widget = EdgeRect(PW, PanelHeight(), 12);
 
                 if (Mode != 0) HandleMouse(mode);
@@ -332,8 +449,9 @@ namespace StutterFix
         // 화면 끝에 붙은 탭: 바깥쪽 모서리는 화면 밖으로 넘겨 안쪽만 둥글게 보이게 한다
         private Rect IconRect()
         {
-            float y = Mathf.Lerp(16, sh - IconH - 16, Mathf.Clamp01(C.OverlayY));
-            return right ? new Rect(sw - IconW, y, IconW + 16, IconH) : new Rect(-16, y, IconW + 16, IconH);
+            float h = IconHeight();
+            float y = Mathf.Lerp(16, sh - h - 16, Mathf.Clamp01(C.OverlayY));
+            return right ? new Rect(sw - IconW, y, IconW + 16, h) : new Rect(-16, y, IconW + 16, h);
         }
 
         private Rect EdgeRect(float w, float h, float margin)
@@ -355,6 +473,7 @@ namespace StutterFix
             // 곡 중에는 게임이 커서를 숨긴다. 마우스 클릭을 박자 입력으로 쓰는 사람도 있어서, 그때 아이콘이
             // 클릭을 가로채면 안 된다. 커서가 보일 때(편집 화면, 메뉴, 설정 창)만 누르고 끌 수 있다.
             if (!Cursor.visible && !dragging) { UiInputBlock.Set(this, false); return; }
+
             Rect grab = mode == 3 ? new Rect(widget.x, widget.y, widget.width, 60) : widget;   // 상세는 머리만 잡힌다
             Rect hover = widget;
             if (mode == 1 && open > 0.5f) hover = Union(widget, PanelBesideRect(widget));
@@ -402,27 +521,41 @@ namespace StutterFix
             return Rect.MinMaxRect(Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin), Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
         }
 
+        private Color StatusColor(out float pulse)
+        {
+            float since = Time.unscaledTime - lastHitchTime;
+            pulse = since < 5f ? 0.6f + 0.4f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 5f)) : 1f;
+            return since < 5f ? (lastHitchMs >= 50 ? Bad : Warn) : Good;
+        }
+
         // ── 그리기: 아이콘 ────────────────────────────────────────────
         private void DrawIcon(Rect r)
         {
-            bool hover = r.Contains(Event.current.mousePosition);
+            bool hover = r.Contains(Event.current.mousePosition) && Cursor.visible;
             Panel(r, 14);
             if (hover || dragging) Fill(r, new Color(1, 1, 1, 0.05f), 14);
             if (flash > 0) Fill(r, new Color(Warn.r, Warn.g, Warn.b, 0.22f * flash), 14);
 
             float cx = right ? r.x : r.x + 16;          // 화면 안쪽으로 보이는 부분의 왼쪽 끝
             var inner = new Rect(cx, r.y, IconW, r.height);
-            Label(new Rect(inner.x, inner.y + 10, inner.width, 22), sFps, sCenterBig);
-            Label(new Rect(inner.x, inner.y + 31, inner.width, 12), "FPS", sCenterSmall);
+            Label(new Rect(inner.x, inner.y + 9, inner.width, 22), sFps, sCenterBig);
+            Label(new Rect(inner.x, inner.y + 30, inner.width, 12), "FPS", sCenterSmall);
 
-            // 상태 점: 최근 5초 안에 끊겼으면 주황/빨강으로 깜빡인다
-            float since = Time.unscaledTime - lastHitchTime;
-            Color dot = since < 5f ? (lastHitchMs >= 50 ? Bad : Warn) : Good;
-            float pulse = since < 5f ? 0.6f + 0.4f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 5f)) : 1f;
+            float pulse;
+            Color dot = StatusColor(out pulse);
             Fill(new Rect(inner.xMax - 13, inner.y + 7, 6, 6), new Color(dot.r, dot.g, dot.b, pulse), 3);
 
+            // 고른 항목: FPS 아래에 한 줄씩. 사용률이 높으면 주황/빨강
+            float ly = inner.y + 44;
+            for (int i = 0; i < compact.Count; i++)
+            {
+                if (i == 0) Fill(new Rect(inner.x + 10, ly - 1, inner.width - 20, 1), new Color(1, 1, 1, 0.07f), 0);
+                WithColor(sCenterLine, compactLoad[i] < 0 ? Dim : LoadColor(compactLoad[i], Dim), new Rect(inner.x, ly + 1, inner.width, 13), compact[i]);
+                ly += 15;
+            }
+
             // 작은 그래프 (최근 24프레임)
-            var g = new Rect(inner.x + 8, inner.y + 47, inner.width - 16, 11);
+            var g = new Rect(inner.x + 9, r.yMax - 14, inner.width - 18, 9);
             float bw = g.width / 24f;
             for (int i = 0; i < 24; i++)
             {
@@ -434,7 +567,7 @@ namespace StutterFix
 
             // 펼칠 수 있다는 표시 (안쪽 가장자리의 짧은 선)
             float lx = right ? inner.x + 3 : inner.xMax - 5;
-            Fill(new Rect(lx, r.center.y - 8, 2, 16), new Color(1, 1, 1, hover ? 0.35f : 0.15f), 1);
+            Fill(new Rect(lx, r.center.y - 8, 2, 16), new Color(1, 1, 1, hover ? 0.4f : 0.15f), 1);
         }
 
         private Rect PanelBesideRect(Rect icon)
@@ -462,14 +595,22 @@ namespace StutterFix
         {
             Panel(r, r.height / 2f);
             if (flash > 0) Fill(r, new Color(Warn.r, Warn.g, Warn.b, 0.2f * flash), r.height / 2f);
-            float since = Time.unscaledTime - lastHitchTime;
-            Color dot = since < 5f ? (lastHitchMs >= 50 ? Bad : Warn) : Good;
-            Fill(new Rect(r.x + 16, r.center.y - 3, 6, 6), dot, 3);
+            float pulse;
+            Color dot = StatusColor(out pulse);
+            Fill(new Rect(r.x + 16, r.center.y - 3, 6, 6), new Color(dot.r, dot.g, dot.b, pulse), 3);
             Label(new Rect(r.x + 30, r.y + 10, 60, 24), sFps, sMid);
             Label(new Rect(r.x + 74, r.y + 17, 40, 14), "FPS", sSmall);
-            Label(new Rect(r.x + 112, r.y + 9, 70, 14), sMs, sLabel);
-            Label(new Rect(r.x + 112, r.y + 24, 70, 14), sLow, sSmall);
-            Graph(new Rect(r.x + 180, r.y + 10, r.width - 196, r.height - 20), 40, false);
+
+            // 고른 항목을 칸으로 나눈다
+            float x = r.x + 16 + 96;
+            for (int i = 0; i < compact.Count; i++)
+            {
+                Fill(new Rect(x, r.y + 12, 1, r.height - 24), new Color(1, 1, 1, 0.08f), 0);
+                WithColor(sLine, compactLoad[i] < 0 ? Fg : LoadColor(compactLoad[i], Fg), new Rect(x, r.y, 74, r.height), compact[i]);
+                x += 74;
+            }
+            Fill(new Rect(x, r.y + 12, 1, r.height - 24), new Color(1, 1, 1, 0.08f), 0);
+            Graph(new Rect(x + 10, r.y + 12, 64, r.height - 24), 32, false);
         }
 
         // ── 그리기: 상세 패널 ──────────────────────────────────────────
@@ -479,17 +620,28 @@ namespace StutterFix
             if (flash > 0) Fill(r, new Color(Warn.r, Warn.g, Warn.b, 0.16f * flash), 14);
 
             float ix = r.x + 16, iw = r.width - 32, cy = r.y + 12;
+            float pulse;
+            Color dot = StatusColor(out pulse);
             Label(new Rect(ix, cy, 120, 34), sFps, sBig);
             Label(new Rect(ix + 2, cy + 35, 60, 14), "FPS", sSmall);
+            Fill(new Rect(ix + 34, cy + 39, 6, 6), new Color(dot.r, dot.g, dot.b, pulse), 3);
             Label(new Rect(ix + iw - 110, cy + 6, 110, 16), sMs, sValue);
             Label(new Rect(ix + iw - 110, cy + 24, 110, 16), sLow, sSub);
             cy += 64;
 
             if (C.OvGraph) { Graph(new Rect(ix, cy, iw, 44), GraphN, true); cy += 56; }
-            if (C.OvCpu) cy = Row(ix, iw, cy, "CPU", sCpu, sCpuSub, cpuBar, false);
-            if (C.OvGpu) cy = Row(ix, iw, cy, "GPU", sGpu, sGpuSub, gpuBar, false);
-            if (C.OvVram) cy = Row(ix, iw, cy, "VRAM", sVram, sVramSub, vramBar, vramWarn);
-            if (C.OvRam) cy = Row(ix, iw, cy, "RAM", sRam, sRamSub, ramBar, false);
+            if (C.OvSession)
+            {
+                Fill(new Rect(ix, cy, iw, 34), new Color(1, 1, 1, 0.04f), 8);
+                Label(new Rect(ix + 10, cy + 3, 90, 14), T("이번 곡", "This level"), sSmall);
+                Label(new Rect(ix + 10, cy + 16, 100, 16), sSong, sTitle);
+                Label(new Rect(ix + iw - 10 - 150, cy + 10, 150, 14), sSongSub, sSub);
+                cy += 44;
+            }
+            if (C.OvCpu) cy = Row(ix, iw, cy, "CPU", sCpu, sCpuSub, cpuBar, false, hCpu);
+            if (C.OvGpu) cy = Row(ix, iw, cy, "GPU", sGpu, sGpuSub, gpuBar, false, hGpu);
+            if (C.OvVram) cy = Row(ix, iw, cy, "VRAM", sVram, sVramSub, vramBar, vramWarn, hVram);
+            if (C.OvRam) cy = Row(ix, iw, cy, "RAM", sRam, sRamSub, ramBar, false, hRam);
             if (C.OvGc)
             {
                 Label(new Rect(ix, cy + 2, 120, 16), T("메모리 정리", "GC"), sLabel);
@@ -533,22 +685,38 @@ namespace StutterFix
 
         private static Color BarColor(float ms, float normalAlpha) { return ms >= 50 ? Bad : ms >= 25 ? Warn : new Color(1, 1, 1, normalAlpha); }
 
-        private float Row(float x, float w, float y, string label, string value, string sub, float bar, bool warn)
+        // 이름, 값, 보조 값, 사용률 막대, 그리고 이름 옆에 최근 60초 추이
+        private float Row(float x, float w, float y, string label, string value, string sub, float bar, bool warn, float[] hist)
         {
             Label(new Rect(x, y + 2, 60, 16), label, sLabel);
             Label(new Rect(x + w - 150, y + 1, 150, 16), value, sValue);
+
+            // 추이: 이름과 값 사이의 작은 선그래프 (막대로 그린다)
+            var sp = new Rect(x + 42, y + 4, 60, 12);
+            int n = histCount;
+            if (n > 1)
+            {
+                float bw = sp.width / HistN;
+                for (int i = 0; i < n; i++)
+                {
+                    float v = hist[(histHead - n + i + HistN) % HistN];
+                    float bh = Mathf.Max(1f, sp.height * v);
+                    Fill(new Rect(sp.x + (HistN - n + i) * bw, sp.yMax - bh, Mathf.Max(0.8f, bw - 0.2f), bh), new Color(1, 1, 1, 0.18f), 0);
+                }
+            }
+
             if (!string.IsNullOrEmpty(sub))
             {
                 var old = sSub.normal.textColor;
                 if (warn) sSub.normal.textColor = Warn;
-                Label(new Rect(x + 44, y + 3, w - 44 - 90, 14), sub, sSub);
+                Label(new Rect(x + w - 150, y + 18, 150, 14), sub, sSub);
                 sSub.normal.textColor = old;
             }
-            var track = new Rect(x, y + 22, w, 3);
+            var track = new Rect(x, y + 24, w - 64, 3);
             Fill(track, Track, 1.5f);
-            Color c = warn ? Warn : bar > 0.9f ? Bad : bar > 0.75f ? Warn : Bar;
+            Color c = warn ? Warn : LoadColor(bar, Bar);
             Fill(new Rect(track.x, track.y, Mathf.Max(3f, track.width * bar), track.height), c, 1.5f);
-            return y + 34;
+            return y + 36;
         }
 
         // ── 알림: 본체 옆(화면 안쪽)에 쌓인다 ─────────────────────────────
@@ -559,7 +727,7 @@ namespace StutterFix
                 if (now - toasts[i].Time > ToastLife) { toastY.Remove(toasts[i]); toasts.RemoveAt(i); }
             if (toasts.Count == 0) return;
 
-            const float TW = 250, TH = 56;
+            const float TW = 268, TH = 58;
             float x = right ? anchor.x - TW - 10 : anchor.xMax + 10;
             float ty = Mathf.Clamp(anchor.y, 12, sh - toasts.Count * (TH + 8) - 12);
             for (int i = 0; i < toasts.Count; i++)
@@ -571,7 +739,7 @@ namespace StutterFix
                 toastY[t] = y;
 
                 float age = now - t.Time;
-                float ein = EaseOut(age / 0.28f), outT = Mathf.Clamp01((ToastLife - age) / 0.45f);
+                float ein = EaseOut(age / 0.28f), outT = Mathf.Clamp01((ToastLife - age) / 0.5f);
                 var r = new Rect(x + (right ? 1 : -1) * (1 - ein) * 24f, y, TW, TH);
 
                 var old = GUI.color;
@@ -580,6 +748,9 @@ namespace StutterFix
                 Fill(new Rect(r.x + 10, r.y + 12, 3, r.height - 24), t.Tone, 1.5f);
                 Label(new Rect(r.x + 22, r.y + 9, r.width - 32, 18), t.Title, sTitle);
                 Label(new Rect(r.x + 22, r.y + 29, r.width - 32, 24), t.Detail, sDetail);
+                // 남은 시간 막대 (사라지기까지)
+                float left = Mathf.Clamp01(1f - age / ToastLife);
+                Fill(new Rect(r.x + 22, r.yMax - 5, (r.width - 44) * left, 2), new Color(t.Tone.r, t.Tone.g, t.Tone.b, 0.5f), 1);
                 GUI.color = old;
                 ty += TH + 8;
             }

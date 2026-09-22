@@ -172,7 +172,12 @@ namespace StutterFix
             ShaderWarm.MaybeRun();
         }
 
-        private static void SongEnded() { EffectBudget.Reset(); }
+        // 곡이 끝났다고 밀린 효과를 버리면 안 된다. 마지막 타일은 효과가 한꺼번에 몰려 나눠 두는 곳이라,
+        // 예전에는 여기서 비워서 완주 연출이 이상하게 보였다. 남은 것은 다음 프레임들에서 마저 실행된다
+        // (사라진 효과는 실행할 때 건너뛴다). 비우는 것은 재시작과 곡 시작 때만 한다.
+        private static void SongEnded() { }
+
+        internal static bool Playing { get { return wasPlaying; } }   // 실시간 모니터가 곡 단위 통계를 낼 때 쓴다
 
         internal static void Report()
         {

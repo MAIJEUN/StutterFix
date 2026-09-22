@@ -566,6 +566,10 @@ namespace StutterFix
         public float OverlayOpacity = 0.75f;
         public float OverlayScale = 1f;
         public bool OvCpu = true, OvGpu = true, OvVram = true, OvRam = true, OvGc = true, OvGraph = true, OvHitchList = true;
+        public bool OvSession = true;       // 상세: 이번 곡 통계
+        // 아이콘/미니에 FPS 말고 더 보여 줄 것
+        public bool CmMs = true, CmLow = false, CmCpu = false, CmGpu = true, CmVram = true, CmRam = false;
+        public float AlertMs = 33f;         // 이보다 긴 프레임만 알린다 (2프레임 이상 밀린 것)
         public bool HitchAlerts = true;    // 끊기면 원인 알림   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }

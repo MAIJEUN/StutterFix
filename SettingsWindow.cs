@@ -403,7 +403,30 @@ namespace StutterFix
             GUILayout.EndVertical();
             GUILayout.Space(12);
 
-            // 보여 줄 항목
+            // 아이콘/미니에 보여 줄 항목
+            GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("아이콘·미니에 보여 줄 항목", "Items in icon and mini"), sBody);
+            GUILayout.Space(3);
+            GUILayout.Label(T("FPS 는 항상 보입니다. 사용률이 75%를 넘으면 주황, 90%를 넘으면 빨강으로 바뀝니다.",
+                "FPS is always shown. Usage turns orange above 75% and red above 90%."), sDim);
+            GUILayout.Space(10);
+            GUILayout.BeginHorizontal();
+            ch |= Chip(ref c.CmMs, T("프레임 시간", "Frame time"));
+            ch |= Chip(ref c.CmLow, "1% low");
+            ch |= Chip(ref c.CmCpu, "CPU");
+            ch |= Chip(ref c.CmGpu, "GPU");
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            ch |= Chip(ref c.CmVram, "VRAM");
+            ch |= Chip(ref c.CmRam, "RAM");
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+            GUILayout.Space(12);
+
+            // 상세 정보에 보여 줄 항목
             GUILayout.BeginVertical(sCard);
             GUILayout.Label(T("상세 정보에 보여 줄 항목", "Items in the detail view"), sBody);
             GUILayout.Space(10);
@@ -419,14 +442,21 @@ namespace StutterFix
             ch |= Chip(ref c.OvRam, "RAM");
             ch |= Chip(ref c.OvGc, T("메모리 정리", "GC"));
             ch |= Chip(ref c.OvHitchList, T("최근 끊김", "Recent hitches"));
+            ch |= Chip(ref c.OvSession, T("이번 곡", "This level"));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
             GUILayout.Space(12);
 
             ch |= Option("alerts", ref c.HitchAlerts, T("끊김 알림", "Hitch alerts"),
-                T("프레임이 튀면 모니터 옆에 원인을 띄웁니다: 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램).",
-                  "When a frame spikes, shows the likely cause next to the monitor: memory cleanup, effect burst, GPU overload, game logic, or something outside the game."), null);
+                T("프레임이 튀면 모니터 옆에 원인을 띄웁니다: 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램). 같은 원인이 연달아 나면 한 카드에 ×2, ×3 으로 묶습니다.",
+                  "When a frame spikes, shows the likely cause next to the monitor: memory cleanup, effect burst, GPU overload, game logic, or something outside the game. Repeats of the same cause are grouped (×2, ×3)."), null);
+            GUILayout.BeginVertical(sCard);
+            ch |= Slider("alertms", ref c.AlertMs, 20f, 100f, T("알림 기준", "Alert above"), c.AlertMs.ToString("F0") + "ms");
+            GUILayout.Label(T("이보다 긴 프레임만 알립니다. 33ms 는 60fps 기준 두 프레임이 밀린 것입니다.",
+                "Only frames longer than this are reported. 33ms is two frames at 60 fps."), sDim);
+            GUILayout.EndVertical();
+            GUILayout.Space(12);
             if (ch) Save();
             InfoCard(new[]
             {
