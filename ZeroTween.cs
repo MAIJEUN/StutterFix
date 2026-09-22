@@ -95,7 +95,17 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<Tween, EaseFunction> customEaseRef = AccessTools.FieldRefAccess<Tween, EaseFunction>("customEase");
         private static readonly AccessTools.FieldRef<Tween, float> overshootRef = AccessTools.FieldRefAccess<Tween, float>("easeOvershootOrAmplitude");
         private static readonly AccessTools.FieldRef<Tween, float> periodRef = AccessTools.FieldRefAccess<Tween, float>("easePeriod");
-        private static float EaseAtEnd(Tween t) { return easeEval(easeTypeRef(t), customEaseRef(t), 1f, 1f, overshootRef(t), periodRef(t)); }
+        // 같은 이징이면 끝점 값도 같다. 즉시 이동마다 부르는 곳이라 마지막 것을 기억해 둔다(맵은 보통 한두 가지만 쓴다).
+        private static Ease lastEase = (Ease)(-1); private static float lastOver, lastPeriod, lastK;
+        private static float EaseAtEnd(Tween t)
+        {
+            var e = easeTypeRef(t); float ov = overshootRef(t), pe = periodRef(t);
+            var custom = customEaseRef(t);
+            if (custom == null && e == lastEase && ov == lastOver && pe == lastPeriod) return lastK;
+            float k = easeEval(e, custom, 1f, 1f, ov, pe);
+            if (custom == null) { lastEase = e; lastOver = ov; lastPeriod = pe; lastK = k; }
+            return k;
+        }
 
         // DOTween 플러그인과 같은 계산. 변화량은 float 로 한 번 반올림해 둔다(DOTween 은 changeValue 필드에 저장한다).
         private static float Calc(float s, float e, float k) { float ch = e - s; float m = ch * k; return s + m; }
