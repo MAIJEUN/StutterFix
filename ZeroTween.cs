@@ -24,11 +24,12 @@ namespace StutterFix
     // 이 단계에서는 게임 동작을 바꾸지 않는다(전부 원래 DOTween 으로 처리).
     internal static class ZeroTween
     {
-        internal static long Checked, MatchEnd, MatchFormula, Mismatch, NoCallback;
+        internal static long Checked, MatchEnd, MatchFormula, Mismatch, NoCallback, SameAfterSet;
+        internal static string FirstSameAfterSet = "";
         internal static string FirstMismatch = "";
         internal static bool Patched;
 
-        private class Info { public Func<object> Get; public object End; }
+        private class Info { public Func<object> Get; public Action<object> Set; public object End; public string Kind; }
         private static readonly Dictionary<Tween, Info> pending = new Dictionary<Tween, Info>();
 
         internal static void Install(Harmony h)
@@ -75,19 +76,19 @@ namespace StutterFix
         public static TweenerCore<float, float, FloatOptions> ToF(DOGetter<float> g, DOSetter<float> s, float end, float dur)
         {
             var t = DOTween.To(g, s, end, dur);
-            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), End = end };
+            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), Set = v => s((float)v), End = end, Kind = "float" };
             return t;
         }
         public static TweenerCore<Vector2, Vector2, VectorOptions> ToV(DOGetter<Vector2> g, DOSetter<Vector2> s, Vector2 end, float dur)
         {
             var t = DOTween.To(g, s, end, dur);
-            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), End = end };
+            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), Set = v => s((Vector2)v), End = end, Kind = "Vector2" };
             return t;
         }
         public static TweenerCore<Color, Color, ColorOptions> ToC(DOGetter<Color> g, DOSetter<Color> s, Color end, float dur)
         {
             var t = DOTween.To(g, s, end, dur);
-            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), End = end };
+            if (dur <= 0f && t != null) pending[t] = new Info { Get = () => g(), Set = v => s((Color)v), End = end, Kind = "Color" };
             return t;
         }
 
@@ -124,8 +125,17 @@ namespace StutterFix
                 if (f) MatchFormula++;
                 if (!e && !f)
                 {
-                    Mismatch++;
-                    if (FirstMismatch.Length == 0) FirstMismatch = "실제 " + Show(actual) + ", 목표 " + Show(c.PredEnd) + ", 계산 " + Show(c.PredFormula);
+                    // 계산값을 같은 곳에 다시 넣고 읽어 본다. 실제 값과 같으면 "넣은 뒤 게임이 한 번 더 바꾸는" 차이라서
+                    // 우리 방식(같은 곳에 같은 계산값을 넣음)도 결과가 같다.
+                    c.Info.Set(c.PredFormula);
+                    object again = c.Info.Get();
+                    if (Same(again, actual)) { SameAfterSet++; if (FirstSameAfterSet.Length == 0) FirstSameAfterSet = c.Info.Kind + " " + Show(actual); }
+                    else
+                    {
+                        Mismatch++;
+                        if (FirstMismatch.Length == 0) FirstMismatch = c.Info.Kind + " 실제 " + Show(actual) + ", 목표 " + Show(c.PredEnd) + ", 계산 " + Show(c.PredFormula) + ", 다시 넣으면 " + Show(again);
+                        c.Info.Set(actual);   // 게임 값을 되돌린다
+                    }
                 }
             }
             catch { }
@@ -174,10 +184,10 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Checked == 0) return "검사한 즉시 이동 없음";
-            return string.Format("즉시 이동 {0}개 검사: 목표값과 같음 {1}, 계산식과 같음 {2}, 둘 다 다름 {3}{4} | 콜백 없는 것 {5}",
-                Checked, MatchEnd, MatchFormula, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback);
+            return string.Format("즉시 이동 {0}개 검사: 목표값과 같음 {1}, 계산식과 같음 {2}, 다시 넣으면 같아짐 {6}{7}, 정말 다름 {3}{4} | 콜백 없는 것 {5}",
+                Checked, MatchEnd, MatchFormula, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback, SameAfterSet, SameAfterSet > 0 ? " (예: " + FirstSameAfterSet + ")" : "");
         }
 
-        internal static void Reset() { Checked = MatchEnd = MatchFormula = Mismatch = NoCallback = 0; FirstMismatch = ""; pending.Clear(); }
+        internal static void Reset() { Checked = MatchEnd = MatchFormula = Mismatch = NoCallback = SameAfterSet = 0; FirstMismatch = FirstSameAfterSet = ""; pending.Clear(); }
     }
 }
