@@ -127,6 +127,51 @@ namespace StutterFix
         internal static string AutoNote = "";
 
 
+        // 다른 맵을 열 때 이전 맵의 이미지를 치운다.
+        // 게임은 ReloadAssets 에서 "안 쓰는 것" 만 치우는데(MarkAllUnused -> ... -> Unload(onlyIfUnused)), 그 사이에
+        // 옛 장식들이 한 번 더 초기화되며 옛 이미지를 "쓰는 중" 으로 다시 표시해서 하나도 안 치워졌다.
+        // CICADA(2,740장) 다음에 Arche 를 열면 3,011장, VRAM 7.5GB 가 남았다(Arche 만 열면 4.2GB).
+        // 새 맵이 쓸 수 있는 것은 "새 맵 폴더에 같은 이름, 같은 수정 시각의 파일이 있는 것" 뿐이다(게임도 그렇게 비교한다).
+        // 그 밖의 것은 게임이 어차피 다시 쓰지 않으므로 내린다. 게임에 들어 있는 이미지(isInternal)와 번들은 건드리지 않는다.
+        private static FieldInfo csInternal, csBundle, csModified;
+
+        private static void FreePreviousLevel(TextureManager holder, System.Collections.IDictionary cached, string dir)
+        {
+            try
+            {
+                if (csModified == null)
+                {
+                    var cs = AccessTools.Inner(typeof(TextureManager), "CustomSprite");
+                    if (cs == null) return;
+                    csInternal = AccessTools.Field(cs, "isInternal");
+                    csBundle = AccessTools.Field(cs, "isFromBundle");
+                    csModified = AccessTools.Field(cs, "fileLastModified");
+                    if (csInternal == null || csBundle == null || csModified == null) { csModified = null; return; }
+                }
+                var unload = AccessTools.Method(typeof(TextureManager), "UnloadSprite");
+                if (unload == null) return;
+                var drop = new List<object>();
+                foreach (System.Collections.DictionaryEntry e in cached)
+                {
+                    var key = e.Key as string;
+                    var sp = e.Value;
+                    if (key == null || sp == null) continue;
+                    if ((bool)csInternal.GetValue(sp) || (bool)csBundle.GetValue(sp)) continue;
+                    bool usable = false;
+                    try
+                    {
+                        var fi = new FileInfo(Path.Combine(dir, key));
+                        usable = fi.Exists && fi.LastWriteTimeUtc == (DateTime)csModified.GetValue(sp);
+                    }
+                    catch { }
+                    if (!usable) drop.Add(e.Key);
+                }
+                foreach (var k in drop) { try { unload.Invoke(holder, new[] { k }); } catch { } }
+                if (drop.Count > 0) Main.Entry.Logger.Log("[이미지] 이전 맵 이미지 " + drop.Count + "장을 내림 (남은 것 " + cached.Count + "장)");
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[이미지] 이전 맵 이미지 내리기 실패: " + ex.Message); }
+        }
+
         public static void SpritePrefix(Texture2D texture, ref float pixelsPerUnit) { AdjustPixelsPerUnit(texture, ref pixelsPerUnit); }
 
         public static void AdjustPixelsPerUnit(Texture2D texture, ref float pixelsPerUnit)
@@ -189,6 +234,8 @@ namespace StutterFix
                 var list = new List<Item>();
                 var seen = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
                 var cached = spritesField != null ? spritesField.GetValue(__instance.imgHolder) as System.Collections.IDictionary : null;
+                if (cached != null && !string.Equals(__instance.levelPath, VramGuard.Level, StringComparison.OrdinalIgnoreCase))
+                    FreePreviousLevel(__instance.imgHolder, cached, dir);
 
                 // 같은 맵을 다시 여는데 이미 올라온 이미지가 지금 한도와 다른 크기면(자동이 이번부터 줄이기로 했거나 한도를 바꿈)
                 // 그 이미지를 내려서 새 한도로 다시 불러오게 한다. 예전에는 이미 올라온 이미지를 그대로 써서, 게임을 다시 켜기
