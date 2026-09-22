@@ -201,6 +201,8 @@ namespace StutterFix
         {
             var onUpdate = t.onUpdate; var onComplete = t.onComplete;
             if (onUpdate == null && onComplete == null) NoCallback++;
+            bool prof = Edition.Dev && (Fast % 64) == 0;
+            long t0 = prof ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             try
             {
                 float k = EaseAtEnd(t);
@@ -209,12 +211,54 @@ namespace StutterFix
                 else sC(Calc(gC(), eC, k));
             }
             catch (Exception ex) { Log(ex); }
+            long t1 = prof ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             t.onUpdate = null; t.onComplete = null;
             gF = null; sF = null; gV = null; sV = null; gC = null; sC = null;
             activeRef(t) = false;
             Fast++;
+            if (prof) { Note(onUpdate, true); Note(onComplete, false); }
             if (onUpdate != null) { try { onUpdate(); } catch (Exception ex) { Log(ex); } }
+            long t2 = prof ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             if (onComplete != null) { try { onComplete(); } catch (Exception ex) { Log(ex); } }
+            if (prof)
+            {
+                double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                ProfN++; ProfSet += (t1 - t0) * f; ProfUpdate += (t2 - t1) * f; ProfComplete += (System.Diagnostics.Stopwatch.GetTimestamp() - t2) * f;
+            }
+        }
+
+        // ── (개발자용) 남은 비용 쪼개기: 값 넣기 / OnUpdate / OnComplete 에 각각 얼마나 쓰는지, 같은 콜백이 얼마나 반복되는지 ──
+        internal static long ProfN;
+        internal static double ProfSet, ProfUpdate, ProfComplete;
+        private static readonly Dictionary<string, long> cbCount = new Dictionary<string, long>();
+        private static long dupUpdate;
+        private static string lastCb = "";
+        private static object lastCbTarget;
+
+        private static void Note(TweenCallback cb, bool isUpdate)
+        {
+            if (cb == null) return;
+            try
+            {
+                string key = cb.Method.DeclaringType != null ? cb.Method.DeclaringType.Name + "." + cb.Method.Name : cb.Method.Name;
+                long n; cbCount.TryGetValue(key, out n); cbCount[key] = n + 1;
+                if (isUpdate)
+                {
+                    if (key == lastCb && ReferenceEquals(cb.Target, lastCbTarget)) dupUpdate++;
+                    lastCb = key; lastCbTarget = cb.Target;
+                }
+            }
+            catch { }
+        }
+
+        internal static string Profile()
+        {
+            if (ProfN == 0) return "";
+            var top = new List<string>();
+            foreach (var kv in cbCount) top.Add(kv.Key + " " + kv.Value);
+            top.Sort((a, b) => b.Length.CompareTo(a.Length));
+            return string.Format(" || 표본 {0}개 평균: 값 넣기 {1:F2}us, OnUpdate {2:F2}us, OnComplete {3:F2}us | 바로 앞과 같은 OnUpdate {4}회 | 콜백 종류: {5}",
+                ProfN, ProfSet * 1000 / ProfN, ProfUpdate * 1000 / ProfN, ProfComplete * 1000 / ProfN, dupUpdate, string.Join(", ", top.ToArray()));
         }
 
         private static int logged;
@@ -281,9 +325,9 @@ namespace StutterFix
         internal static string Summary()
         {
             return string.Format("애니메이션 없이 처리 {0}개 | 표본 비교 {1}개 중 다름 {2}{3} | 콜백 없는 것 {4}",
-                Fast, Checked, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback);
+                Fast, Checked, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback) + Profile();
         }
 
-        internal static void Reset() { Fast = Checked = Mismatch = NoCallback = 0; FirstMismatch = ""; sample.Clear(); }
+        internal static void Reset() { ProfN = 0; ProfSet = ProfUpdate = ProfComplete = 0; dupUpdate = 0; cbCount.Clear(); Fast = Checked = Mismatch = NoCallback = 0; FirstMismatch = ""; sample.Clear(); }
     }
 }
