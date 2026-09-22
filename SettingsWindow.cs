@@ -101,6 +101,8 @@ namespace StutterFix
         private void FinishClose()
         {
             Open = false;
+            capturing = -1;
+            Hotkey.Capturing = false;
             closing = false;
             show = 0f;
             Cursor.visible = cursorWas;
@@ -110,10 +112,9 @@ namespace StutterFix
         private void Update()
         {
             if (Main.Config == null) return;
-            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);   // Shift+키 는 실시간 모니터
-            if (!shift && Input.GetKeyDown(Main.Config.WindowKey)) SetOpen(!Open || closing);
+            if (Hotkey.Down(Main.Config.WindowKey, Main.Config.WindowMods)) SetOpen(!Open || closing);
             if (!Open) return;
-            if (!closing && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
+            if (!closing && !Hotkey.Capturing && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
             Cursor.visible = true;   // 곡 중에는 게임이 커서를 숨긴다
 
             float dt = Time.unscaledDeltaTime;
@@ -145,6 +146,7 @@ namespace StutterFix
         {
             if (!Open) return;
             if (!built) Build();
+            CaptureKey();
 
             // 배율을 먼저 정하고 나서 가운데를 잡는다(예전에는 배율 1로 계산해 구석에 떴다)
             scale = Mathf.Clamp(Screen.height / 1080f * 1.1f, 0.8f, 2.2f);
@@ -304,9 +306,72 @@ namespace StutterFix
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("모두 권장값으로", "Reset to recommended"), sPrimary, GUILayout.Width(170), GUILayout.Height(38))) ResetDefaults();
-            GUILayout.Space(16);
-            GUILayout.Label(T("창 열기/닫기", "Open / close") + "  <color=#" + HexStr(Ink) + "><b>" + Main.Config.WindowKey + "</b></color>", sDim, GUILayout.Height(38));
             GUILayout.EndHorizontal();
+            GUILayout.Space(14);
+            KeysCard();
+        }
+
+        // ── 단축키 바꾸기 ───────────────────────────────────────────────
+        // 버튼을 누르면 다음에 누르는 키(+ Ctrl/Shift/Alt)를 그 단축키로 쓴다. Esc 는 취소.
+        private int capturing = -1;          // 0 설정 창, 1 모니터, -1 아님
+        private string keyNote = "";
+
+        private void KeysCard()
+        {
+            var c = Main.Config;
+            GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("단축키", "Shortcuts"), sBody);
+            GUILayout.Space(8);
+            KeyRow(0, T("설정 창 열기/닫기", "Open / close settings"), c.WindowKey, c.WindowMods);
+            GUILayout.Space(8);
+            KeyRow(1, T("모니터 표시 방식 바꾸기", "Cycle monitor style"), c.OverlayKey, c.OverlayMods);
+            if (keyNote.Length > 0) { GUILayout.Space(8); GUILayout.Label(keyNote, sSub); }
+            GUILayout.EndVertical();
+        }
+
+        private void KeyRow(int id, string label, KeyCode key, int mods)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, sDim, GUILayout.Height(34));
+            GUILayout.FlexibleSpace();
+            bool on = capturing == id;
+            string text = on ? T("키를 누르세요… (Esc 취소)", "Press a key… (Esc to cancel)") : Hotkey.Name(key, mods);
+            if (GUILayout.Button(text, on ? sChipOn : sChip, GUILayout.MinWidth(150), GUILayout.Height(34)))
+            {
+                capturing = on ? -1 : id;
+                Hotkey.Capturing = capturing >= 0;
+                keyNote = "";
+            }
+            GUILayout.EndHorizontal();
+        }
+
+        private void CaptureKey()
+        {
+            if (capturing < 0) return;
+            var e = Event.current;
+            if (e.type != EventType.KeyDown || e.keyCode == KeyCode.None || Hotkey.IsModifier(e.keyCode)) return;
+            e.Use();
+            int id = capturing;
+            capturing = -1;
+            Hotkey.Capturing = false;
+            if (e.keyCode == KeyCode.Escape) { keyNote = ""; return; }
+
+            int mods = (e.shift ? Hotkey.Shift : 0) | (e.control ? Hotkey.Ctrl : 0) | (e.alt ? Hotkey.Alt : 0);
+            var c = Main.Config;
+            KeyCode otherKey = id == 0 ? c.OverlayKey : c.WindowKey;
+            int otherMods = id == 0 ? c.OverlayMods : c.WindowMods;
+            if (e.keyCode == otherKey && mods == otherMods)
+            {
+                keyNote = T("다른 단축키와 같은 키입니다. 다른 키를 골라 주세요.", "That is already used by the other shortcut.");
+                return;
+            }
+            if (id == 0) { c.WindowKey = e.keyCode; c.WindowMods = mods; }
+            else { c.OverlayKey = e.keyCode; c.OverlayMods = mods; }
+            keyNote = Hotkey.MayClashWithGame(e.keyCode, mods)
+                ? T("이 키는 플레이 중 박자 입력과 겹칠 수 있습니다. F1~F12, Insert, Home 같은 키나 Ctrl/Shift 조합을 권합니다.",
+                    "This key may also count as a tap while playing. F-keys, Insert, Home or a Ctrl/Shift combo are safer.")
+                : "";
+            Save();
         }
 
         private void PagePlay()
@@ -411,8 +476,8 @@ namespace StutterFix
             GUILayout.BeginVertical(sCard);
             GUILayout.Label(T("표시 방식", "Style"), sBody);
             GUILayout.Space(3);
-            GUILayout.Label(T("게임 중 Shift + " + c.WindowKey + " 로 차례로 바꿀 수 있습니다. 아이콘은 누르면 상세 정보가 펼쳐집니다.",
-                "Cycle with Shift + " + c.WindowKey + " in game. Click the icon to expand it."), sDim);
+            GUILayout.Label(T("게임 중 " + Hotkey.Name(c.OverlayKey, c.OverlayMods) + " 로 차례로 바꿀 수 있습니다 (홈에서 키 변경). 아이콘은 누르면 상세 정보가 펼쳐집니다.",
+                "Cycle with " + Hotkey.Name(c.OverlayKey, c.OverlayMods) + " in game (change it on Home). Click the icon to expand it."), sDim);
             GUILayout.Space(10);
             ch |= Segment("ovmode", ref c.OverlayMode, new[] { T("끔", "Off"), T("아이콘", "Icon"), T("미니", "Mini"), T("상세", "Detail") });
             GUILayout.Space(12);

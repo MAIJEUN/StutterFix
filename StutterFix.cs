@@ -424,8 +424,8 @@ namespace StutterFix
         {
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(SettingsWindow.T("설정 창 열기", "Open settings"), GUILayout.Width(160), GUILayout.Height(30))) SettingsWindow.Toggle();
-            GUILayout.Label(SettingsWindow.T("   게임 중 언제든 <b>" + Config.WindowKey + "</b> 키로 열고 닫을 수 있습니다.",
-                "   Press <b>" + Config.WindowKey + "</b> at any time in game to open or close it."), GUILayout.Height(30));
+            GUILayout.Label(SettingsWindow.T("   게임 중 언제든 <b>" + Hotkey.Name(Config.WindowKey, Config.WindowMods) + "</b> 키로 열고 닫을 수 있습니다.",
+                "   Press <b>" + Hotkey.Name(Config.WindowKey, Config.WindowMods) + "</b> at any time in game to open or close it."), GUILayout.Height(30));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(SettingsWindow.T("문제 보고용 로그 만들기", "Create bug-report log"), GUILayout.Width(160), GUILayout.Height(30)))
@@ -576,7 +576,10 @@ namespace StutterFix
         public bool FastBlend = true;       // 더하기 블렌드 장식을 화면 복사 없이 그리기
         public int ImageMaxSide = 0;        // 큰 이미지 줄이기: 0 끔, 4096, 2048 (긴 변 기준)
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
-        public KeyCode WindowKey = KeyCode.Insert;
+        public KeyCode WindowKey = KeyCode.Insert;     // 설정 창 열기/닫기
+        public int WindowMods = 0;                     // Hotkey.Shift/Ctrl/Alt 조합
+        public KeyCode OverlayKey = KeyCode.Insert;    // 실시간 모니터 표시 방식 바꾸기
+        public int OverlayMods = Hotkey.Shift;
         public bool ShowOverlay = false;   // 예전 설정 (켜져 있었으면 아이콘 모드로 옮긴다)
 
         // 실시간 모니터: 0 끔, 1 아이콘(화면 끝의 작은 탭), 2 미니(한 줄), 3 상세(패널). Shift+키로 차례로 바꾼다.

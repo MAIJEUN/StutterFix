@@ -7,7 +7,7 @@ namespace StutterFix
 {
     // 게임 화면에 띄워 두는 실시간 모니터.
     //
-    // 표시 방식 (Shift+Insert 로 차례로 바뀐다, 설정 창 "모니터" 에서도 고른다)
+    // 표시 방식 (단축키, 기본 Shift+Insert 로 차례로 바뀐다, 설정 창 "모니터" 에서도 고른다)
     //   아이콘 : 화면 끝의 작은 탭. FPS 와 고른 항목(프레임 시간, CPU, GPU, VRAM ...), 상태 점, 작은 그래프.
     //            누르면 상세 패널이 옆으로 펼쳐진다
     //   미니   : 한 줄짜리 알약. FPS 와 고른 항목을 칸으로 나눠 보여 주고 그래프를 붙인다
@@ -134,8 +134,7 @@ namespace StutterFix
         private void Update()
         {
             if (C == null) return;
-            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            if (shift && Input.GetKeyDown(C.WindowKey)) { C.OverlayMode = (C.OverlayMode + 1) % 4; iconOpen = false; SaveConfig(); }
+            if (Hotkey.Down(C.OverlayKey, C.OverlayMods)) { C.OverlayMode = (C.OverlayMode + 1) % 4; iconOpen = false; SaveConfig(); }
 
             float dt = Time.unscaledDeltaTime;
             bool on = Mode > 0;

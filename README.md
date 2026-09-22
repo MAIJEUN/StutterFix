@@ -11,7 +11,7 @@ made by **naro** & **Claude**
 2. Unity Mod Manager의 **Mods** 탭에서 **Install Mod**로 zip을 고르거나, 압축을 풀어 `A Dance of Fire and Ice/Mods/StutterFix/` 폴더에 넣습니다.
 3. 게임을 켜면 적용됩니다. **게임을 한 번 더 껐다 켜면** 멀티스레드 그리기까지 적용됩니다.
 
-게임 중 **Insert** 키로 설정 창을 열고 닫을 수 있습니다. 한국어/English를 고를 수 있습니다.
+게임 중 **Insert** 키로 설정 창을 열고 닫을 수 있습니다. 한국어/English를 고를 수 있습니다. 단축키(설정 창 Insert, 모니터 Shift+Insert)는 설정 창 홈에서 다른 키로 바꿀 수 있습니다.
 
 ## 기능
 
@@ -93,7 +93,7 @@ UMM에서 끄면 모든 변경을 즉시 되돌립니다(패치, GC 상태, 작�
 
 Stutter Fix reduces mid-play hitches and level loading times on heavy custom levels in A Dance of Fire and Ice. Visuals and judgement are unchanged.
 
-**Install:** download `StutterFix-x.y.z-player.zip` from Releases and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** in game to open the settings window (Korean/English).
+**Install:** download `StutterFix-x.y.z-player.zip` from Releases and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** in game to open the settings window (Korean/English); both shortcuts can be rebound on its Home page.
 
 **Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, drawing additive blend-mode decorations with hardware blending instead of a full-screen grab per object (pixel-identical), parallel PNG decoding for decoration images on level load, skipping asset unloads, optional downscaling of very large decoration images, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
 
