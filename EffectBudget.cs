@@ -51,7 +51,7 @@ namespace StutterFix
 
         internal static bool ShouldRun(object instance, MethodBase method, object[] args)
         {
-            if (!Enabled || replaying || RecolorSplit.Replaying) return true;   // 색 바꾸기 조각은 이미 나눠진 것이다
+            if (!Enabled || replaying || RecolorSplit.Replaying || MoveSplit.Replaying) return true;   // 색 바꾸기/장식 이동 조각은 이미 나눠진 것이다
             if (Time.realtimeSinceStartup < graceUntil) return true;
 
             if (Time.frameCount != frame)
@@ -146,6 +146,7 @@ namespace StutterFix
         {
             queue.Clear();
             RecolorSplit.Reset();
+            MoveSplit.Reset();
             usedMs = 0;
             depth = 0;
             replaying = false;

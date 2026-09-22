@@ -62,6 +62,7 @@
     <Compile Include="Hotkey.cs" />
     <Compile Include="FilterTrace.cs" />
     <Compile Include="VramGuard.cs" />
+    <Compile Include="MoveSplit.cs" />
     <Compile Include="BootConfig.cs" />
   </ItemGroup>
 
