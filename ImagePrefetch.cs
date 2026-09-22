@@ -405,6 +405,7 @@ namespace StutterFix
             }
             // 장식을 다 만든 직후 몇 프레임은 장식들이 처음 움직이며(블렌드 재질 만들기 등) 60ms 쯤 걸린다.
             // 곡 시작 전 편집 화면에서 끊김으로 잡혔는데 맵 불러오기의 끝부분이므로 불러오기로 적는다.
+            ShaderWarm.LevelChanged = true;   // 새 장식/이벤트가 올라왔다: 다음 곡 시작 때 필터 셰이더를 다시 본다
             PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load"));
             return __exception;
         }

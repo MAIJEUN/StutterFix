@@ -28,9 +28,14 @@ namespace StutterFix
         private static int lastCount = -1;
         private static readonly HashSet<string> warmedFilters = new HashSet<string>();
 
+        // 맵을 새로 불러왔을 때만 한다. 같은 맵을 다시 플레이할 때도 매번 필터 이벤트와 셰이더 목록을 훑었는데
+        // (객체 수천 개를 뒤져 40ms 안팎), 곡 시작 직후라 "게임 처리" 끊김으로 잡혔다. 새로 준비할 것이 없으니 건너뛴다.
+        internal static bool LevelChanged = true;
+
         internal static void MaybeRun()
         {
-            if (!Enabled) return;
+            if (!Enabled || !LevelChanged) return;
+            LevelChanged = false;
             long t0 = Stopwatch.GetTimestamp();
             int filters = 0;
             try { filters = WarmFilters(); }
@@ -38,7 +43,11 @@ namespace StutterFix
             try
             {
                 int count = Resources.FindObjectsOfTypeAll<Shader>().Length;
-                if (count == lastCount && filters == 0) return;
+                if (count == lastCount && filters == 0)
+                {
+                    ModCost.Add(SettingsWindow.T("셰이더 준비", "Shader warm-up"), (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency);
+                    return;
+                }
                 lastCount = count;
 
                 Shader.WarmupAllShaders();
