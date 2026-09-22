@@ -75,6 +75,56 @@ namespace StutterFix
             catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드] 복사 없이 그리기 실패: " + ex); }
         }
 
+        // (개발자용) 같은 장면을 원래 방식과 복사 없는 방식으로 한 장씩 찍어 비교한다. 게임을 일시정지한 채로 쓴다.
+        // %TEMP%\StutterFix-blend\ 에 원래.png, 새방식.png, 차이.png(차이를 8배로 키움)를 남기고 로그에 수치를 적는다.
+        internal static void Compare(MonoBehaviour host)
+        {
+            if (host != null) host.StartCoroutine(CompareRun());
+        }
+
+        private static System.Collections.IEnumerator CompareRun()
+        {
+            bool was = On;
+            yield return new WaitForEndOfFrame();
+            var a = ScreenCapture.CaptureScreenshotAsTexture();
+            Toggle();
+            yield return null; yield return null;
+            yield return new WaitForEndOfFrame();
+            var b = ScreenCapture.CaptureScreenshotAsTexture();
+            Toggle();
+            try
+            {
+                var orig = was ? b : a;
+                var fast = was ? a : b;
+                var po = orig.GetPixels32(); var pf = fast.GetPixels32();
+                int n = Mathf.Min(po.Length, pf.Length), over2 = 0, over8 = 0, max = 0;
+                long sum = 0, brightO = 0, brightF = 0;
+                var diff = new Color32[n];
+                for (int i = 0; i < n; i++)
+                {
+                    int dr = pf[i].r - po[i].r, dg = pf[i].g - po[i].g, db = pf[i].b - po[i].b;
+                    int d = Mathf.Max(Mathf.Abs(dr), Mathf.Max(Mathf.Abs(dg), Mathf.Abs(db)));
+                    sum += d; if (d > max) max = d; if (d > 2) over2++; if (d > 8) over8++;
+                    brightO += po[i].r + po[i].g + po[i].b; brightF += pf[i].r + pf[i].g + pf[i].b;
+                    byte v = (byte)Mathf.Min(255, d * 8);
+                    diff[i] = new Color32(v, v, v, 255);
+                }
+                string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StutterFix-blend");
+                System.IO.Directory.CreateDirectory(dir);
+                var dt = new Texture2D(orig.width, orig.height, TextureFormat.RGBA32, false);
+                dt.SetPixels32(diff); dt.Apply();
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "원래.png"), orig.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "새방식.png"), fast.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "차이.png"), dt.EncodeToPNG());
+                Object.Destroy(dt);
+                Main.Entry.Logger.Log(string.Format("[블렌드 비교] {0}x{1} | 평균 차이 {2:F3}/255, 최대 {3}/255 | 2 넘게 다른 픽셀 {4:F2}%, 8 넘게 {5:F2}% | 전체 밝기 원래 {6:F2} 새 {7:F2} | {8}",
+                    orig.width, orig.height, (double)sum / n, max, 100.0 * over2 / n, 100.0 * over8 / n,
+                    (double)brightO / n / 3, (double)brightF / n / 3, dir));
+            }
+            catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드 비교] 실패: " + ex.Message); }
+            Object.Destroy(a); Object.Destroy(b);
+        }
+
         private static void Restore()
         {
             int n = 0;
