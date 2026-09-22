@@ -149,7 +149,7 @@ namespace StutterFix
             show = Mathf.MoveTowards(show, on ? 1f : 0f, dt / (on ? 0.3f : 0.18f));
             open = Mathf.MoveTowards(open, Mode == 1 && iconOpen ? 1f : 0f, dt / 0.22f);
             if (on) { SystemMonitor.Start(); CaptureTiming(); }
-            else if (show <= 0f) { SystemMonitor.Stop(); UiInputBlock.Clear(this); }
+            else if (show <= 0f) { if (!SystemMonitor.Keep) SystemMonitor.Stop(); UiInputBlock.Clear(this); }
 
             MeasureFrame();
             if (show <= 0f) return;
@@ -381,6 +381,16 @@ namespace StutterFix
         }
 
         private static bool InLoading { get { return Time.frameCount - loadFrame <= 30 || Time.realtimeSinceStartup - loadTime < 2f; } }
+        internal static bool IsLoadingNow { get { return InLoading; } }
+
+        // 끊김이 아닌 안내 (예: VRAM 부족으로 다음부터 이미지를 줄임). 모니터가 켜져 있으면 알림으로 뜬다.
+        internal static void Notice(string cause, string detail)
+        {
+            if (Instance == null) return;
+            var h = new HitchRec { Ms = 0, Time = Time.unscaledTime, Tone = Warn, Cause = cause, Detail = detail };
+            TitleOf(h);
+            Instance.Commit(h);
+        }
 
         private HitchRec Loading(float ms, string cause, string detail)
         {

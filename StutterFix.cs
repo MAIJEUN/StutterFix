@@ -282,6 +282,7 @@ namespace StutterFix
             Try(SamplerWatch.Shutdown);
             Try(EffectBudget.Reset);       // 색 나누기 대기열도 같이 비운다
             Try(ImagePrefetch.Stop);       // 이미지 작업 스레드와 풀어 둔 메모리
+            Try(() => SystemMonitor.Keep = false);
             Try(FastBlend.Uninstall);      // 바꿔 끼운 블렌드 장식 재질을 원래대로
             Try(SettingsWindow.Destroy);
             Try(PerfOverlay.Destroy);
@@ -339,6 +340,7 @@ namespace StutterFix
             EffectBudget.Tick();
             RecolorSplit.Tick();
             FastBlend.Tick();
+            VramGuard.Tick();
 
             if (Edition.Dev)
             {
@@ -578,6 +580,7 @@ namespace StutterFix
         public bool FastBlend = true;       // 더하기 블렌드 장식을 화면 복사 없이 그리기
         public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)
         public int ImageAutoVer = 0;        // 1.2.2 에서 "끔" 이던 설정을 한 번 "자동" 으로 옮겼는지
+        public string VramCaps = "";        // 자동: VRAM 부족으로 끊긴 맵과 다음부터 쓸 한도 ("경로 탭 한도" 줄들)
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;     // 설정 창 열기/닫기
         public int WindowMods = 0;                     // Hotkey.Shift/Ctrl/Alt 조합

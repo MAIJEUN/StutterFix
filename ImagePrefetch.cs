@@ -105,79 +105,8 @@ namespace StutterFix
         private static int shrunkCount;
         private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
 
-        // 자동: 이 맵의 PNG 머리(가로/세로)만 읽어 텍스처가 VRAM 을 얼마나 먹을지 어림하고, 모자랄 때만 필요한 만큼 줄인다.
-        // 한도 후보는 원본 -> 4096 -> 3072 -> 2048 -> 1536 -> 1024 (큰 이미지부터 줄어든다). 넘지 않는 첫 단계를 고른다.
-        //
-        // 근거 (VRAM 7949MB, 이미지 2천 장 맵):
-        //   원본: 게임 전용 6026MB, 전체 7579MB(95%) -> 카메라가 새 장식을 비출 때마다 GPU 150~200ms 멈춤
-        //   2048: 게임 전용 4300MB, 전체 5883MB(74%) -> 멈춤 없음, 화질 차이 거의 안 보임
-        //   1024: 멈춤 없음, 화질이 눈에 띄게 낮아짐 (처음 자동은 VRAM 55% 를 예산으로 잡아 여기까지 줄였다)
-        // 머리로 어림한 양(가로x세로x4)은 실제보다 크게 나온다. 0.6 을 곱해 실제 양으로 본다.
-        // 이 맵에서 자동이 3072 를 골랐고 두 판 모두 끊김이 없었으며 화질도 깔끔했다.
-        // (VRAM 97% 에서 62ms 멈춘 기록은 "끔" 으로 원본을 올린 판이었다)
-        // 이 비율로 어림을 실제 양으로 바꾸고, 전체가 VRAM 의 85% 를 넘지 않을 만큼만 쓴다.
-        //   장식에 쓸 수 있는 양 = VRAM x 0.85 - 다른 프로그램이 쓰는 양 - 게임이 지금 쓰는 양
-        // 다른 프로그램/게임 사용량은 실시간 모니터가 읽은 값을 쓰고, 없으면 VRAM 의 15% / 1000MB 로 본다.
+        // 자동: VramGuard 가 "VRAM 이 모자라 끊긴 맵" 에 기억해 둔 한도를 쓴다. 기억이 없으면 원본 그대로.
         internal static string AutoNote = "";
-        private static readonly int[] autoCaps = { 0, 4096, 3072, 2048, 1536, 1024 };
-        private const double EstimateToReal = 0.6, TargetUse = 0.85;
-
-        private static int ChooseAuto(List<Item> list)
-        {
-            long t0 = Stopwatch.GetTimestamp();
-            var dims = new List<long>(list.Count);   // (w << 32) | h
-            var head = new byte[24];
-            var seenFull = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            int dup = 0;
-            foreach (var it in list)
-            {
-                try
-                {
-                    if (!seenFull.Add(Path.GetFullPath(it.Path))) { dup++; continue; }   // 같은 파일을 다른 경로로 적은 것
-                    using (var fs = new FileStream(it.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 64))
-                    {
-                        if (fs.Read(head, 0, 24) < 24) continue;
-                        if (head[12] != 'I' || head[13] != 'H' || head[14] != 'D' || head[15] != 'R') continue;
-                        long w = (head[16] << 24) | (head[17] << 16) | (head[18] << 8) | head[19];
-                        long h = (head[20] << 24) | (head[21] << 16) | (head[22] << 8) | head[23];
-                        if (w > 0 && h > 0 && w < 65536 && h < 65536) dims.Add((w << 32) | h);
-                    }
-                }
-                catch { }
-            }
-            long vram = SystemInfo.graphicsMemorySize;
-            float used = SystemMonitor.VramUsedMB, game = SystemMonitor.VramGameMB;
-            bool measured = used > 0 && game > 0;
-            double other = measured ? Math.Max(0, used - game) : vram * 0.15;
-            double gameNow = measured ? game : 1000;
-            double realBudget = Math.Max(500, vram * TargetUse - other - gameNow);
-            double budget = realBudget / EstimateToReal;   // 어림 단위로 바꾼 예산
-
-            int pick = 1024;
-            long mbAtPick = 0, mbFull = 0;
-            foreach (int cap in autoCaps)
-            {
-                double bytes = 0;
-                foreach (long d in dims)
-                {
-                    double w = d >> 32, h = d & 0xffffffffL, m = Math.Max(w, h);
-                    if (cap > 0 && m > cap) { double k = cap / m; w = Math.Max(1, Math.Round(w * k)); h = Math.Max(1, Math.Round(h * k)); }
-                    bytes += w * h * 4;
-                }
-                long mb = (long)(bytes / 1048576);
-                if (cap == 0) mbFull = mb;
-                mbAtPick = mb;
-                if (mb <= budget) { pick = cap; break; }
-            }
-            double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
-            string basis = string.Format("장식에 쓸 수 있는 VRAM {0:F0}MB (VRAM {1}MB x 0.85 - 다른 프로그램 {2:F0}MB - 게임 {3:F0}MB{4})",
-                realBudget, vram, other, gameNow, measured ? "" : ", 어림값");
-            AutoNote = pick == 0
-                ? string.Format("자동: 그대로 (이미지 약 {0:F0}MB, {1})", mbFull * EstimateToReal, basis)
-                : string.Format("자동: 긴 변 {0} 으로 줄임 (이미지 약 {1:F0}MB -> {2:F0}MB, {3})", pick, mbFull * EstimateToReal, mbAtPick * EstimateToReal, basis);
-            Main.Entry.Logger.Log(string.Format("[이미지] {0} (머리 {1}장 읽기 {2:F0}ms, 겹친 경로 {3}개)", AutoNote, dims.Count, ms, dup));
-            return pick;
-        }
 
 
         public static void SpritePrefix(Texture2D texture, ref float pixelsPerUnit) { AdjustPixelsPerUnit(texture, ref pixelsPerUnit); }
@@ -233,6 +162,12 @@ namespace StutterFix
             {
                 Stop();
                 string dir = Path.GetDirectoryName(__instance.levelPath);
+                sideNow = MaxSide > 0 ? MaxSide : MaxSide == Auto ? VramGuard.CapFor(__instance.levelPath) : 0;
+                if (MaxSide == Auto)
+                {
+                    AutoNote = sideNow > 0 ? "자동: 전에 VRAM 이 모자라 끊긴 맵이라 긴 변 " + sideNow + " 으로 줄임" : "자동: 원본 그대로 (이 맵에서 VRAM 부족 끊김 기록 없음)";
+                    Main.Entry.Logger.Log("[이미지] " + AutoNote);
+                }
                 var list = new List<Item>();
                 var seen = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
                 var cached = spritesField != null ? spritesField.GetValue(__instance.imgHolder) as System.Collections.IDictionary : null;
@@ -253,8 +188,9 @@ namespace StutterFix
                 foreach (var ev in __instance.decorations) add(ev);
                 foreach (var ev in __instance.events) if ((int)ev.eventType == 29) add(ev);
 
+                // 이미 올라온 이미지를 다시 쓰는 경우(같은 맵 다시 열기)에는 그때의 한도가 그대로 남는다
+                VramGuard.OnLevelLoaded(__instance.levelPath, sideNow, list.Count >= 8);
                 if (list.Count < 8) return;   // 몇 장 안 되면 그냥 원래대로
-                sideNow = MaxSide > 0 ? MaxSide : MaxSide == Auto ? ChooseAuto(list) : 0;
 
                 lock (gate)
                 {

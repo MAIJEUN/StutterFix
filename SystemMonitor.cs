@@ -23,6 +23,7 @@ namespace StutterFix
 
         private static Thread thread;
         private static volatile bool running;
+        internal static volatile bool Keep;   // 모니터를 숨겨도 계속 읽는다 (큰 이미지 줄이기 자동이 VRAM 을 볼 때)
 
         internal static void Start()
         {
