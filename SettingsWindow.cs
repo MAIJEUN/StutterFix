@@ -740,9 +740,45 @@ namespace StutterFix
             return uiFont;
         }
 
+        // 윈도우 글꼴은 글자를 처음 그릴 때(크기/굵기마다) 글자 이미지를 새로 만들고, 그때 40~60ms 멈춘다.
+        // 모니터를 처음 띄우거나 새 알림 문구가 나올 때 "끊김"으로 잡히던 게 이것이었다.
+        // 쓰는 글자와 크기를 시작할 때 한 번에 만들어 둔다 (불러오기로 표시해서 끊김으로 세지 않음).
+        private static readonly int[] warmSizes = { 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 22, 24, 25, 28 };
+        private static bool warmed;
+        internal static void WarmFont()
+        {
+            if (warmed) return;
+            warmed = true;
+            var f = UiFont();
+            if (f == null || !f.dynamic) return;
+            try
+            {
+                PerfOverlay.MarkLoading(T("글꼴 준비", "Preparing font"));
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                string chars = WarmChars.Text + " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→←↑↓…°";
+                float k = Screen.height / 1080f;
+                var sizes = new HashSet<int>();
+                foreach (int s in warmSizes)
+                {
+                    sizes.Add(s);
+                    sizes.Add(Mathf.RoundToInt(s * Mathf.Clamp(k, 0.8f, 2.2f)));
+                    sizes.Add(Mathf.RoundToInt(s * Mathf.Clamp(k * 1.1f, 0.8f, 2.2f)));
+                }
+                foreach (int s in sizes)
+                {
+                    f.RequestCharactersInTexture(chars, s, FontStyle.Normal);
+                    f.RequestCharactersInTexture(chars, s, FontStyle.Bold);
+                }
+                PerfOverlay.MarkLoading(T("글꼴 준비", "Preparing font"));
+                if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글꼴 미리 만들기: 크기 " + sizes.Count + "가지, " + sw.ElapsedMilliseconds + "ms");
+            }
+            catch { }
+        }
+
         private void Build()
         {
             built = true;
+            WarmFont();
             font = UiFont();
             if (font == null) font = GUI.skin.font;
 

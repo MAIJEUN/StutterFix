@@ -187,7 +187,10 @@ namespace StutterFix
 
             float limit = Mathf.Max(C != null ? C.AlertMs : 33f, avgMs * 2.2f);
             bool hitch = ms > limit;
-            if (ms <= Mathf.Max(25f, avgMs * 2.2f)) avgMs = Mathf.Lerp(avgMs, ms, 0.05f);
+            // 평소 프레임 기준. 튄 프레임도 조금씩은 반영해야 한다. 예전에는 튄 프레임을 아예 빼서, 맵 자체가
+            // 계속 느린 곳(블렌드 장식 1755개, 매 프레임 90ms)에서는 모든 프레임이 끊김으로 잡혀 알림이 매 프레임 쌓였다.
+            avgMs = Mathf.Lerp(avgMs, Mathf.Min(ms, 1000f), hitch ? 0.03f : 0.05f);
+            CheckSlow();
             if (!hitch) return;
             if (Mode == 0) { hitchCount++; return; }
 
@@ -218,6 +221,33 @@ namespace StutterFix
         private class Pending { public float Ms, Time, Fx, Mod, Gpu, Cpu; public int Gc, Frame; public string ModWhat; }
         private readonly List<Pending> pending = new List<Pending>();
         private float lastGpu, lastCpu;
+
+        // ── 계속 느린 상태 ────────────────────────────────────────────
+        // 순간 끊김이 아니라 프레임이 계속 낮은 경우(평균 40fps 아래가 1초 넘게)는 한 번만 알린다.
+        private bool slow;
+        private float slowSince = -1f;
+
+        private void CheckSlow()
+        {
+            if (startup || InLoading || ImagePrefetch.Running) { slowSince = -1f; return; }
+            bool low = avgMs > 25f;
+            if (!low) { if (slow && avgMs < 20f) slow = false; slowSince = -1f; return; }
+            if (slow) return;
+            if (slowSince < 0) { slowSince = Time.unscaledTime; return; }
+            if (Time.unscaledTime - slowSince < 1f) return;
+
+            slow = true;
+            float gpu = Max(gpuRing), cpu = Max(cpuRing);
+            string why = gpu > avgMs * 0.7f ? T("GPU 과부하", "GPU overload") : cpu > avgMs * 0.6f ? T("게임 처리", "Game logic") : T("원인 불명", "Unknown");
+            string detail = gpu > avgMs * 0.7f
+                ? T("그래픽카드가 프레임마다 ", "The GPU takes ") + gpu.ToString("F0") + T("ms 걸립니다. 장식이나 필터가 많은 구간입니다", "ms per frame (many decorations or filters)")
+                : T("평균 ", "Average ") + (1000f / avgMs).ToString("F0") + " FPS";
+            var h = new HitchRec { Ms = avgMs, Time = Time.unscaledTime, Tone = Warn, Cause = T("프레임 낮음", "Low frame rate") + " · " + why, Detail = detail };
+            string fps = (1000f / avgMs).ToString("F0") + " FPS";
+            h.Title = h.Cause + "  (" + fps + ")";
+            h.Short = fps + "   " + h.Cause;
+            Commit(h);
+        }
 
         private void DecidePending()
         {
@@ -440,6 +470,7 @@ namespace StutterFix
         {
             built = true;
             font = SettingsWindow.UiFont();
+            SettingsWindow.WarmFont();
             tWhite = Texture2D.whiteTexture;
             sBig = Text(28, Fg, FontStyle.Bold);
             sMid = Text(18, Fg, FontStyle.Bold);
