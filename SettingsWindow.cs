@@ -79,7 +79,8 @@ namespace StutterFix
 
         private Font font;
         private GUIStyle sWindow, sShadow, sTitle, sSub, sH1, sLead, sBody, sDim, sSmall, sTag, sCard, sCardDark, sNav, sNavOn, sNavText,
-            sPrimary, sClose, sTab, sTabOn, sStat, sStatDark, sStatLabel, sStatLabelDark, sScroll, sThumb;
+            sPrimary, sClose, sTab, sTabOn, sStat, sStatDark, sStatLabel, sStatLabelDark, sScroll, sThumb,
+            sSegKnob, sSegText, sSegOnText, sSliderValue, sChip, sChipOn;
         private Texture2D tWhite, tMark;
 
         private const float W = 900f, H = 590f, SideW = 196f, HeaderH = 66f;
@@ -134,31 +135,8 @@ namespace StutterFix
             pageT = 0f;
         }
 
-        // 창 위를 누를 때 뒤의 게임 UI(에디터 버튼 등)가 같이 눌리지 않게 막는다.
-        // 끈 이벤트 시스템을 직접 들고 있어야 한다. 끄는 순간 EventSystem.current 가 비어서,
-        // 예전에는 다시 켤 대상을 못 찾아 창을 닫은 뒤 게임 클릭이 영영 먹통이 됐다.
-        private UnityEngine.EventSystems.EventSystem blocked;
-        private void SetUiBlocked(bool block)
-        {
-            try
-            {
-                if (block)
-                {
-                    if (blocked != null) return;
-                    var es = UnityEngine.EventSystems.EventSystem.current;
-                    if (es == null || !es.enabled) return;
-                    es.enabled = false;
-                    blocked = es;
-                }
-                else if (blocked != null)
-                {
-                    var es = blocked;
-                    blocked = null;
-                    if (es != null) es.enabled = true;   // 씬이 바뀌어 사라졌으면 할 일 없음
-                }
-            }
-            catch { blocked = null; }
-        }
+        // 창 위를 누를 때 뒤의 게임 UI(에디터 버튼 등)가 같이 눌리지 않게 막는다 (실시간 모니터와 같이 쓴다).
+        private void SetUiBlocked(bool block) { UiInputBlock.Set(this, block); }
 
         private void OnDisable() { SetUiBlocked(false); }
         private void OnDestroy() { SetUiBlocked(false); }
@@ -397,15 +375,58 @@ namespace StutterFix
         private void PageMonitor()
         {
             var c = Main.Config;
-            Heading(T("모니터", "Monitor"), T("게임 화면 오른쪽 위에 CPU, GPU, VRAM, RAM 사용량과 프레임을 띄웁니다. 끊기면 왜 끊겼는지 알려 줍니다.",
-                "Shows CPU, GPU, VRAM, RAM and frame times in the top-right corner, and tells you why a hitch happened."));
+            Heading(T("모니터", "Monitor"), T("게임 화면 끝에 프레임, CPU, GPU, VRAM, RAM 사용량을 띄웁니다. 끊기면 왜 끊겼는지 알려 줍니다. 모니터를 잡고 끌면 위치를 옮길 수 있습니다.",
+                "Shows frame time, CPU, GPU, VRAM and RAM at the screen edge and tells you why a hitch happened. Drag it to move it."));
             bool ch = false;
-            ch |= Option("overlay", ref c.ShowOverlay, T("실시간 모니터 표시", "Show live monitor"),
-                T("게임 중 언제든 Shift + " + c.WindowKey + " 로 켜고 끌 수 있습니다. 사용량은 1초에 한 번, 게임과 따로 읽어서 프레임에 영향이 거의 없습니다.",
-                  "Toggle any time with Shift + " + c.WindowKey + ". Usage is read once a second on a separate thread, so it barely affects frame rate."), null);
+
+            // 표시 방식
+            GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("표시 방식", "Style"), sBody);
+            GUILayout.Space(3);
+            GUILayout.Label(T("게임 중 Shift + " + c.WindowKey + " 로 차례로 바꿀 수 있습니다. 아이콘은 누르면 상세 정보가 펼쳐집니다.",
+                "Cycle with Shift + " + c.WindowKey + " in game. Click the icon to expand it."), sDim);
+            GUILayout.Space(10);
+            ch |= Segment("ovmode", ref c.OverlayMode, new[] { T("끔", "Off"), T("아이콘", "Icon"), T("미니", "Mini"), T("상세", "Detail") });
+            GUILayout.Space(12);
+            int side = c.OverlayRight ? 1 : 0;
+            if (Segment("ovside", ref side, new[] { T("왼쪽 끝", "Left edge"), T("오른쪽 끝", "Right edge") })) { c.OverlayRight = side == 1; ch = true; }
+            GUILayout.EndVertical();
+            GUILayout.Space(12);
+
+            // 모양
+            GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("모양", "Look"), sBody);
+            GUILayout.Space(8);
+            ch |= Slider("ovop", ref c.OverlayOpacity, 0.3f, 1f, T("불투명도", "Opacity"), (c.OverlayOpacity * 100).ToString("F0") + "%");
+            ch |= Slider("ovscale", ref c.OverlayScale, 0.7f, 1.6f, T("크기", "Size"), (c.OverlayScale * 100).ToString("F0") + "%");
+            ch |= Slider("ovy", ref c.OverlayY, 0f, 1f, T("세로 위치", "Vertical position"), c.OverlayY < 0.34f ? T("위", "Top") : c.OverlayY > 0.66f ? T("아래", "Bottom") : T("가운데", "Middle"));
+            GUILayout.EndVertical();
+            GUILayout.Space(12);
+
+            // 보여 줄 항목
+            GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("상세 정보에 보여 줄 항목", "Items in the detail view"), sBody);
+            GUILayout.Space(10);
+            GUILayout.BeginHorizontal();
+            ch |= Chip(ref c.OvGraph, T("그래프", "Graph"));
+            ch |= Chip(ref c.OvCpu, "CPU");
+            ch |= Chip(ref c.OvGpu, "GPU");
+            ch |= Chip(ref c.OvVram, "VRAM");
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            ch |= Chip(ref c.OvRam, "RAM");
+            ch |= Chip(ref c.OvGc, T("메모리 정리", "GC"));
+            ch |= Chip(ref c.OvHitchList, T("최근 끊김", "Recent hitches"));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+            GUILayout.Space(12);
+
             ch |= Option("alerts", ref c.HitchAlerts, T("끊김 알림", "Hitch alerts"),
-                T("프레임이 튀면 모니터 아래에 원인을 띄웁니다: 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램).",
-                  "When a frame spikes, shows the likely cause below the monitor: memory cleanup, effect burst, GPU overload, game logic, or something outside the game."), null);
+                T("프레임이 튀면 모니터 옆에 원인을 띄웁니다: 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램).",
+                  "When a frame spikes, shows the likely cause next to the monitor: memory cleanup, effect burst, GPU overload, game logic, or something outside the game."), null);
             if (ch) Save();
             InfoCard(new[]
             {
@@ -481,6 +502,91 @@ namespace StutterFix
                 value = !value;
                 return true;
             }
+            return false;
+        }
+
+        // 여러 개 중 하나 고르기: 옅은 바탕 위에서 흰 선택 칸이 미끄러진다
+        private bool Segment(string key, ref int value, string[] labels)
+        {
+            Rect r = GUILayoutUtility.GetRect(10, 36, GUILayout.ExpandWidth(true), GUILayout.Height(36));
+            float w = r.width / labels.Length;
+            var e = Event.current;
+            bool changed = false;
+            if (e.type == EventType.MouseDown && e.button == 0 && r.Contains(e.mousePosition))
+            {
+                int v = Mathf.Clamp((int)((e.mousePosition.x - r.x) / w), 0, labels.Length - 1);
+                if (v != value) { value = v; changed = true; }
+                e.Use();
+            }
+            if (e.type == EventType.Repaint)
+            {
+                float x;
+                if (!anim.TryGetValue(key, out x)) x = value;
+                x = Mathf.Lerp(x, value, 1f - Mathf.Exp(-18f * Time.unscaledDeltaTime));
+                anim[key] = x;
+                Fill(r, Soft, 10);
+                var sel = new Rect(r.x + 3 + x * w, r.y + 3, w - 6, r.height - 6);
+                sSegKnob.Draw(sel, false, false, false, false);
+                for (int i = 0; i < labels.Length; i++)
+                    (i == value ? sSegOnText : sSegText).Draw(new Rect(r.x + i * w, r.y, w, r.height), labels[i], false, false, false, false);
+            }
+            return changed;
+        }
+
+        // 가로 막대를 끌어서 값 고르기
+        private bool Slider(string key, ref float value, float min, float max, string label, string shown)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, sDim, GUILayout.Width(110), GUILayout.Height(28));
+            Rect r = GUILayoutUtility.GetRect(10, 28, GUILayout.ExpandWidth(true), GUILayout.Height(28));
+            GUILayout.Label(shown, sSliderValue, GUILayout.Width(64), GUILayout.Height(28));
+            GUILayout.EndHorizontal();
+            GUILayout.Space(4);
+
+            int id = GUIUtility.GetControlID(key.GetHashCode(), FocusType.Passive, r);
+            var e = Event.current;
+            float old = value;
+            var track = new Rect(r.x + 9, r.center.y - 2, r.width - 18, 4);
+            switch (e.type)
+            {
+                case EventType.MouseDown:
+                    if (e.button == 0 && r.Contains(e.mousePosition)) { GUIUtility.hotControl = id; value = Pick(track, e.mousePosition.x, min, max); e.Use(); }
+                    break;
+                case EventType.MouseDrag:
+                    if (GUIUtility.hotControl == id) { value = Pick(track, e.mousePosition.x, min, max); e.Use(); }
+                    break;
+                case EventType.MouseUp:
+                    if (GUIUtility.hotControl == id) { GUIUtility.hotControl = 0; e.Use(); }
+                    break;
+                case EventType.Repaint:
+                    float k = Mathf.InverseLerp(min, max, value);
+                    Fill(track, TrackOff, 2);
+                    Fill(new Rect(track.x, track.y, track.width * k, track.height), Ink, 2);
+                    float kx = track.x + track.width * k;
+                    bool active = GUIUtility.hotControl == id;
+                    float kr = active ? 9f : 8f;
+                    Fill(new Rect(kx - kr, track.center.y - kr, kr * 2, kr * 2), Ink, kr);
+                    Fill(new Rect(kx - kr + 3, track.center.y - kr + 3, kr * 2 - 6, kr * 2 - 6), Color.white, kr - 3);
+                    break;
+            }
+            return !Mathf.Approximately(old, value);
+        }
+
+        private static float Pick(Rect track, float x, float min, float max)
+        {
+            return Mathf.Lerp(min, max, Mathf.Clamp01((x - track.x) / track.width));
+        }
+
+        // 켜고 끄는 작은 알약 버튼
+        private bool Chip(ref bool on, string label)
+        {
+            var content = new GUIContent((on ? "✓  " : "") + label);
+            var st = on ? sChipOn : sChip;
+            Rect r = GUILayoutUtility.GetRect(content, st, GUILayout.Height(32));
+            GUILayout.Space(8);
+            var e = Event.current;
+            if (e.type == EventType.MouseDown && e.button == 0 && r.Contains(e.mousePosition)) { on = !on; e.Use(); return true; }
+            if (e.type == EventType.Repaint) st.Draw(r, content, r.Contains(e.mousePosition), false, false, false);
             return false;
         }
 
@@ -629,6 +735,22 @@ namespace StutterFix
             sClose = Styled(null, 10);
             sClose.normal.textColor = Text3; sClose.alignment = TextAnchor.MiddleCenter; sClose.fontSize = 22; sClose.padding = new RectOffset(0, 0, 0, 4);
             sClose.hover.background = Card(Soft, Soft, 9, 0, 0, 0f); sClose.hover.textColor = Ink;
+
+
+            // 모니터 페이지의 조절 도구
+            sSegKnob = Styled(Card(CardC, Edge, 8, 1, 4, 0.08f), 12);
+            sSegKnob.overflow = new RectOffset(4, 4, 4, 4);
+            sSegText = Label(13, Text2, FontStyle.Normal); sSegText.alignment = TextAnchor.MiddleCenter;
+            sSegOnText = Label(13, Ink, FontStyle.Bold); sSegOnText.alignment = TextAnchor.MiddleCenter;
+            sSliderValue = Label(13, Ink, FontStyle.Bold); sSliderValue.alignment = TextAnchor.MiddleRight;
+            sChip = Styled(Card(CardC, Edge, 15, 1, 0, 0f), 16);
+            sChip.normal.textColor = Text2; sChip.fontSize = 13; sChip.alignment = TextAnchor.MiddleCenter;
+            sChip.padding = new RectOffset(14, 14, 0, 0);
+            sChip.hover.background = Card(Soft, EdgeHover, 15, 1, 0, 0f); sChip.hover.textColor = Ink;
+            sChipOn = Styled(Card(Ink, Ink, 15, 0, 0, 0f), 16);
+            sChipOn.normal.textColor = Color.white; sChipOn.fontSize = 13; sChipOn.fontStyle = FontStyle.Bold; sChipOn.alignment = TextAnchor.MiddleCenter;
+            sChipOn.padding = new RectOffset(14, 14, 0, 0);
+            sChipOn.hover.background = Card(Hex(0x2C2D33), Hex(0x2C2D33), 15, 0, 0, 0f); sChipOn.hover.textColor = Color.white;
 
             sScroll = new GUIStyle { fixedWidth = 4, margin = new RectOffset(14, 0, 0, 0), border = new RectOffset(2, 2, 2, 2) };
             sThumb = new GUIStyle { fixedWidth = 4, border = new RectOffset(2, 2, 2, 2) };

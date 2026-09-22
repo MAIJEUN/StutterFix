@@ -382,6 +382,12 @@ namespace StutterFix
         // 설정 파일에 저장된 켜기/끄기를 각 기능에 반영한다.
         internal static void ApplyConfig()
         {
+            if (Config.ShowOverlay) { Config.ShowOverlay = false; Config.OverlayMode = 3; }
+            ApplyToggles();
+        }
+
+        private static void ApplyToggles()
+        {
             GcControl.Enabled = Config.GcPause;
             EffectBudget.Enabled = Config.EffectSplit;
             RecolorSplit.Enabled = Config.RecolorSplit;
@@ -551,7 +557,15 @@ namespace StutterFix
         public bool ShaderWarm = true;
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;
-        public bool ShowOverlay = false;   // 실시간 모니터 (Shift+Insert)
+        public bool ShowOverlay = false;   // 예전 설정 (켜져 있었으면 상세 모드로 옮긴다)
+
+        // 실시간 모니터: 0 끔, 1 아이콘(화면 끝의 작은 탭), 2 미니(한 줄), 3 상세(패널). Shift+키로 차례로 바꾼다.
+        public int OverlayMode = 1;
+        public bool OverlayRight = false;   // 왼쪽 끝 / 오른쪽 끝
+        public float OverlayY = 0.5f;       // 세로 위치 (0 위 ~ 1 아래)
+        public float OverlayOpacity = 0.75f;
+        public float OverlayScale = 1f;
+        public bool OvCpu = true, OvGpu = true, OvVram = true, OvRam = true, OvGc = true, OvGraph = true, OvHitchList = true;
         public bool HitchAlerts = true;    // 끊기면 원인 알림   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }
