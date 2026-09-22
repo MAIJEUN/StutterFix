@@ -97,6 +97,7 @@ namespace StutterFix
         private int recentCount, recentHead;
         private long lastStamp;
         private float avgMs = 8f;
+        private int playerLogLines;
         private bool prevHitch;
         private float prevMs;
         private int lastGc;
@@ -430,10 +431,13 @@ namespace StutterFix
             else if (gpu <= 0 && cpuMain <= 0) { h.Cause = T("원인 불명", "Unknown"); h.Detail = T("프레임 시간을 아직 읽지 못했습니다", "Frame timing not available yet"); }
             else { h.Cause = T("게임 바깥", "Outside the game"); h.Detail = T("게임은 한가했습니다. 윈도우나 다른 프로그램일 수 있습니다", "The game was idle; likely Windows or another app"); }
             TitleOf(h);   // 알림 제목은 한 번만 만든다
-            if (Edition.Dev)   // 원인 분류가 무엇을 보고 정했는지 남긴다 ("원인 불명" 추적용)
+            // 원인 분류가 무엇을 보고 정했는지 남긴다. 플레이어용도 40ms 넘는 것만 한 번 실행에 300줄까지 남긴다
+            // (문제 보고용 로그 파일로 원인을 볼 수 있게).
+            bool logIt = Edition.Dev || (ms >= 40f && ++playerLogLines <= 300);
+            if (logIt)
                 Main.Entry.Logger.Log(string.Format("[모니터] {0:F0}ms -> {1} / gpu {2:F1} cpu {3:F1} (수집 {4}번) 효과 {5:F1} 모드 {6:F1}({7}) gc {8}",
                     ms, h.Cause, gpu, cpuMain, timingSamples, fx, mod, modWhat, gcDelta));
-            if (Edition.Dev && gpu > ms * 0.7f)
+            if (logIt && gpu > ms * 0.7f)
                 Main.Entry.Logger.Log("[모니터]   직전 필터 변화 (6프레임): " + FilterTrace.Recent(p.Frame, 6)
                     + string.Format(" | VRAM 전체 {0:F0}/{1}MB, 게임 전용 {2:F0}MB, 게임 공유(시스템 RAM) {3:F0}MB",
                         SystemMonitor.VramUsedMB, SystemInfo.graphicsMemorySize, SystemMonitor.VramGameMB, SystemMonitor.SharedGameMB));
@@ -487,6 +491,11 @@ namespace StutterFix
                 vramWarn = SystemMonitor.SharedGameMB > 400f;
                 sVramSub = vramWarn ? T("넘침 ", "spill ") + SystemMonitor.SharedGameMB.ToString("F0") + "MB"
                                     : T("게임 ", "game ") + (SystemMonitor.VramGameMB / 1024f).ToString("F1") + "GB";
+                // 큰 이미지 줄이기로 이번 맵에서 아낀 양 (자동이든 직접 고른 한도든)
+                if (ImagePrefetch.LastShrunk > 0)
+                    sVramSub += T(" · 이미지 줄임 -", " · images -")
+                        + (ImagePrefetch.LastSavedMB >= 1024f ? (ImagePrefetch.LastSavedMB / 1024f).ToString("F1") + "GB" : ImagePrefetch.LastSavedMB.ToString("F0") + "MB")
+                        + " (" + ImagePrefetch.LastSide + ", " + ImagePrefetch.LastShrunk + T("장)", ")");
             }
             else { sGpu = "-"; sGpuSub = T("읽을 수 없음", "n/a"); sVram = "-"; sVramSub = ""; sVramShort = "VRAM -"; vramWarn = false; }
             sGpuShort = "GPU " + sGpu;

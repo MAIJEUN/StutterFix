@@ -103,6 +103,10 @@ namespace StutterFix
         internal const int Auto = -1;
         private static volatile int sideNow;   // 이번 맵에 실제로 쓰는 한도 (자동이면 맵마다 정한다)
         private static int shrunkCount;
+        private static long savedBytes;
+        // 마지막으로 불러온 맵에서 실제로 줄인 결과 (실시간 모니터 VRAM 줄에 보여 준다)
+        internal static int LastSide, LastShrunk;
+        internal static float LastSavedMB;
         private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
 
         // 자동: VramGuard 가 "VRAM 이 모자라 끊긴 맵" 에 기억해 둔 한도를 쓴다. 기억이 없으면 원본 그대로.
@@ -195,7 +199,7 @@ namespace StutterFix
                 lock (gate)
                 {
                     items = list; byPath = seen; next = 0; pendingBytes = 0; running = true; consumed = -1;
-                    used = fallback = notReady = 0; waitMs = 0; shrunkCount = 0;
+                    used = fallback = notReady = 0; waitMs = 0; shrunkCount = 0; savedBytes = 0;
                 }
                 startTicks = Stopwatch.GetTimestamp();
                 putMs = fallbackMs = 0;
@@ -241,8 +245,12 @@ namespace StutterFix
                 {
                     int len = ReadInto(it.Path, ref fileBuf);
                     ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, out w, out h, out f, out px, out size);
+                    long before = (long)w * h * 4;   // GPU 에는 한 픽셀 4바이트로 올라간다
                     if (ok && sideNow > 0 && PngDecoder.Downscale(ref px, ref w, ref h, f, ref size, sideNow, out factor))
+                    {
                         Interlocked.Increment(ref shrunkCount);
+                        Interlocked.Add(ref savedBytes, before - (long)w * h * 4);
+                    }
                 }
                 catch { ok = false; }
 
@@ -375,7 +383,8 @@ namespace StutterFix
             if (running)
             {
                 double total = (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
-                Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장" : ""),
+                LastSide = sideNow; LastShrunk = shrunkCount; LastSavedMB = Interlocked.Read(ref savedBytes) / 1048576f;
+                Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장 (긴 변 " + sideNow + ", VRAM 약 " + LastSavedMB.ToString("F0") + "MB 아낌)" : ""),
                     used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart);
                 Main.Entry.Logger.Log("[이미지] " + Last);
             }

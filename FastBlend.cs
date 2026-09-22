@@ -106,14 +106,22 @@ namespace StutterFix
             {
                 if (b == null || !b.enabled) return false;
                 Look();
-                var mat = For(b.BlendMode);
-                if (mat == null || b.MaskMode != MaskMode.Disabled) return false;
                 var r = b.GetComponent<SpriteRenderer>();
-                if (r == null || r.maskInteraction != SpriteMaskInteraction.None) return false;
-                if (b.UsePointSampling)
+                var mat = For(b.BlendMode);
+                bool ok = mat != null && r != null && b.MaskMode == MaskMode.Disabled && r.maskInteraction == SpriteMaskInteraction.None;
+                if (ok && b.UsePointSampling)
                 {
                     var sp = r.sprite;
-                    if (sp == null || sp.texture == null || sp.texture.filterMode != FilterMode.Point) return false;
+                    ok = sp != null && sp.texture != null && sp.texture.filterMode == FilterMode.Point;
+                }
+                if (!ok)
+                {
+                    // 우리가 바꿨던 장식을 게임이 다른 모드(예: Difference)로 다시 켰다. 에셋은 모드가 바뀌어도 같은 재질의
+                    // 설정만 바꾸고 렌더러에 재질을 다시 넣지 않아서, 우리 더하기 재질이 그대로 남아 모양이 달라졌다.
+                    // 재질을 새로 만들게 해서(SetMaterialProperties(true)) 에셋이 렌더러에 다시 넣게 한다.
+                    if (r != null && IsOurs(r.sharedMaterial)) Reapply(b);
+                    swapped.Remove(b);
+                    return false;
                 }
                 b.enabled = false;            // 먼저 끈다 (끌 때 에셋이 원래 재질로 되돌린다)
                 r.sharedMaterial = mat;
@@ -121,6 +129,13 @@ namespace StutterFix
                 return true;
             }
             catch { return false; }
+        }
+
+        private static readonly System.Reflection.MethodInfo setProps = AccessTools.Method(typeof(BlendModeEffect), "SetMaterialProperties");
+        private static void Reapply(BlendModeEffect b)
+        {
+            try { if (setProps != null) setProps.Invoke(b, new object[] { true }); else b.SetMaterialDirty(); }
+            catch { }
         }
 
         private static void SwapAll()
@@ -148,7 +163,7 @@ namespace StutterFix
                     var r = b.GetComponent<SpriteRenderer>();
                     if (r == null || !IsOurs(r.sharedMaterial)) continue;
                     b.enabled = true;
-                    b.SetMaterialDirty();
+                    Reapply(b);   // 재질을 새로 만들어 렌더러에 다시 넣게 한다 (SetMaterialDirty 만으로는 안 넣는다)
                     n++;
                 }
                 catch { }
