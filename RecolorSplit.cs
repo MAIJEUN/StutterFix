@@ -190,12 +190,14 @@ namespace StutterFix
             var saved = loopOwner;
             int savedEnd = loopEnd;
             bool guard = TweenFix.Begin();   // 애니메이션 정리 O(n^2) 방지는 여기서도 필요하다
+            long runStart = Stopwatch.GetTimestamp();
             replay = p;
             try { startEffect.Invoke(p.Effect, DefaultArgs()); }
             catch (Exception ex) { Main.Entry.Logger.Error("RecolorSplit 조각 실패: " + (ex.InnerException ?? ex).Message); }
             finally
             {
                 replay = null;
+                ModCost.Add(SettingsWindow.T("타일 색 나눠 칠하기", "Tile recolor batch"), (Stopwatch.GetTimestamp() - runStart) * 1000.0 / Stopwatch.Frequency);
                 TweenFix.End(guard);
                 loopOwner = saved;
                 loopEnd = savedEnd;

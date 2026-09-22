@@ -80,6 +80,7 @@ namespace StutterFix
                 if (!playing && wasPlaying) SongEnded();
                 wasPlaying = playing;
                 EffectScan.ResetFrame();
+                ModCost.ResetFrame();
                 return;
             }
 
@@ -148,6 +149,7 @@ namespace StutterFix
             ParticleTextWatch.Tick();
             SlowScan.Reset();   // 다음 프레임 몫만 모으도록 매번 비운다
             EffectScan.ResetFrame();
+            ModCost.ResetFrame();
         }
 
         private static void Begin(long heap)

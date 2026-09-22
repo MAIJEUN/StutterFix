@@ -448,10 +448,21 @@ namespace StutterFix
             GUILayout.EndVertical();
             GUILayout.Space(12);
 
-            ch |= Option("alerts", ref c.HitchAlerts, T("끊김 알림", "Hitch alerts"),
-                T("프레임이 튀면 모니터 옆에 원인을 띄웁니다: 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램). 같은 원인이 연달아 나면 한 카드에 ×2, ×3 으로 묶습니다.",
-                  "When a frame spikes, shows the likely cause next to the monitor: memory cleanup, effect burst, GPU overload, game logic, or something outside the game. Repeats of the same cause are grouped (×2, ×3)."), null);
+            // 끊김 알림: 모양, 위치, 기준
             GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("끊김 알림", "Hitch alerts"), sBody);
+            GUILayout.Space(3);
+            GUILayout.Label(T("프레임이 튀면 원인을 띄웁니다: 모드 작업(보라), 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램). 같은 원인이 연달아 나면 ×2, ×3 으로 묶습니다.",
+                "Shows the likely cause when a frame spikes: mod work (purple), memory cleanup, effect burst, GPU overload, game logic, or something outside the game. Repeats are grouped (×2, ×3)."), sDim);
+            GUILayout.Space(10);
+            int style = !c.HitchAlerts ? 0 : c.AlertDetailed ? 2 : 1;
+            if (Segment("alertstyle", ref style, new[] { T("끔", "Off"), T("간단", "Simple"), T("자세히", "Detailed") }))
+            {
+                c.HitchAlerts = style > 0; c.AlertDetailed = style == 2; ch = true;
+            }
+            GUILayout.Space(10);
+            ch |= Segment("alertpos", ref c.AlertPos, new[] { T("모니터 옆", "Beside monitor"), T("화면 위", "Top center"), T("화면 아래", "Bottom center") });
+            GUILayout.Space(12);
             ch |= Slider("alertms", ref c.AlertMs, 20f, 100f, T("알림 기준", "Alert above"), c.AlertMs.ToString("F0") + "ms");
             GUILayout.Label(T("이보다 긴 프레임만 알립니다. 33ms 는 60fps 기준 두 프레임이 밀린 것입니다.",
                 "Only frames longer than this are reported. 33ms is two frames at 60 fps."), sDim);

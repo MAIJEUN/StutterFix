@@ -76,7 +76,7 @@ namespace StutterFix
         private int songFrames, songHitches;
         private float songWorst;
 
-        private class HitchRec { public float Ms, Time; public int Count = 1; public string Cause, Detail, Title; public Color Tone; }
+        private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod; public string Cause, Detail, Title, Short; public Color Tone; }
         private readonly List<HitchRec> history = new List<HitchRec>();   // 최근 끊김 (상세 패널 목록)
         private readonly List<HitchRec> toasts = new List<HitchRec>();    // 떠 있는 알림
         private readonly Dictionary<HitchRec, float> toastY = new Dictionary<HitchRec, float>();
@@ -200,8 +200,8 @@ namespace StutterFix
                     top.Count++;
                     top.Ms = Mathf.Max(top.Ms, ms);
                     top.Time = Time.unscaledTime;
-                    top.Tone = top.Ms >= 50 ? Bad : Warn;
-                    top.Title = TitleOf(top);
+                    top.Tone = top.IsMod ? ModTone : top.Ms >= 50 ? Bad : Warn;
+                    TitleOf(top);
                 }
                 else
                 {
@@ -219,23 +219,35 @@ namespace StutterFix
 
             float gpu = Max(gpuRing), cpuMain = Max(cpuRing);
             float fx = (float)Math.Max(EffectScan.LastFrameEffectMs, EffectScan.FrameEffectMs);
+            // 모드 자신이 그 프레임에 쓴 시간 (밀린 효과 실행, 타일 색 나눠 칠하기, 곡 끝난 뒤 메모리 정리 ...)
+            bool modNow = ModCost.FrameMs >= ModCost.LastFrameMs;
+            float mod = (float)(modNow ? ModCost.FrameMs : ModCost.LastFrameMs);
+            string modWhat = modNow ? ModCost.Top : ModCost.LastTop;
 
             var h = new HitchRec { Ms = ms, Time = Time.unscaledTime, Tone = ms >= 50 ? Bad : Warn };
-            if (gcDelta > 0) { h.Cause = T("메모리 정리", "Memory cleanup"); h.Detail = T("게임이 GC 로 메모리를 정리했습니다", "The game ran a garbage collection"); }
+            // 모드 때문인지를 가장 먼저 본다. 모드가 한 일은 원래 게임 일을 옮긴 것이어도 따로 알려야 판단할 수 있다.
+            if (mod > ms * 0.35f && mod > 8f)
+            {
+                h.Cause = T("모드 작업", "Mod work"); h.IsMod = true; h.Tone = ModTone;
+                h.Detail = "StutterFix · " + modWhat + " " + mod.ToString("F0") + "ms";
+            }
+            else if (gcDelta > 0) { h.Cause = T("메모리 정리", "Memory cleanup"); h.Detail = T("게임이 GC 로 메모리를 정리했습니다", "The game ran a garbage collection"); }
             else if (fx > ms * 0.4f) { h.Cause = T("효과 몰림", "Effect burst"); h.Detail = T("한 번에 시작된 효과들이 ", "Effects starting at once took ") + fx.ToString("F0") + T("ms 걸렸습니다", "ms"); }
             else if (gpu > ms * 0.7f) { h.Cause = T("GPU 과부하", "GPU overload"); h.Detail = T("그래픽카드가 ", "The GPU was busy for ") + gpu.ToString("F0") + T("ms 동안 바빴습니다 (필터가 많은 구간)", "ms (heavy filters)"); }
             else if (cpuMain > ms * 0.6f) { h.Cause = T("게임 처리", "Game logic"); h.Detail = T("게임 계산에 ", "Game code took ") + cpuMain.ToString("F0") + T("ms 걸렸습니다", "ms"); }
             else if (gpu <= 0 && cpuMain <= 0) { h.Cause = T("원인 불명", "Unknown"); h.Detail = T("프레임 시간을 아직 읽지 못했습니다", "Frame timing not available yet"); }
             else { h.Cause = T("게임 바깥", "Outside the game"); h.Detail = T("게임은 한가했습니다. 윈도우나 다른 프로그램일 수 있습니다", "The game was idle; likely Windows or another app"); }
-            h.Title = TitleOf(h);   // 알림 제목은 한 번만 만든다
+            TitleOf(h);   // 알림 제목은 한 번만 만든다
             return h;
         }
 
-        // "끊김 42ms · 효과 몰림  ×3" (정도는 글로도)
-        private static string TitleOf(HitchRec h)
+        // 자세히: "끊김 42ms · 효과 몰림  ×3" (정도는 글로도), 간단: "42ms  효과 몰림  ×3"
+        private static void TitleOf(HitchRec h)
         {
             string sev = h.Ms >= 100 ? T("큰 끊김", "Big hitch") : h.Ms >= 50 ? T("끊김", "Hitch") : T("짧은 끊김", "Short hitch");
-            return sev + " " + h.Ms.ToString("F0") + "ms  ·  " + h.Cause + (h.Count > 1 ? "  ×" + h.Count : "");
+            string times = h.Count > 1 ? "  ×" + h.Count : "";
+            h.Title = sev + " " + h.Ms.ToString("F0") + "ms  ·  " + h.Cause + times;
+            h.Short = h.Ms.ToString("F0") + "ms   " + h.Cause + times;
         }
 
         // ── 글자 (1초에 4번) ────────────────────────────────────────────
@@ -313,13 +325,14 @@ namespace StutterFix
         private static readonly Color Fg = new Color(1, 1, 1, 0.94f), Dim = new Color(1, 1, 1, 0.56f), Faint = new Color(1, 1, 1, 0.34f),
             Track = new Color(1, 1, 1, 0.10f), Bar = new Color(1, 1, 1, 0.85f), Good = Hex(0x5FD39B), Warn = Hex(0xF2B24B), Bad = Hex(0xFF6B6B),
             Base = new Color(0.06f, 0.065f, 0.08f, 1f);
+        private static readonly Color ModTone = Hex(0xB39DFF);   // 모드 때문에 끊긴 것
 
         private static Color LoadColor(float load, Color normal) { return load > 0.9f ? Bad : load > 0.75f ? Warn : normal; }
 
         private bool built;
         private Font font;
         private Texture2D tWhite;
-        private GUIStyle sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall, sCenterLine, sLine;
+        private GUIStyle sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall, sCenterLine, sLine, sToastShort;
 
         private void Build()
         {
@@ -338,6 +351,7 @@ namespace StutterFix
             sCenterSmall = Text(9, Faint, FontStyle.Bold); sCenterSmall.alignment = TextAnchor.MiddleCenter;
             sCenterLine = Text(10, Dim, FontStyle.Bold); sCenterLine.alignment = TextAnchor.MiddleCenter;
             sLine = Text(12, Fg, FontStyle.Bold); sLine.alignment = TextAnchor.MiddleCenter;
+            sToastShort = Text(12, Fg, FontStyle.Bold); sToastShort.alignment = TextAnchor.MiddleLeft;
         }
 
         private GUIStyle Text(int size, Color c, FontStyle style)
@@ -417,6 +431,7 @@ namespace StutterFix
             int mode = lastMode;   // 사라지는 동안에는 마지막 모양을 유지한다
             CollectCompact();
 
+            long drawStart = Stopwatch.GetTimestamp();
             var oldM = GUI.matrix; var oldC = GUI.color;
             float e = EaseOut(show);
             // 붙어 있는 쪽 바깥에서 미끄러져 들어온다
@@ -443,7 +458,12 @@ namespace StutterFix
                     DrawToasts(side);
                 }
             }
-            finally { GUI.matrix = oldM; GUI.color = oldC; }
+            finally
+            {
+                GUI.matrix = oldM; GUI.color = oldC;
+                if (Event.current.type == EventType.Repaint)   // 모니터 자신도 "모드 작업" 으로 센다
+                    ModCost.Add(T("모니터 그리기", "Monitor drawing"), (Stopwatch.GetTimestamp() - drawStart) * 1000.0 / Stopwatch.Frequency);
+            }
         }
 
         // 화면 끝에 붙은 탭: 바깥쪽 모서리는 화면 밖으로 넘겨 안쪽만 둥글게 보이게 한다
@@ -719,7 +739,9 @@ namespace StutterFix
             return y + 36;
         }
 
-        // ── 알림: 본체 옆(화면 안쪽)에 쌓인다 ─────────────────────────────
+        // ── 알림 ───────────────────────────────────────────────────────
+        // 모양: 간단(한 줄 알약) / 자세히(설명과 남은 시간 막대가 있는 카드)
+        // 위치: 모니터 옆(화면 안쪽으로) / 화면 위 가운데 / 화면 아래 가운데. 들어오는 방향도 위치를 따른다.
         private void DrawToasts(Rect anchor)
         {
             float now = Time.unscaledTime;
@@ -727,32 +749,52 @@ namespace StutterFix
                 if (now - toasts[i].Time > ToastLife) { toastY.Remove(toasts[i]); toasts.RemoveAt(i); }
             if (toasts.Count == 0) return;
 
-            const float TW = 268, TH = 58;
-            float x = right ? anchor.x - TW - 10 : anchor.xMax + 10;
-            float ty = Mathf.Clamp(anchor.y, 12, sh - toasts.Count * (TH + 8) - 12);
+            bool detailed = C.AlertDetailed;
+            float TW = detailed ? 272 : 236, TH = detailed ? 58 : 32, gap = detailed ? 8 : 6;
+            int pos = C.AlertPos;
+
+            float x, ty, dir = 1;   // dir: 쌓이는 방향 (1 아래로, -1 위로)
+            Vector2 enter;          // 들어올 때 밀려 오는 방향
+            if (pos == 1) { x = sw / 2f - TW / 2f; ty = 18; enter = new Vector2(0, -18); }
+            else if (pos == 2) { x = sw / 2f - TW / 2f; ty = sh - 18 - TH; dir = -1; enter = new Vector2(0, 18); }
+            else
+            {
+                x = right ? anchor.x - TW - 10 : anchor.xMax + 10;
+                ty = Mathf.Clamp(anchor.y, 12, sh - toasts.Count * (TH + gap) - 12);
+                enter = new Vector2(right ? 24 : -24, 0);
+            }
+
             for (int i = 0; i < toasts.Count; i++)
             {
                 var t = toasts[i];
                 float y;
                 if (!toastY.TryGetValue(t, out y)) y = ty;
-                y = Approach(y, ty, 14f);   // 새 알림이 위에 끼면 아래로 밀려난다
+                y = Approach(y, ty, 14f);   // 새 알림이 끼면 한 칸씩 밀려난다
                 toastY[t] = y;
 
                 float age = now - t.Time;
                 float ein = EaseOut(age / 0.28f), outT = Mathf.Clamp01((ToastLife - age) / 0.5f);
-                var r = new Rect(x + (right ? 1 : -1) * (1 - ein) * 24f, y, TW, TH);
+                var r = new Rect(x + enter.x * (1 - ein), y + enter.y * (1 - ein), TW, TH);
 
                 var old = GUI.color;
                 GUI.color = new Color(old.r, old.g, old.b, old.a * ein * outT);
-                Panel(r, 12);
-                Fill(new Rect(r.x + 10, r.y + 12, 3, r.height - 24), t.Tone, 1.5f);
-                Label(new Rect(r.x + 22, r.y + 9, r.width - 32, 18), t.Title, sTitle);
-                Label(new Rect(r.x + 22, r.y + 29, r.width - 32, 24), t.Detail, sDetail);
-                // 남은 시간 막대 (사라지기까지)
-                float left = Mathf.Clamp01(1f - age / ToastLife);
-                Fill(new Rect(r.x + 22, r.yMax - 5, (r.width - 44) * left, 2), new Color(t.Tone.r, t.Tone.g, t.Tone.b, 0.5f), 1);
+                if (detailed)
+                {
+                    Panel(r, 12);
+                    Fill(new Rect(r.x + 10, r.y + 12, 3, r.height - 24), t.Tone, 1.5f);
+                    WithColor(sTitle, t.IsMod ? ModTone : Fg, new Rect(r.x + 22, r.y + 9, r.width - 32, 18), t.Title);
+                    Label(new Rect(r.x + 22, r.y + 29, r.width - 32, 24), t.Detail, sDetail);
+                    float left = Mathf.Clamp01(1f - age / ToastLife);   // 사라지기까지 남은 시간
+                    Fill(new Rect(r.x + 22, r.yMax - 5, (r.width - 44) * left, 2), new Color(t.Tone.r, t.Tone.g, t.Tone.b, 0.5f), 1);
+                }
+                else
+                {
+                    Panel(r, TH / 2f);
+                    Fill(new Rect(r.x + 13, r.center.y - 3, 6, 6), t.Tone, 3);
+                    WithColor(sToastShort, t.IsMod ? ModTone : Fg, new Rect(r.x + 26, r.y, r.width - 34, r.height), t.Short);
+                }
                 GUI.color = old;
-                ty += TH + 8;
+                ty += dir * (TH + gap);
             }
         }
 

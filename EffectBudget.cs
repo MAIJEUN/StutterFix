@@ -123,6 +123,7 @@ namespace StutterFix
             }
 
             double total = (Stopwatch.GetTimestamp() - drainStart) * 1000.0 / Stopwatch.Frequency;
+            ModCost.Add(SettingsWindow.T("밀린 효과 실행", "Deferred effects"), total);
             if (total > BudgetMs * 2)
                 Main.Entry.Logger.Log(string.Format(
                     "[효과나누기] 밀린 것 {0}개 처리에 {1:F0}ms (예산 {2:F0}ms), 실패 {3}개, 최악 {4} {5:F0}ms, 남은 대기 {6}개",

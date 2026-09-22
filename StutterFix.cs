@@ -570,6 +570,8 @@ namespace StutterFix
         // 아이콘/미니에 FPS 말고 더 보여 줄 것
         public bool CmMs = true, CmLow = false, CmCpu = false, CmGpu = true, CmVram = true, CmRam = false;
         public float AlertMs = 33f;         // 이보다 긴 프레임만 알린다 (2프레임 이상 밀린 것)
+        public bool AlertDetailed = false;  // 알림: 간단(한 줄) / 자세히(설명 포함 카드)
+        public int AlertPos = 0;            // 알림 위치: 0 모니터 옆, 1 화면 위 가운데, 2 화면 아래 가운데
         public bool HitchAlerts = true;    // 끊기면 원인 알림   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }

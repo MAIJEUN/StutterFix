@@ -31,6 +31,7 @@ namespace StutterFix
                 long t0 = Stopwatch.GetTimestamp();
                 Shader.WarmupAllShaders();
                 double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+                ModCost.Add(SettingsWindow.T("셰이더 준비", "Shader warm-up"), ms);
                 Last = "셰이더 " + count + "개 미리 준비 " + ms.ToString("F0") + "ms";
                 Main.Entry.Logger.Log("[셰이더] " + Last);
             }

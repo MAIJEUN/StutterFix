@@ -213,6 +213,7 @@ namespace StutterFix
                 }
 
                 sw.Stop();
+                ModCost.Add(SettingsWindow.T("메모리 정리 (모드)", "Memory cleanup (mod)"), sw.Elapsed.TotalMilliseconds);
                 ForcedCollects++;
                 Main.Entry.Logger.Log(string.Format("GC 재개 및 정리 ({0}) {1}MB -> {2}MB, {3}ms",
                     reason, before, GC.GetTotalMemory(false) / 1048576, sw.ElapsedMilliseconds));
