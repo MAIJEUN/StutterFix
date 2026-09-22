@@ -73,8 +73,11 @@ namespace StutterFix
             foreach (var c in code)
             {
                 var mi = c.operand as MethodInfo;
-                if (mi == null || (mi.DeclaringType != typeof(scrDecoration) && mi.DeclaringType != typeof(ADOFAI.DecorationPivot) && mi.DeclaringType != typeof(UnityEngine.Transform))) continue;
-                if (mi.Name == "set_localPosition") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(SetLocal)); c.opcode = OpCodes.Call; }
+                if (mi == null) continue;
+                if (mi.DeclaringType != typeof(scrDecoration) && mi.DeclaringType != typeof(ADOFAI.DecorationPivot)
+                    && mi.DeclaringType != typeof(UnityEngine.Transform) && mi.DeclaringType != typeof(ADOBase)) continue;
+                if (mi.Name == "get_editor" && mi.DeclaringType == typeof(ADOBase)) { c.operand = AccessTools.Method(typeof(MoveApply), nameof(EditorOrNull)); c.opcode = OpCodes.Call; }
+                else if (mi.Name == "set_localPosition") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(SetLocal)); c.opcode = OpCodes.Call; }
                 else if (mi.Name == "UpdatePivotCrossImage" && pivotCross != null) { c.operand = AccessTools.Method(typeof(MoveApply), nameof(PivotNow)); c.opcode = OpCodes.Call; }
                 else if (mi.Name == "UpdateScreenClamp") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(ClampNow)); c.opcode = OpCodes.Call; n++; }
                 else if (mi.Name == "UpdatePosition") { c.operand = AccessTools.Method(typeof(MoveApply), nameof(UpdateNow)); c.opcode = OpCodes.Call; n++; }
@@ -109,6 +112,17 @@ namespace StutterFix
         // 유니티는 값이 같아도 transform 에 쓰면 자식까지 "바뀜" 처리를 한다(장식은 자식이 여럿이다).
         // 장식 이동은 같은 값을 다시 넣는 경우가 많으므로, 같은 값이면 쓰지 않는다. 읽기는 쓰기보다 훨씬 싸다.
         internal static long PosWrites, PosSkips;
+
+        // 편집기에서 플레이하면 장식을 옮길 때마다 "선택 테두리와 피벗 표시" 를 갱신하려고 편집기를 확인한다.
+        // 측정: SetPosition 한 번에 크기 배율 0.17us, 위치 쓰기 ~0, 편집기 검사 0.76us, 나머지 0.72us.
+        // 곡 하나에 SetPosition 이 약 500만 번 불리므로 이 검사만 몇 초가 된다. 그런데 곡이 도는 동안에는 편집기 UI 가 보이지 않는다.
+        // 그래서 재생 중에는 편집기를 없는 것으로 보여 이 부분을 건너뛴다. 편집 화면으로 돌아가면 다시 원래대로 동작한다.
+        internal static long EditorSkips;
+        public static scnEditor EditorOrNull()
+        {
+            if (Enabled && Hitch.Playing) { EditorSkips++; return null; }
+            return ADOBase.editor;
+        }
 
         // (개발자용) SetPosition 안에서 어디에 시간이 가는지 64번에 한 번 잰다.
         // 구간: 시작 -> 크기 배율 계산 -> transform 쓰기 -> 편집기 검사 -> 마무리 표시 -> 끝
@@ -204,9 +218,10 @@ namespace StutterFix
         {
             if (Calls == 0) return "미룬 것 없음";
             return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 마무리에 쓴 시간 {7:F0}ms) | 편집기 피벗 갱신 {4}번을 {5}번으로 | 위치 쓰기 {8}번 중 같은 값이라 건너뜀 {9}번{6}",
-                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips) + ProfSummary();
+                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips)
+                + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary();
         }
 
-        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; frameSet.Clear(); }
+        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); }
     }
 }
