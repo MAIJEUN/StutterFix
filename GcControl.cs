@@ -275,8 +275,13 @@ namespace StutterFix
             if (heapNow > PeakHeapMB) PeakHeapMB = (int)heapNow;
 
             // 나가는 길을 다 잡지 못해도, 아무 일도 일어나지 않는 상태로 오래 있으면 끝난 것이다.
-            // 곡이 도는 중에는 조용한 구간에도 초당 몇 MB씩은 쌓인다.
-            quietTimer += dt;
+            // 예전에는 "곡이 도는 중에는 초당 몇 MB씩 쌓인다" 고 보고 힙이 10초간 3MB 도 안 늘면 끝났다고 했는데,
+            // 모드가 할당을 많이 줄인 뒤로는 곡 초반 10초 동안 거의 안 늘어서, 곡이 도는 중에 정리(850ms)를 해 버렸다.
+            // 지금은 곡 소리가 재생 중이면 끝난 것으로 보지 않는다.
+            bool songRunning = false;
+            try { var cd = scrConductor.instance; songRunning = cd != null && cd.song != null && cd.song.isPlaying; } catch { }
+            if (songRunning) { quietTimer = 0f; quietHeapMark = heapNow; }
+            else quietTimer += dt;
             if (quietTimer >= 10f)
             {
                 if (heapNow - quietHeapMark < 3)

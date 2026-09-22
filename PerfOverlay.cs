@@ -175,12 +175,39 @@ namespace StutterFix
             if (textTimer <= 0f) { textTimer = 0.25f; RefreshText(); }
         }
 
+        // 프레임 시간 통계(FrameTimingManager)는 게임 설정에서 꺼져 있으면 아무것도 주지 않는다.
+        // 개발자용에서는 다른 측정기가 켜 둔 덕에 값이 나왔고, 플레이어용에서는 "수집 0번" 이라 모든 끊김이
+        // "원인 불명" 이 됐다. 이 두 기록기를 켜 두면 유니티가 프레임 시간 통계를 켠다. 값도 여기서 바로 읽을 수 있다.
+        private static Unity.Profiling.ProfilerRecorder recGpu, recCpu;
+        internal static void StopRecorders()
+        {
+            try { if (recGpu.Valid) recGpu.Dispose(); if (recCpu.Valid) recCpu.Dispose(); } catch { }
+        }
+
         private void CaptureTiming()
         {
             try
             {
+                if (!recGpu.Valid)
+                {
+                    recGpu = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "GPU Frame Time");
+                    recCpu = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "CPU Main Thread Frame Time");
+                }
                 FrameTimingManager.CaptureFrameTimings();
-                if (FrameTimingManager.GetLatestTimings(1, timing) > 0)
+                uint got = FrameTimingManager.GetLatestTimings(1, timing);
+                if (got == 0 && recGpu.Valid && recCpu.Valid)
+                {
+                    // 통계 창구가 비면 기록기 값(나노초)을 쓴다
+                    float g = recGpu.LastValue / 1e6f, c = recCpu.LastValue / 1e6f;
+                    if (g > 0 || c > 0)
+                    {
+                        gpuRing[timingHead] = lastGpu = g;
+                        cpuRing[timingHead] = lastCpu = c;
+                        timingSamples++;
+                        timingHead = (timingHead + 1) % gpuRing.Length;
+                    }
+                }
+                else if (got > 0)
                 {
                     gpuRing[timingHead] = lastGpu = (float)timing[0].gpuFrameTime;
                     // 메인 스레드 시간이 비어 오는 환경이 있다. 그때는 전체 CPU 프레임 시간으로 대신한다
@@ -1040,6 +1067,6 @@ namespace StutterFix
             }
         }
 
-        private void OnDestroy() { SystemMonitor.Stop(); UiInputBlock.Remove(this); }
+        private void OnDestroy() { SystemMonitor.Stop(); StopRecorders(); UiInputBlock.Remove(this); }
     }
 }
