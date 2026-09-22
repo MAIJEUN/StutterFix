@@ -58,6 +58,7 @@ namespace StutterFix
 
                 h.Patch(set, transpiler: new HarmonyMethod(typeof(MoveApply), nameof(Transpiler)));
                 h.Patch(mUpdate, transpiler: new HarmonyMethod(typeof(MoveApply), nameof(Transpiler)));   // 마무리 쪽 위치 쓰기도 같은 값이면 건너뛴다
+                if (Edition.Dev) h.Patch(set, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ProfStart)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(ProfEnd)));
                 h.Patch(start, prefix: new HarmonyMethod(typeof(MoveApply), nameof(Enter)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(Exit)));
                 Main.Entry.Logger.Log("[장식 마무리] 설치" + (Patched ? "" : " - 모양이 달라 적용 안 함"));
             }
@@ -90,6 +91,7 @@ namespace StutterFix
         public static void PivotNow(ADOFAI.DecorationPivot p, bool arg)
         {
             PivotCalls++;
+            if (profNow && p2 == p1) p2 = System.Diagnostics.Stopwatch.GetTimestamp();
             if (Enabled) { pivotDirty = true; pivotObj = p; pivotArg = arg; return; }
             PivotDone++;
             pivotCross(p, arg);
@@ -108,8 +110,41 @@ namespace StutterFix
         // 장식 이동은 같은 값을 다시 넣는 경우가 많으므로, 같은 값이면 쓰지 않는다. 읽기는 쓰기보다 훨씬 싸다.
         internal static long PosWrites, PosSkips;
 
+        // (개발자용) SetPosition 안에서 어디에 시간이 가는지 64번에 한 번 잰다.
+        // 구간: 시작 -> 크기 배율 계산 -> transform 쓰기 -> 편집기 검사 -> 마무리 표시 -> 끝
+        internal static long ProfN;
+        internal static double ProfScale, ProfWrite, ProfEditor, ProfRest;
+        private static long profCounter;
+        private static bool profNow;
+        private static long p0, p1, p2, p3;
+
+        public static void ProfStart() { profNow = Edition.Dev && (++profCounter % 64) == 0; if (profNow) { p0 = System.Diagnostics.Stopwatch.GetTimestamp(); p1 = p2 = p3 = p0; } }
+
+        public static Exception ProfEnd(Exception __exception)
+        {
+            if (profNow)
+            {
+                profNow = false;
+                double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                ProfN++;
+                ProfScale += (p1 - p0) * f;
+                ProfWrite += (p2 - p1) * f;
+                ProfEditor += (p3 - p2) * f;
+                ProfRest += (System.Diagnostics.Stopwatch.GetTimestamp() - p3) * f;
+            }
+            return __exception;
+        }
+
+        internal static string ProfSummary()
+        {
+            if (ProfN == 0) return "";
+            return string.Format(" | SetPosition 표본 {0}개 평균: 크기 배율 {1:F2}us, 위치 쓰기 {2:F2}us, 편집기 검사 {3:F2}us, 나머지 {4:F2}us",
+                ProfN, ProfScale * 1000 / ProfN, ProfWrite * 1000 / ProfN, ProfEditor * 1000 / ProfN, ProfRest * 1000 / ProfN);
+        }
+
         public static void SetLocal(UnityEngine.Transform t, UnityEngine.Vector3 v)
         {
+            if (profNow && p1 == p0) p1 = System.Diagnostics.Stopwatch.GetTimestamp();
             if (t == null) return;
             var cur = t.localPosition;
             if (cur.x == v.x && cur.y == v.y && cur.z == v.z) { PosSkips++; return; }
@@ -119,6 +154,7 @@ namespace StutterFix
 
         public static void ClampNow(scrDecoration d)
         {
+            if (profNow && p3 == p2) p3 = System.Diagnostics.Stopwatch.GetTimestamp();
             if (depth > 0 && Enabled) { Mark(d); return; }   // 미룬다 (효과가 끝날 때 한 번)
             clamp(d);
         }
@@ -168,9 +204,9 @@ namespace StutterFix
         {
             if (Calls == 0) return "미룬 것 없음";
             return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 마무리에 쓴 시간 {7:F0}ms) | 편집기 피벗 갱신 {4}번을 {5}번으로 | 위치 쓰기 {8}번 중 같은 값이라 건너뜀 {9}번{6}",
-                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips);
+                Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips) + ProfSummary();
         }
 
-        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; frameSet.Clear(); }
+        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; frameSet.Clear(); }
     }
 }
