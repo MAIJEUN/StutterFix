@@ -394,9 +394,10 @@ namespace StutterFix
             ch |= Option("tween", ref c.TweenGuard, T("애니메이션 처리 최적화", "Animation list guard"),
                 T("효과가 많을 때 게임이 애니메이션 목록을 반복해서 다시 정리하느라 느려지는 문제를 막습니다.",
                   "Prevents the game from repeatedly re-sorting its animation list when many effects are running."), null);
-            ch |= Option("zerotween", ref c.ZeroTween, T("즉시 이동 최적화", "Instant moves"),
-                T("장식을 즉시 옮기는 이벤트를 애니메이션을 만들지 않고 바로 처리합니다. 결과 값은 게임과 똑같습니다(26만 개를 비교해 확인).",
-                  "Applies instant decoration moves directly instead of creating a zero-length animation. Values are identical to the game's (verified over 260,000 cases)."), null);
+            ch |= Option("zerotween", ref c.ZeroTween, T("장식 이동 최적화", "Decoration moves"),
+                T("장식을 즉시 옮기는 이벤트를 애니메이션 없이 바로 처리하고, 한 효과 안에서 장식마다 위치 마무리 계산을 한 번만 합니다. 결과는 게임과 똑같습니다(26만 개를 비트 단위로 비교해 확인).",
+                  "Applies instant decoration moves without creating zero-length animations, and recomputes each decoration's position once per effect instead of once per axis. Results are identical to the game's (verified bit-for-bit over 260,000 cases)."),
+                T("장식 많은 맵", "Decoration-heavy maps"));
             ch |= Option("text", ref c.SkipSameText, T("글자 장식 최적화", "Text decoration skip"),
                 T("같은 글자를 매 프레임 다시 쓰는 글자 장식은 건너뜁니다. PACL2 같은 모드를 함께 쓸 때 효과가 큽니다.",
                   "Skips text decorations that are re-set to the same text every frame. Helps a lot with mods like PACL2."), null);
