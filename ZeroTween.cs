@@ -48,8 +48,9 @@ namespace StutterFix
             var ev = em == null ? null : AccessTools.Method(em, "Evaluate", new[] { typeof(Ease), typeof(EaseFunction), typeof(float), typeof(float), typeof(float), typeof(float) });
             if (ev == null) { Main.Entry.Logger.Log("[즉시 이동] 이징 함수를 못 찾아 적용 안 함"); return; }
             easeEval = (EvalFn)Delegate.CreateDelegate(typeof(EvalFn), ev);
-            activeSetter = AccessTools.PropertySetter(typeof(Tween), "active");
-            if (activeSetter == null) { Main.Entry.Logger.Log("[즉시 이동] 대역을 만들 수 없어 적용 안 함"); return; }
+            try { activeRef = AccessTools.FieldRefAccess<Tween, bool>("<active>k__BackingField"); }
+            catch { activeRef = null; }
+            if (activeRef == null) { Main.Entry.Logger.Log("[즉시 이동] 대역을 만들 수 없어 적용 안 함"); return; }
             h.Patch(start, transpiler: new HarmonyMethod(typeof(ZeroTween), nameof(Transpiler)));
             Main.Entry.Logger.Log("[즉시 이동] 설치" + (Patched ? "" : " - 모양이 달라 적용 안 함"));
         }
@@ -87,7 +88,9 @@ namespace StutterFix
         // ── 이징 ─────────────────────────────────────────────────────
         private delegate float EvalFn(Ease ease, EaseFunction custom, float time, float duration, float overshoot, float period);
         private static EvalFn easeEval;
-        private static MethodInfo activeSetter;
+        // active 는 자동 속성이라 뒷 필드를 직접 다룬다. MethodInfo.Invoke 로 켜고 끄면 즉시 이동 하나에 리플렉션이 두 번 들어가서
+        // (한 프레임 4만 번) 아끼는 것보다 더 비쌌다. 실제로 A/B 에서 끈 쪽 147ms, 켠 쪽 176ms 로 뒤집혔다.
+        private static AccessTools.FieldRef<Tween, bool> activeRef;
         private static readonly AccessTools.FieldRef<Tween, Ease> easeTypeRef = AccessTools.FieldRefAccess<Tween, Ease>("easeType");
         private static readonly AccessTools.FieldRef<Tween, EaseFunction> customEaseRef = AccessTools.FieldRefAccess<Tween, EaseFunction>("customEase");
         private static readonly AccessTools.FieldRef<Tween, float> overshootRef = AccessTools.FieldRefAccess<Tween, float>("easeOvershootOrAmplitude");
@@ -116,7 +119,6 @@ namespace StutterFix
         private static DOGetter<float> gF; private static DOSetter<float> sF; private static float eF;
         private static DOGetter<Vector2> gV; private static DOSetter<Vector2> sV; private static Vector2 eV;
         private static DOGetter<Color> gC; private static DOSetter<Color> sC; private static Color eC;
-        private static readonly object[] on = { true }, off = { false };
 
         private static T Proxy<T>(ref T p) where T : Tween
         {
@@ -126,7 +128,7 @@ namespace StutterFix
             customEaseRef(p) = null;
             overshootRef(p) = DOTween.defaultEaseOvershootOrAmplitude;
             periodRef(p) = DOTween.defaultEasePeriod;
-            activeSetter.Invoke(p, on);
+            activeRef(p) = true;
             return p;
         }
 
@@ -199,7 +201,7 @@ namespace StutterFix
             catch (Exception ex) { Log(ex); }
             t.onUpdate = null; t.onComplete = null;
             gF = null; sF = null; gV = null; sV = null; gC = null; sC = null;
-            activeSetter.Invoke(t, off);
+            activeRef(t) = false;
             Fast++;
             if (onUpdate != null) { try { onUpdate(); } catch (Exception ex) { Log(ex); } }
             if (onComplete != null) { try { onComplete(); } catch (Exception ex) { Log(ex); } }
