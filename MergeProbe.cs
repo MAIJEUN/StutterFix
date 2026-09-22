@@ -1,3 +1,4 @@
+using System.Reflection.Emit;
 using System.Reflection;
 using System;
 using System.Collections.Generic;
@@ -36,6 +37,7 @@ namespace StutterFix
             h.Patch(start, prefix: new HarmonyMethod(typeof(MergeProbe), nameof(Enter)), finalizer: new HarmonyMethod(typeof(MergeProbe), nameof(Exit)));
             h.Patch(add, postfix: new HarmonyMethod(typeof(MergeProbe), nameof(Added)));
             h.Patch(kill, prefix: new HarmonyMethod(typeof(MergeProbe), nameof(Killing)));
+            h.Patch(start, transpiler: new HarmonyMethod(typeof(MergeProbe), nameof(CountTranspiler)));
             var comp = AccessTools.Method(tm, "Complete");
             if (comp != null) h.Patch(comp, prefix: new HarmonyMethod(typeof(MergeProbe), nameof(Completing)));
             Main.Entry.Logger.Log("[덮어쓰기 측정] 설치");
@@ -49,7 +51,10 @@ namespace StutterFix
             if (Time.frameCount == frame) return;
             if (frameMade > WorstMade) { WorstMade = frameMade; WorstSame = frameSame; WorstAt = Time.realtimeSinceStartup; }
             if (frameComplete > WorstComplete) { WorstComplete = frameComplete; WorstCompleteInMove = frameCompleteInMove; }
+            if (frameDecos > WorstFrameDecos) { WorstFrameDecos = frameDecos; WorstFrameEffects = frameEffects; WorstFrameZero = ZeroTween.Fast - frameZeroStart; }
             frameComplete = frameCompleteInMove = 0;
+            frameDecos = frameEffects = 0;
+            frameZeroStart = ZeroTween.Fast;
             frame = Time.frameCount;
             madeThisFrame.Clear();
             frameMade = frameSame = 0;
@@ -96,16 +101,48 @@ namespace StutterFix
             madeInEffect.Clear();
         }
 
+        // 장식 이동 효과가 한 번에 장식을 몇 개나 처리하는지 (프레임 단위로 가장 심한 곳을 기록)
+        internal static long Decos, Effects;
+        private static int frameDecos, frameEffects;
+        internal static int WorstFrameDecos, WorstFrameEffects;
+        internal static long WorstFrameZero;
+        private static long frameZeroStart;
+
+        public static IEnumerable<scrDecoration> Count(IEnumerable<scrDecoration> src)
+        {
+            NewFrame();
+            frameEffects++; Effects++;
+            foreach (var d in src)
+            {
+                frameDecos++; Decos++;
+                yield return d;
+            }
+        }
+
+        public static IEnumerable<CodeInstruction> CountTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var code = new List<CodeInstruction>(instructions);
+            for (int i = 0; i < code.Count; i++)
+            {
+                var mi = code[i].operand as MethodInfo;
+                if (mi == null || mi.Name != "GetTaggedDecorations" || mi.ReturnType != typeof(IEnumerable<scrDecoration>)) continue;
+                code.Insert(i + 1, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(MergeProbe), nameof(Count))));
+                break;
+            }
+            return code;
+        }
+
         internal static string Summary()
         {
             NewFrame();
             if (Made == 0) return "장식 이동 애니메이션 없음";
             return string.Format("장식 이동이 만든 애니메이션 {0}개 중 같은 프레임에 바로 덮어써진 것 {1}개 ({2:F0}%), 이전 프레임 것을 덮어쓴 것 {3}개 | 가장 많이 만든 프레임: {4}개 중 {5}개가 같은 프레임에 덮어써짐",
                 Made, SameFrameKilled, 100.0 * SameFrameKilled / Made, OlderKilled, WorstMade, WorstSame)
+                + string.Format(" || 효과 {0}번이 장식 {1}개 처리 | 가장 많은 프레임: 효과 {2}개, 장식 {3}개, 그중 즉시 이동 처리 {4}개", Effects, Decos, WorstFrameEffects, WorstFrameDecos, WorstFrameZero)
                 + string.Format(" || 길이 0 인 즉시 이동 {0}개 ({1:F0}%), 길이 있는 것 {2}개 | 끝내기(Complete) 장식 이동 안 {3}번, 밖(DOTween 갱신 등) {4}번 | 끝내기가 가장 많은 프레임: {5}번 중 장식 이동 안 {6}번",
                 ZeroDur, 100.0 * ZeroDur / Math.Max(1, ZeroDur + WithDur), WithDur, CompleteInMove, CompleteOutside, WorstComplete, WorstCompleteInMove);
         }
 
-        internal static void Reset() { Made = SameFrameKilled = OlderKilled = 0; WorstMade = WorstSame = 0; madeThisFrame.Clear(); frameMade = frameSame = 0; ZeroDur = WithDur = CompleteInMove = CompleteOutside = 0; WorstComplete = WorstCompleteInMove = 0; frameComplete = frameCompleteInMove = 0; }
+        internal static void Reset() { Decos = Effects = 0; frameDecos = frameEffects = 0; WorstFrameDecos = WorstFrameEffects = 0; WorstFrameZero = 0; Made = SameFrameKilled = OlderKilled = 0; WorstMade = WorstSame = 0; madeThisFrame.Clear(); frameMade = frameSame = 0; ZeroDur = WithDur = CompleteInMove = CompleteOutside = 0; WorstComplete = WorstCompleteInMove = 0; frameComplete = frameCompleteInMove = 0; }
     }
 }
