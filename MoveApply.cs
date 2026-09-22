@@ -70,6 +70,16 @@ namespace StutterFix
         {
             var code = new List<CodeInstruction>(instructions);
             int n = 0;
+            // "ADOBase.editor 를 가져와 유니티 객체 검사" 한 쌍은 통째로 EditorVisible() 하나로 바꾼다
+            for (int i = 0; i + 1 < code.Count; i++)
+            {
+                var a = code[i].operand as MethodInfo; var b = code[i + 1].operand as MethodInfo;
+                if (a == null || b == null) continue;
+                if (a.Name != "get_editor" || a.DeclaringType != typeof(ADOBase) || b.Name != "op_Implicit" || b.DeclaringType != typeof(UnityEngine.Object)) continue;
+                code[i].operand = AccessTools.Method(typeof(MoveApply), nameof(EditorVisible));
+                code[i].opcode = OpCodes.Call;
+                code[i + 1].opcode = OpCodes.Nop; code[i + 1].operand = null;
+            }
             foreach (var c in code)
             {
                 var mi = c.operand as MethodInfo;
@@ -122,6 +132,14 @@ namespace StutterFix
         {
             if (Enabled && Hitch.Playing) { EditorSkips++; return null; }
             return ADOBase.editor;
+        }
+
+        // "편집기가 있나" 는 유니티 객체 검사(op_Implicit)까지 도는데, 재생 중에는 물어볼 것도 없다.
+        // 두 호출을 하나로 합쳐 그 검사도 없앤다.
+        public static bool EditorVisible()
+        {
+            if (Enabled && Hitch.Playing) { EditorSkips++; return false; }
+            return ADOBase.editor != null;
         }
 
         // (개발자용) SetPosition 안에서 어디에 시간이 가는지 64번에 한 번 잰다.
