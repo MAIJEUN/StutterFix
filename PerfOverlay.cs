@@ -168,7 +168,9 @@ namespace StutterFix
             int gcDelta = gc - lastGc;
             lastGc = gc;
 
-            if (startup) { smooth = ms < 50f ? smooth + ms / 1000f : 0f; if (smooth > 3f) startup = false; }
+            // 게임·모드 시작 구간: 켠 뒤 최소 20초, 그리고 5초 연속 안정될 때까지. 모드 로딩 사이의 조용한 틈에
+            // 끝났다고 보면, 뒤늦게 로딩하는 모드(Quartz 버전 불러오기 등)의 멈춤이 다시 "원인 불명" 으로 떴다.
+            if (startup) { smooth = ms < 50f ? smooth + ms / 1000f : 0f; if (smooth > 5f && Time.realtimeSinceStartup > 20f) startup = false; }
 
             graph[graphHead] = ms; graphHead = (graphHead + 1) % GraphN;
             recent[recentHead] = ms; recentHead = (recentHead + 1) % LowN;
@@ -226,7 +228,7 @@ namespace StutterFix
         private static int loadFrame = -1000;
         private static float loadTime = -999f;
         private static string loadWhat = "";
-        private bool startup = true;   // 게임을 켠 뒤 프레임이 3초 동안 안정될 때까지
+        private bool startup = true;   // 게임을 켠 뒤 최소 20초 + 프레임이 5초 동안 안정될 때까지
         private float smooth;
 
         internal static void MarkLoading(string what)
