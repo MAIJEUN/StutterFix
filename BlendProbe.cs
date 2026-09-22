@@ -16,6 +16,7 @@ namespace StutterFix
     //   Shift+F10  : 실험 - 모든 블렌드 장식을 "한 번만 복사" 로 바꾼다 / 다시 누르면 원래대로
     //   F11        : 블렌드 장식 빠르게 그리기(FastBlend) 켜기/끄기 (이번 실행만, 저장 안 함)
     //   Shift+F11  : 같은 프레임을 원래/복사 없는 방식으로 두 번 그려 비교 (%TEMP%StutterFix-blend)
+    //   F12        : 즉시 이동 최적화 켜기/끄기 (이번 실행만, A/B 비교용)
     internal static class BlendProbe
     {
         private static readonly Dictionary<BlendModeEffect, bool> changed = new Dictionary<BlendModeEffect, bool>();
@@ -23,6 +24,12 @@ namespace StutterFix
 
         internal static void Tick()
         {
+            if (Input.GetKeyDown(KeyCode.F12))
+            {
+                ZeroTween.Enabled = !ZeroTween.Enabled;
+                Main.Entry.Logger.Log("[즉시 이동] " + (ZeroTween.Enabled ? "켬" : "끔") + " (저장 안 함) | " + ZeroTween.Summary());
+                PerfOverlay.Notice(SettingsWindow.T("즉시 이동 최적화", "Instant moves"), ZeroTween.Enabled ? SettingsWindow.T("켬", "on") : SettingsWindow.T("끔", "off"));
+            }
             if (Input.GetKeyDown(KeyCode.F11))
             {
                 if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) FastBlend.Compare(PerfOverlay.Instance);
