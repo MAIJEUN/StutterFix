@@ -56,6 +56,8 @@ namespace StutterFix
         private int recentCount, recentHead;
         private long lastStamp;
         private float avgMs = 8f;
+        private bool prevHitch;
+        private float prevMs;
         private int lastGc;
         private int hitchCount;
         private float lastHitchTime = -999f, lastHitchMs;
@@ -189,9 +191,13 @@ namespace StutterFix
             bool hitch = ms > limit;
             // 평소 프레임 기준. 튄 프레임도 조금씩은 반영해야 한다. 예전에는 튄 프레임을 아예 빼서, 맵 자체가
             // 계속 느린 곳(블렌드 장식 1755개, 매 프레임 90ms)에서는 모든 프레임이 끊김으로 잡혀 알림이 매 프레임 쌓였다.
-            avgMs = Mathf.Lerp(avgMs, Mathf.Min(ms, 1000f), hitch ? 0.03f : 0.05f);
+            // 느린 프레임이 비슷한 길이로 연달아 오면(맵이 계속 무거운 것) 끊김은 처음 한 번만 세고,
+            // 평균이 빨리 따라가게 해서 곧 "프레임 낮음" 알림 하나로 바뀌게 한다.
+            bool sustained = hitch && prevHitch && ms < prevMs * 1.6f && ms > prevMs * 0.6f;
+            prevHitch = hitch; prevMs = ms;
+            avgMs = Mathf.Lerp(avgMs, Mathf.Min(ms, 1000f), sustained ? 0.25f : hitch ? 0.03f : 0.05f);
             CheckSlow();
-            if (!hitch) return;
+            if (!hitch || sustained) return;
             if (Mode == 0) { hitchCount++; return; }
 
             // 불러오기 구간이면 바로 적는다
