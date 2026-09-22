@@ -184,7 +184,10 @@ namespace StutterFix
         {
             try
             {
-                Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary());
+                // 곡이 끝난 뒤(결과 화면 등) 재생 상태가 프레임마다 켜졌다 꺼졌다 해서 이 줄이 수백 번 찍혔다.
+                // 한 일이 없으면 남기지 않는다.
+                if (ZeroTween.Fast > 0 || MoveApply.PosWrites > 0)
+                    Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary());
                 ZeroTween.Reset(); MoveApply.Reset();
             }
             catch { }
