@@ -119,6 +119,10 @@ namespace StutterFix
         private double songMs;
         private int songFrames, songHitches;
         private float songWorst;
+        // 곡 하나의 평균을 로그로 남기려고 GPU/CPU 시간도 함께 더해 둔다.
+        // "왜 프레임이 떨어졌나" 는 둘 중 어느 쪽이 큰지를 봐야 알 수 있다.
+        private double songGpu, songCpu, songMod;
+        private int songTiming;
 
         private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod, IsLoading; public string Cause, Detail, Title, Short; public Color Tone; }
         private readonly List<HitchRec> history = new List<HitchRec>();   // 최근 끊김 (상세 패널 목록)
@@ -259,9 +263,14 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; }
+            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; }
             wasPlaying = playing;
-            if (playing && ms < 1500f) { songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms; }
+            if (playing && ms < 1500f)
+            {
+                songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
+                if (lastGpu > 0f || lastCpu > 0f) { songGpu += lastGpu; songCpu += lastCpu; songTiming++; }
+                songMod += ModCost.LastFrameMs;   // 모드가 그 프레임에 쓴 시간(모니터 그리기 포함)
+            }
 
             DecidePending();
 
@@ -411,6 +420,20 @@ namespace StutterFix
         private bool startup = true;   // 게임을 켠 뒤 최소 20초 + 프레임이 5초 동안 안정될 때까지 (맵을 열면 바로 끝)
         private static bool levelActivity;   // 맵을 불러오거나 곡을 시작했다
         internal static void LevelActivity() { levelActivity = true; }
+
+        // 곡이 끝나면 그 곡의 평균을 한 줄 남긴다. 끊김이 없는데도 프레임이 낮은 맵을 가려내려면
+        // 평균 FPS 와 GPU/CPU 어느 쪽이 큰지가 필요하다(모니터가 꺼져 있으면 GPU/CPU 는 비어 있다).
+        internal static string SongSummary()
+        {
+            var o = Instance;
+            if (o == null || o.songFrames < 30) return null;
+            string s = string.Format("평균 {0:F0} FPS ({1:F1}ms), 가장 긴 프레임 {2:F0}ms, 끊김 {3}번, 프레임 {4}개",
+                1000.0 * o.songFrames / System.Math.Max(1.0, o.songMs), o.songMs / o.songFrames, o.songWorst, o.songHitches, o.songFrames);
+            if (o.songTiming > 0)
+                s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
+            s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
+            return s;
+        }
         private float smooth;
 
         internal static void MarkLoading(string what)
