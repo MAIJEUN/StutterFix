@@ -45,14 +45,18 @@ namespace StutterFix
         // 곡을 중간부터 시작하면 게임이 그 지점까지의 효과를 한 프레임에 몰아서 적용한다.
         // 이걸 예산 초과로 보고 뒤로 미루면 적용 순서가 꼬여 이펙트가 이상하게 보였다.
         // 곡이 시작되거나 다시 시작된 직후에는 나누지 않고 그대로 통과시킨다.
+        // 유예는 실제 시간만으로 재면 안 된다. 곡 준비 한 프레임이 3초를 넘으면(무거운 맵의 첫 판은 7~8초) 유예가 준비 도중에
+        // 다 지나가서, 맵의 시작 효과 수천 개(Arche 4,344개)가 뒤로 밀리고 첫 판 시작 연출이 이상하게 보였다.
+        // 그래서 곡 시작 뒤 60프레임, 그리고 첫 타일을 칠 때까지(실시간 모니터의 곡 시작 연출 구간)도 유예로 본다.
         private static float graceUntil;
-        internal static void Suspend(float seconds) { graceUntil = Time.realtimeSinceStartup + seconds; }
-        internal static bool InGrace { get { return Time.realtimeSinceStartup < graceUntil; } }
+        private static int graceFrame = -1;
+        internal static void Suspend(float seconds) { graceUntil = Time.realtimeSinceStartup + seconds; graceFrame = Time.frameCount + 60; }
+        internal static bool InGrace { get { return Time.realtimeSinceStartup < graceUntil || Time.frameCount <= graceFrame || PerfOverlay.InStartWindow; } }
 
         internal static bool ShouldRun(object instance, MethodBase method, object[] args)
         {
             if (!Enabled || replaying || RecolorSplit.Replaying) return true;   // 색 바꾸기 조각은 이미 나눠진 것이다
-            if (Time.realtimeSinceStartup < graceUntil) return true;
+            if (InGrace) return true;
 
             if (Time.frameCount != frame)
             {

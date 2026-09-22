@@ -451,6 +451,7 @@ namespace StutterFix
         }
         private static int startGraceFrame = -1;
         private static bool InStartPhase { get { return startPhase || Time.frameCount <= startGraceFrame; } }
+        internal static bool InStartWindow { get { return InStartPhase; } }
 
         // 끊김이 아닌 안내 (예: VRAM 부족으로 다음부터 이미지를 줄임). 모니터가 켜져 있으면 알림으로 뜬다.
         internal static void Notice(string cause, string detail)
