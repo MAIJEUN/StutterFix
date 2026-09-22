@@ -108,6 +108,11 @@ namespace StutterFix
         internal static long WorstFrameZero;
         private static long frameZeroStart;
 
+        // 안 보이는 장식(불투명도 0, 렌더러 꺼짐, 오브젝트 꺼짐)이 얼마나 되는지도 센다.
+        internal static long Invisible, ZeroOpacity, RendererOff, ObjOff;
+        private static readonly AccessTools.FieldRef<scrDecoration, float> opacityRef = AccessTools.FieldRefAccess<scrDecoration, float>("opacity");
+        private static readonly AccessTools.FieldRef<scrDecoration, bool> rendererOnRef = AccessTools.FieldRefAccess<scrDecoration, bool>("rendererEnabled");
+
         public static IEnumerable<scrDecoration> Count(IEnumerable<scrDecoration> src)
         {
             NewFrame();
@@ -115,6 +120,15 @@ namespace StutterFix
             foreach (var d in src)
             {
                 frameDecos++; Decos++;
+                try
+                {
+                    bool zero = opacityRef(d) <= 0f, roff = !rendererOnRef(d), ooff = d != null && !d.gameObject.activeInHierarchy;
+                    if (zero) ZeroOpacity++;
+                    if (roff) RendererOff++;
+                    if (ooff) ObjOff++;
+                    if (zero || roff || ooff) Invisible++;
+                }
+                catch { }
                 yield return d;
             }
         }
@@ -138,11 +152,12 @@ namespace StutterFix
             if (Made == 0) return "장식 이동 애니메이션 없음";
             return string.Format("장식 이동이 만든 애니메이션 {0}개 중 같은 프레임에 바로 덮어써진 것 {1}개 ({2:F0}%), 이전 프레임 것을 덮어쓴 것 {3}개 | 가장 많이 만든 프레임: {4}개 중 {5}개가 같은 프레임에 덮어써짐",
                 Made, SameFrameKilled, 100.0 * SameFrameKilled / Made, OlderKilled, WorstMade, WorstSame)
-                + string.Format(" || 효과 {0}번이 장식 {1}개 처리 | 가장 많은 프레임: 효과 {2}개, 장식 {3}개, 그중 즉시 이동 처리 {4}개", Effects, Decos, WorstFrameEffects, WorstFrameDecos, WorstFrameZero)
+                + string.Format(" || 효과 {0}번이 장식 {1}개 처리 (안 보이는 장식 {5}개 = 불투명도 0 {6}, 렌더러 꺼짐 {7}, 오브젝트 꺼짐 {8}) | 가장 많은 프레임: 효과 {2}개, 장식 {3}개, 그중 즉시 이동 처리 {4}개",
+                    Effects, Decos, WorstFrameEffects, WorstFrameDecos, WorstFrameZero, Invisible, ZeroOpacity, RendererOff, ObjOff)
                 + string.Format(" || 길이 0 인 즉시 이동 {0}개 ({1:F0}%), 길이 있는 것 {2}개 | 끝내기(Complete) 장식 이동 안 {3}번, 밖(DOTween 갱신 등) {4}번 | 끝내기가 가장 많은 프레임: {5}번 중 장식 이동 안 {6}번",
                 ZeroDur, 100.0 * ZeroDur / Math.Max(1, ZeroDur + WithDur), WithDur, CompleteInMove, CompleteOutside, WorstComplete, WorstCompleteInMove);
         }
 
-        internal static void Reset() { Decos = Effects = 0; frameDecos = frameEffects = 0; WorstFrameDecos = WorstFrameEffects = 0; WorstFrameZero = 0; Made = SameFrameKilled = OlderKilled = 0; WorstMade = WorstSame = 0; madeThisFrame.Clear(); frameMade = frameSame = 0; ZeroDur = WithDur = CompleteInMove = CompleteOutside = 0; WorstComplete = WorstCompleteInMove = 0; frameComplete = frameCompleteInMove = 0; }
+        internal static void Reset() { Invisible = ZeroOpacity = RendererOff = ObjOff = 0; Decos = Effects = 0; frameDecos = frameEffects = 0; WorstFrameDecos = WorstFrameEffects = 0; WorstFrameZero = 0; Made = SameFrameKilled = OlderKilled = 0; WorstMade = WorstSame = 0; madeThisFrame.Clear(); frameMade = frameSame = 0; ZeroDur = WithDur = CompleteInMove = CompleteOutside = 0; WorstComplete = WorstCompleteInMove = 0; frameComplete = frameCompleteInMove = 0; }
     }
 }
