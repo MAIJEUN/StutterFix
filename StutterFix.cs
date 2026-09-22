@@ -107,6 +107,7 @@ namespace StutterFix
                 TweenFix.Install(harmony);
                 GcControl.Install();
                 SettingsWindow.Create();
+                PerfOverlay.Create();
 
                 // 측정 (개발자용만)
                 if (Edition.Dev)
@@ -279,6 +280,7 @@ namespace StutterFix
             Try(EffectBudget.Reset);       // 색 나누기 대기열도 같이 비운다
             Try(ImagePrefetch.Stop);       // 이미지 작업 스레드와 풀어 둔 메모리
             Try(SettingsWindow.Destroy);
+            Try(PerfOverlay.Destroy);
             Try(ParticleTextWatch.Shutdown);
             Try(RenderCallbackScan.Shutdown);
             Try(SlowScan.Shutdown);
@@ -548,7 +550,9 @@ namespace StutterFix
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
-        public KeyCode WindowKey = KeyCode.Insert;   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
+        public KeyCode WindowKey = KeyCode.Insert;
+        public bool ShowOverlay = false;   // 실시간 모니터 (Shift+Insert)
+        public bool HitchAlerts = true;    // 끊기면 원인 알림   // 따로 뜨는 설정 창 (F10 은 윈도우 창 메뉴 키라 피한다)
 
         public override void Save(UnityModManager.ModEntry modEntry) { Save(this, modEntry); }
     }

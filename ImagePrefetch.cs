@@ -49,6 +49,7 @@ namespace StutterFix
         private static long pendingBytes;
         private static int consumed;   // 메인 스레드가 마지막으로 가져간 순번
         private static bool running;
+        internal static bool Running { get { return running; } }   // 실시간 모니터가 "불러오는 중" 을 가릴 때 쓴다
         private static Thread[] workers = new Thread[0];
 
         private static int used, fallback, notReady;

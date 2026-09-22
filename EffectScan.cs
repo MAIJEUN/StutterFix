@@ -122,6 +122,9 @@ namespace StutterFix
         {
             double ms = (Stopwatch.GetTimestamp() - __state) * 1000.0 / Stopwatch.Frequency;
             EffectBudget.Exit(ms);
+            // 실시간 모니터가 "왜 끊겼는지"를 가리려면 플레이어용에서도 프레임마다 효과 시작 시간 합계가 필요하다.
+            // 이미 잰 값을 더하기만 하므로 비용은 없다.
+            if (EffectBudget.OuterCall) FrameEffectMs += ms;
             if (!Enabled) return;
 
             string name = __instance != null ? __instance.GetType().Name : "?";
@@ -213,8 +216,13 @@ namespace StutterFix
                 StartedThisFrame, MsThisFrame, ChecksThisFrame, CheckMsThisFrame, NamesByCost());
         }
 
+        // 지난 프레임과 이번 프레임의 효과 시작 시간 합계 (항상 켜짐)
+        internal static double FrameEffectMs, LastFrameEffectMs;
+
         internal static void ResetFrame()
         {
+            LastFrameEffectMs = FrameEffectMs;
+            FrameEffectMs = 0;
             StartedThisFrame = 0;
             MsThisFrame = 0;
             ChecksThisFrame = 0;

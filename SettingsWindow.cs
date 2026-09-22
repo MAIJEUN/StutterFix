@@ -109,7 +109,8 @@ namespace StutterFix
         private void Update()
         {
             if (Main.Config == null) return;
-            if (Input.GetKeyDown(Main.Config.WindowKey)) SetOpen(!Open || closing);
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);   // Shift+키 는 실시간 모니터
+            if (!shift && Input.GetKeyDown(Main.Config.WindowKey)) SetOpen(!Open || closing);
             if (!Open) return;
             if (!closing && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
             Cursor.visible = true;   // 곡 중에는 게임이 커서를 숨긴다
@@ -244,7 +245,7 @@ namespace StutterFix
             if (GUI.Button(new Rect(W - 56, 18, 34, 32), "×", sClose)) SetOpen(false);
 
             // ── 왼쪽 메뉴: 흰 카드 하나가 고른 항목으로 미끄러져 간다
-            string[] pages = { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("정보", "About") };
+            string[] pages = { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("모니터", "Monitor"), T("정보", "About") };
             float navTarget = HeaderH + 14 + page * 44;
             if (navY < 0) navY = navTarget;
             if (Event.current.type == EventType.Repaint)
@@ -281,6 +282,7 @@ namespace StutterFix
                 case 1: PagePlay(); break;
                 case 2: PageLoad(); break;
                 case 3: PageGraphics(); break;
+                case 4: PageMonitor(); break;
                 default: PageAbout(); break;
             }
             GUILayout.Space(Gutter);
@@ -390,6 +392,26 @@ namespace StutterFix
             if (BootConfig.Status.Contains("다음 실행")) { rows.Add(T("적용", "Pending")); rows.Add(T("게임을 다시 켜면 적용됩니다", "Applies after restart")); }
             if (Main.LaunchWarning.Length > 0) { rows.Add(T("주의", "Warning")); rows.Add(Main.LaunchWarning.Trim()); }
             InfoCard(rows.ToArray());
+        }
+
+        private void PageMonitor()
+        {
+            var c = Main.Config;
+            Heading(T("모니터", "Monitor"), T("게임 화면 오른쪽 위에 CPU, GPU, VRAM, RAM 사용량과 프레임을 띄웁니다. 끊기면 왜 끊겼는지 알려 줍니다.",
+                "Shows CPU, GPU, VRAM, RAM and frame times in the top-right corner, and tells you why a hitch happened."));
+            bool ch = false;
+            ch |= Option("overlay", ref c.ShowOverlay, T("실시간 모니터 표시", "Show live monitor"),
+                T("게임 중 언제든 Shift + " + c.WindowKey + " 로 켜고 끌 수 있습니다. 사용량은 1초에 한 번, 게임과 따로 읽어서 프레임에 영향이 거의 없습니다.",
+                  "Toggle any time with Shift + " + c.WindowKey + ". Usage is read once a second on a separate thread, so it barely affects frame rate."), null);
+            ch |= Option("alerts", ref c.HitchAlerts, T("끊김 알림", "Hitch alerts"),
+                T("프레임이 튀면 모니터 아래에 원인을 띄웁니다: 메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 게임 바깥(윈도우나 다른 프로그램).",
+                  "When a frame spikes, shows the likely cause below the monitor: memory cleanup, effect burst, GPU overload, game logic, or something outside the game."), null);
+            if (ch) Save();
+            InfoCard(new[]
+            {
+                T("VRAM 넘침", "VRAM spill"), T("VRAM 줄에 주황색 '넘침'이 뜨면 그래픽 메모리가 모자라 시스템 램으로 밀려난 것입니다. 이때 곡 중에 멈출 수 있습니다.",
+                    "An orange 'spill' on the VRAM row means video memory ran out and data moved to system RAM, which can cause mid-song freezes."),
+            });
         }
 
         private void PageAbout()
@@ -537,10 +559,20 @@ namespace StutterFix
         }
 
         // ── 모양 만들기 ─────────────────────────────────────────────────
+        // 설정 창과 실시간 모니터가 같이 쓰는 글꼴 (윈도우의 Segoe UI + 맑은 고딕)
+        private static Font uiFont;
+        internal static Font UiFont()
+        {
+            if (uiFont != null) return uiFont;
+            try { uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Segoe UI", "Malgun Gothic", "Arial" }, 16); } catch { uiFont = null; }
+            if (uiFont == null) uiFont = GUI.skin.font;
+            return uiFont;
+        }
+
         private void Build()
         {
             built = true;
-            try { font = Font.CreateDynamicFontFromOSFont(new[] { "Segoe UI", "Malgun Gothic", "Arial" }, 16); } catch { font = null; }
+            font = UiFont();
             if (font == null) font = GUI.skin.font;
 
             tWhite = Texture2D.whiteTexture;
@@ -623,14 +655,14 @@ namespace StutterFix
         }
 
         // ── 텍스처 ─────────────────────────────────────────────────────
-        private static Texture2D NewTex(int w, int h)
+        internal static Texture2D NewTex(int w, int h)
         {
             return new Texture2D(w, h, TextureFormat.RGBA32, false)
             { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
         }
 
         // 한 변이 size 인 정사각형 안의 반지름 r 둥근 사각형까지의 거리 (안쪽이 음수)
-        private static float RoundDist(float x, float y, float size, float r)
+        internal static float RoundDist(float x, float y, float size, float r)
         {
             float h = size / 2f;
             float qx = Mathf.Abs(x - h) - (h - r), qy = Mathf.Abs(y - h) - (h - r);
@@ -640,7 +672,7 @@ namespace StutterFix
 
         // 둥근 카드: 채움 + 테두리(두께 bw) + 바깥 pad 만큼 아래로 살짝 떨어진 옅은 그림자(진하기 shadowA).
         // 9칸 나누기로 늘여 쓰고, 그림자 부분은 GUIStyle.overflow 로 카드 바깥에 그린다.
-        private static Texture2D Card(Color fill, Color border, int r, int bw, int pad, float shadowA)
+        internal static Texture2D Card(Color fill, Color border, int r, int bw, int pad, float shadowA)
         {
             int inner = r * 2 + 4, size = inner + pad * 2;
             var t = NewTex(size, size);
@@ -703,7 +735,7 @@ namespace StutterFix
         }
 
         // 창 뒤의 넓고 옅은 그림자
-        private static Texture2D Shadow(int half, int blur)
+        internal static Texture2D Shadow(int half, int blur)
         {
             int n = half * 2;
             var t = NewTex(n, n);
