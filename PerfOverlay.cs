@@ -43,10 +43,6 @@ namespace StutterFix
                 if (m.Name == "ToggleWindow") h.Patch(m, prefix: prefix);
 
             // 편집 화면에서 맵 열기/저장: 윈도우 파일 선택 창이 떠 있는 동안 게임이 통째로 멈춘다(1.1초가 "게임 처리" 로 찍혔다).
-            // 첫 타일을 치면(행성이 다음 타일로 옮겨 가면) 곡 시작 연출 구간이 끝난다
-            var move = HarmonyLib.AccessTools.Method(typeof(scrPlanet), "MoveToNextFloor");
-            if (move != null) h.Patch(move, prefix: new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(EndStartPhase)));
-
             var file = new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(FileDialog));
             foreach (var n in new[] { "OpenLevel", "OpenLevelCo", "OpenRecent", "SaveLevel", "SaveLevelAs", "SaveLevelAsCo" })
                 foreach (var m in HarmonyLib.AccessTools.GetDeclaredMethods(typeof(scnEditor)))
@@ -236,6 +232,7 @@ namespace StutterFix
         // 창이 꺼져 있어도 기록은 해 둔다(켰을 때 그래프가 비지 않게).
         private void MeasureFrame()
         {
+            UpdateStartPhase();
             long now = Stopwatch.GetTimestamp();
             if (lastStamp == 0) { lastStamp = now; lastGc = GC.CollectionCount(0); return; }
             float ms = (float)((now - lastStamp) * 1000.0 / Stopwatch.Frequency);
@@ -430,9 +427,25 @@ namespace StutterFix
         // 첫 타일 전이라 입력에는 영향이 없으므로 따로 적고 끊김으로 세지 않는다.
         private static bool startPhase;
         private static float startPhaseAt;
-        internal static void BeginStartPhase() { startPhase = true; startPhaseAt = Time.realtimeSinceStartup; levelActivity = true; }
-        public static void EndStartPhase() { startPhase = false; }
-        private static bool InStartPhase { get { return startPhase && Time.realtimeSinceStartup - startPhaseAt < 5f; } }
+        // 첫 타일은 "지금 있는 타일 번호가 곡 시작 때와 달라졌는가" 로 본다. 처음에는 행성이 다음 타일로 옮겨 갈 때
+        // (scrPlanet.MoveToNextFloor)로 봤는데, 곡 시작 준비 중에도 불려서 시작 연출 전에 구간이 끝나 버렸다.
+        private static int startSeq = int.MinValue;
+        internal static void BeginStartPhase() { startPhase = true; startPhaseAt = Time.realtimeSinceStartup; startSeq = int.MinValue; levelActivity = true; }
+        private static void UpdateStartPhase()
+        {
+            if (!startPhase) return;
+            if (Time.realtimeSinceStartup - startPhaseAt >= 5f) { startPhase = false; Main.Entry.Logger.Log("[모니터] 곡 시작 연출 구간 끝: 5초 지남"); return; }
+            int seq;
+            try { var c = scrController.instance; var f = c != null ? c.currFloor : null; if (f == null) return; seq = f.seqID; }
+            catch { return; }
+            if (startSeq == int.MinValue) startSeq = seq;
+            else if (seq != startSeq)   // 다음 타일로 넘어갔다 = 첫 타일을 쳤다
+            {
+                startPhase = false;
+                Main.Entry.Logger.Log(string.Format("[모니터] 곡 시작 연출 구간 끝: 타일 {0} -> {1} ({2:F1}초)", startSeq, seq, Time.realtimeSinceStartup - startPhaseAt));
+            }
+        }
+        private static bool InStartPhase { get { return startPhase; } }
 
         // 끊김이 아닌 안내 (예: VRAM 부족으로 다음부터 이미지를 줄임). 모니터가 켜져 있으면 알림으로 뜬다.
         internal static void Notice(string cause, string detail)
