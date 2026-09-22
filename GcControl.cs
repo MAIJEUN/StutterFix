@@ -155,6 +155,9 @@ namespace StutterFix
         {
             endedByHook = true;
             Hitch.Report();
+            // 편집 화면으로 돌아가거나 메뉴로 나갈 때는 타일/장식을 다시 만드느라 멈춘다 (완주 연출은 끊김으로 본다)
+            string n = __originalMethod.Name;
+            if (n == "SwitchToEditMode" || n.Contains("Quit")) PerfOverlay.MarkLoading(SettingsWindow.T("편집 화면으로", "Back to editor"));
             ScheduleResume(__originalMethod.Name);
         }
 
