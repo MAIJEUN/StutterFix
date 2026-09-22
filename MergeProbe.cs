@@ -36,16 +36,20 @@ namespace StutterFix
             h.Patch(start, prefix: new HarmonyMethod(typeof(MergeProbe), nameof(Enter)), finalizer: new HarmonyMethod(typeof(MergeProbe), nameof(Exit)));
             h.Patch(add, postfix: new HarmonyMethod(typeof(MergeProbe), nameof(Added)));
             h.Patch(kill, prefix: new HarmonyMethod(typeof(MergeProbe), nameof(Killing)));
+            var comp = AccessTools.Method(tm, "Complete");
+            if (comp != null) h.Patch(comp, prefix: new HarmonyMethod(typeof(MergeProbe), nameof(Completing)));
             Main.Entry.Logger.Log("[덮어쓰기 측정] 설치");
         }
 
         private static void Enter() { inMove++; }
-        private static Exception Exit(Exception __exception) { if (inMove > 0) inMove--; return __exception; }
+        private static Exception Exit(Exception __exception) { if (inMove > 0) inMove--; if (inMove == 0) CountDurations(); return __exception; }
 
         private static void NewFrame()
         {
             if (Time.frameCount == frame) return;
             if (frameMade > WorstMade) { WorstMade = frameMade; WorstSame = frameSame; WorstAt = Time.realtimeSinceStartup; }
+            if (frameComplete > WorstComplete) { WorstComplete = frameComplete; WorstCompleteInMove = frameCompleteInMove; }
+            frameComplete = frameCompleteInMove = 0;
             frame = Time.frameCount;
             madeThisFrame.Clear();
             frameMade = frameSame = 0;
@@ -56,6 +60,7 @@ namespace StutterFix
             if (inMove == 0 || t == null) return;
             NewFrame();
             madeThisFrame.Add(t);
+            madeInEffect.Add(t);
             Made++; frameMade++;
         }
 
@@ -67,14 +72,40 @@ namespace StutterFix
             else OlderKilled++;
         }
 
+        // 두 번째 가설: 길이 0 인 "즉시 이동" 을 애니메이션으로 만들고 바로 끝내는 비용.
+        // 효과 하나가 끝날 때 그 효과가 만든 애니메이션의 길이를 본다. 끝내기(Complete) 가 어디서 불리는지도 센다.
+        private static readonly List<Tween> madeInEffect = new List<Tween>();
+        internal static long ZeroDur, WithDur, CompleteInMove, CompleteOutside;
+        private static int frameComplete;
+        internal static int WorstComplete, WorstCompleteInMove;
+        private static int frameCompleteInMove;
+
+        private static void Completing()
+        {
+            NewFrame();
+            frameComplete++;
+            if (inMove > 0) { CompleteInMove++; frameCompleteInMove++; } else CompleteOutside++;
+        }
+
+        private static void CountDurations()
+        {
+            foreach (var t in madeInEffect)
+            {
+                try { if (t != null && t.Duration(false) <= 0f) ZeroDur++; else WithDur++; } catch { }
+            }
+            madeInEffect.Clear();
+        }
+
         internal static string Summary()
         {
             NewFrame();
             if (Made == 0) return "장식 이동 애니메이션 없음";
             return string.Format("장식 이동이 만든 애니메이션 {0}개 중 같은 프레임에 바로 덮어써진 것 {1}개 ({2:F0}%), 이전 프레임 것을 덮어쓴 것 {3}개 | 가장 많이 만든 프레임: {4}개 중 {5}개가 같은 프레임에 덮어써짐",
-                Made, SameFrameKilled, 100.0 * SameFrameKilled / Made, OlderKilled, WorstMade, WorstSame);
+                Made, SameFrameKilled, 100.0 * SameFrameKilled / Made, OlderKilled, WorstMade, WorstSame)
+                + string.Format(" || 길이 0 인 즉시 이동 {0}개 ({1:F0}%), 길이 있는 것 {2}개 | 끝내기(Complete) 장식 이동 안 {3}번, 밖(DOTween 갱신 등) {4}번 | 끝내기가 가장 많은 프레임: {5}번 중 장식 이동 안 {6}번",
+                ZeroDur, 100.0 * ZeroDur / Math.Max(1, ZeroDur + WithDur), WithDur, CompleteInMove, CompleteOutside, WorstComplete, WorstCompleteInMove);
         }
 
-        internal static void Reset() { Made = SameFrameKilled = OlderKilled = 0; WorstMade = WorstSame = 0; madeThisFrame.Clear(); frameMade = frameSame = 0; }
+        internal static void Reset() { Made = SameFrameKilled = OlderKilled = 0; WorstMade = WorstSame = 0; madeThisFrame.Clear(); frameMade = frameSame = 0; ZeroDur = WithDur = CompleteInMove = CompleteOutside = 0; WorstComplete = WorstCompleteInMove = 0; frameComplete = frameCompleteInMove = 0; }
     }
 }
