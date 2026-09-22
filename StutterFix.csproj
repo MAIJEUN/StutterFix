@@ -56,6 +56,7 @@
     <Compile Include="FrameRateScreenWatch.cs" />
     <Compile Include="ParticleTextWatch.cs" />
     <Compile Include="TextureCensus.cs" />
+    <Compile Include="BlendProbe.cs" />
     <Compile Include="BootConfig.cs" />
   </ItemGroup>
 

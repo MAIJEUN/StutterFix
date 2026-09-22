@@ -172,6 +172,7 @@ namespace StutterFix
             EffectBudget.Reset();
             EffectBudget.Suspend(3f);
             ShaderWarm.MaybeRun();
+            if (Edition.Dev) BlendProbe.Report();
         }
 
         // 곡이 끝났다고 밀린 효과를 버리면 안 된다. 마지막 타일은 효과가 한꺼번에 몰려 나눠 두는 곳이라,
