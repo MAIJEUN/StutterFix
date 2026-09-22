@@ -112,14 +112,15 @@ namespace StutterFix
         //   원본: 게임 전용 6026MB, 전체 7579MB(95%) -> 카메라가 새 장식을 비출 때마다 GPU 150~200ms 멈춤
         //   2048: 게임 전용 4300MB, 전체 5883MB(74%) -> 멈춤 없음, 화질 차이 거의 안 보임
         //   1024: 멈춤 없음, 화질이 눈에 띄게 낮아짐 (처음 자동은 VRAM 55% 를 예산으로 잡아 여기까지 줄였다)
-        // 머리로 어림한 양(가로x세로x4)은 실제보다 조금 크게 나온다. 0.6 을 곱했더니 3072 를 골랐는데 곡 중 VRAM 이
-        // 97% 까지 차서 한 번 끊겼다(필터 버퍼 등 곡 중에 늘어나는 몫). 0.75 로 보면 이 맵은 2048 이 된다.
+        // 머리로 어림한 양(가로x세로x4)은 실제보다 크게 나온다. 0.6 을 곱해 실제 양으로 본다.
+        // 이 맵에서 자동이 3072 를 골랐고 두 판 모두 끊김이 없었으며 화질도 깔끔했다.
+        // (VRAM 97% 에서 62ms 멈춘 기록은 "끔" 으로 원본을 올린 판이었다)
         // 이 비율로 어림을 실제 양으로 바꾸고, 전체가 VRAM 의 85% 를 넘지 않을 만큼만 쓴다.
         //   장식에 쓸 수 있는 양 = VRAM x 0.85 - 다른 프로그램이 쓰는 양 - 게임이 지금 쓰는 양
         // 다른 프로그램/게임 사용량은 실시간 모니터가 읽은 값을 쓰고, 없으면 VRAM 의 15% / 1000MB 로 본다.
         internal static string AutoNote = "";
         private static readonly int[] autoCaps = { 0, 4096, 3072, 2048, 1536, 1024 };
-        private const double EstimateToReal = 0.75, TargetUse = 0.85;
+        private const double EstimateToReal = 0.6, TargetUse = 0.85;
 
         private static int ChooseAuto(List<Item> list)
         {
