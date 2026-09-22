@@ -415,6 +415,8 @@ namespace StutterFix
             if (Edition.Dev)   // 원인 분류가 무엇을 보고 정했는지 남긴다 ("원인 불명" 추적용)
                 Main.Entry.Logger.Log(string.Format("[모니터] {0:F0}ms -> {1} / gpu {2:F1} cpu {3:F1} (수집 {4}번) 효과 {5:F1} 모드 {6:F1}({7}) gc {8}",
                     ms, h.Cause, gpu, cpuMain, timingSamples, fx, mod, modWhat, gcDelta));
+            if (Edition.Dev && gpu > ms * 0.7f)
+                Main.Entry.Logger.Log("[모니터]   직전 필터 변화 (6프레임): " + FilterTrace.Recent(p.Frame, 6));
             return h;
         }
 
@@ -537,7 +539,6 @@ namespace StutterFix
             built = true;
             MarkLoading(SettingsWindow.T("모드 창 준비", "Preparing mod window"));   // 글꼴/모양 그림을 처음 만드는 프레임
             font = SettingsWindow.UiFont();
-            SettingsWindow.WarmFont();
             tWhite = Texture2D.whiteTexture;
             sBig = Text(28, Fg, FontStyle.Bold);
             sMid = Text(18, Fg, FontStyle.Bold);
@@ -624,7 +625,7 @@ namespace StutterFix
         private void OnGUI()
         {
             if (show <= 0f || C == null) return;
-            if (!built) Build();
+            if (!built) { Build(); SettingsWindow.WarmStyles(this); }
             GUI.depth = 10;   // 설정 창보다 뒤
 
             scale = Mathf.Clamp(Screen.height / 1080f, 0.8f, 2.2f) * Mathf.Clamp(C.OverlayScale, 0.7f, 1.6f);

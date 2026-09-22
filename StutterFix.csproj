@@ -60,6 +60,7 @@
     <Compile Include="FastBlend.cs" />
     <Compile Include="LogExport.cs" />
     <Compile Include="Hotkey.cs" />
+    <Compile Include="FilterTrace.cs" />
     <Compile Include="BootConfig.cs" />
   </ItemGroup>
 

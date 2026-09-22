@@ -145,7 +145,7 @@ namespace StutterFix
         private void OnGUI()
         {
             if (!Open) return;
-            if (!built) Build();
+            if (!built) { Build(); WarmStyles(this); }
             CaptureKey();
 
             // 배율을 먼저 정하고 나서 가운데를 잡는다(예전에는 배율 1로 계산해 구석에 떴다)
@@ -834,46 +834,40 @@ namespace StutterFix
             return uiFont;
         }
 
-        // 윈도우 글꼴은 글자를 처음 그릴 때(크기/굵기마다) 글자 이미지를 새로 만들고, 그때 40~60ms 멈춘다.
-        // 모니터를 처음 띄우거나 새 알림 문구가 나올 때 "끊김"으로 잡히던 게 이것이었다.
-        // 쓰는 글자와 크기를 시작할 때 한 번에 만들어 둔다 (불러오기로 표시해서 끊김으로 세지 않음).
-        private static readonly int[] warmSizes = { 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 22, 24, 25, 28 };
-        private static bool warmed;
-        internal static void WarmFont()
+        // 글자를 처음 그릴 때(글꼴/굵기/크기마다) 글자 이미지를 새로 만들고, 그때 30~90ms 멈춘다.
+        // 모니터를 처음 띄우거나 새 알림 문구가 나올 때 "모드 작업 (모니터 그리기)" 끊김으로 잡히던 게 이것이었다.
+        // 유니티 6 의 IMGUI 는 TextCore 로 글자를 그린다(IMGUITextHandle). 예전에는 옛 방식
+        // (Font.RequestCharactersInTexture)으로 미리 만들었는데 TextCore 와는 상관이 없어 효과가 없었고 1.1초만 먹었다.
+        // 지금은 창이 실제로 쓰는 스타일마다 쓰는 글자 전부의 크기를 한 번 잰다. 크기를 재려면 TextCore 가 글자를
+        // 만들어야 하므로 그때 한꺼번에 만들어진다. 스타일을 만든 직후(OnGUI 안, 불러오기로 표시) 한 번만 한다.
+        private const string WarmText = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→←↑↓…°%";
+        internal static void WarmStyles(object owner)
         {
-            if (warmed) return;
-            warmed = true;
-            var f = UiFont();
-            if (f == null || !f.dynamic) return;
             try
             {
                 PerfOverlay.MarkLoading(T("글꼴 준비", "Preparing font"));
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                string chars = WarmChars.Text + " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→←↑↓…°";
-                float k = Screen.height / 1080f;
-                var sizes = new HashSet<int>();
-                foreach (int s in warmSizes)
+                var gc = new GUIContent(WarmChars.Text + WarmText);
+                int n = 0;
+                foreach (var f in owner.GetType().GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic))
                 {
-                    sizes.Add(s);
-                    sizes.Add(Mathf.RoundToInt(s * Mathf.Clamp(k, 0.8f, 2.2f)));
-                    sizes.Add(Mathf.RoundToInt(s * Mathf.Clamp(k * 1.1f, 0.8f, 2.2f)));
-                }
-                foreach (int s in sizes)
-                {
-                    f.RequestCharactersInTexture(chars, s, FontStyle.Normal);
-                    f.RequestCharactersInTexture(chars, s, FontStyle.Bold);
+                    if (f.FieldType != typeof(GUIStyle)) continue;
+                    var s = f.GetValue(owner) as GUIStyle;
+                    if (s == null) continue;
+                    var ws = new GUIStyle(s) { wordWrap = false, richText = false };
+                    ws.CalcSize(gc);
+                    n++;
                 }
                 PerfOverlay.MarkLoading(T("글꼴 준비", "Preparing font"));
-                if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글꼴 미리 만들기: 크기 " + sizes.Count + "가지, " + sw.ElapsedMilliseconds + "ms");
+                if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글자 미리 만들기 (" + owner.GetType().Name + "): 스타일 " + n + "개, " + sw.ElapsedMilliseconds + "ms");
             }
-            catch { }
+            catch (Exception ex) { if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글자 미리 만들기 실패: " + ex.Message); }
         }
 
         private void Build()
         {
             built = true;
             PerfOverlay.MarkLoading(T("모드 창 준비", "Preparing mod window"));   // 둥근 카드 그림을 처음 만드는 프레임
-            WarmFont();
             font = UiFont();
             if (font == null) font = GUI.skin.font;
 

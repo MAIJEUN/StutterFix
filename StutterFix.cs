@@ -115,6 +115,7 @@ namespace StutterFix
                 if (Edition.Dev)
                 {
                     StartProbe.Install(harmony);
+                    Try(() => FilterTrace.Install(harmony));
                     RenderWatch.Install(harmony);
                     RenderCallbackScan.Install(harmony);
                     FrameRateScreenWatch.Install(harmony);
