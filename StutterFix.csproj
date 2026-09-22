@@ -58,6 +58,7 @@
     <Compile Include="TextureCensus.cs" />
     <Compile Include="BlendProbe.cs" />
     <Compile Include="FastBlend.cs" />
+    <Compile Include="LogExport.cs" />
     <Compile Include="BootConfig.cs" />
   </ItemGroup>
 

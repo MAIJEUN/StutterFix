@@ -427,6 +427,16 @@ namespace StutterFix
             GUILayout.Label(SettingsWindow.T("   게임 중 언제든 <b>" + Config.WindowKey + "</b> 키로 열고 닫을 수 있습니다.",
                 "   Press <b>" + Config.WindowKey + "</b> at any time in game to open or close it."), GUILayout.Height(30));
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(SettingsWindow.T("문제 보고용 로그 만들기", "Create bug-report log"), GUILayout.Width(160), GUILayout.Height(30)))
+            {
+                if (LogExport.Export() != null) LogExport.Reveal();
+            }
+            string lr = LogExport.LastError.Length > 0 ? SettingsWindow.T("   만들지 못했습니다: ", "   Failed: ") + LogExport.LastError
+                : LogExport.LastPath.Length > 0 ? SettingsWindow.T("   바탕화면에 만들었습니다: ", "   Saved to desktop: ") + System.IO.Path.GetFileName(LogExport.LastPath)
+                : SettingsWindow.T("   끊김이나 오류가 있었다면 눌러서 생긴 zip 파일을 naro 에게 보내 주세요.", "   After a stutter or error, press it and send the zip file to naro.");
+            GUILayout.Label(lr, GUILayout.Height(30));
+            GUILayout.EndHorizontal();
         }
 
         private static void DevGUI()

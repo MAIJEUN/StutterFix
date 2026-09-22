@@ -304,9 +304,34 @@ namespace StutterFix
             }
         }
 
+        // 문제 보고(로그 내보내기)용: 이번 실행의 끊김 기록을 줄 글로 남긴다 (최근 400개)
+        private static readonly List<string> reportLines = new List<string>();
+        private int totalLoading, totalMod;
+
+        internal static string ReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+            var o = Instance;
+            if (o == null) return "실시간 모니터 없음\n";
+            sb.AppendLine("모니터 모드: " + Mode + " (0 끔, 1 아이콘, 2 미니, 3 상세)" + (Mode == 0 ? "  ※ 모니터가 꺼져 있으면 원인 기록이 남지 않는다" : ""));
+            sb.AppendLine("끊김 " + o.hitchCount + "번 (모드 작업 " + o.totalMod + ", 불러오기로 분류 " + o.totalLoading + ")");
+            if (o.songFrames > 0)
+                sb.AppendLine(string.Format("마지막 곡: 평균 {0:F0} FPS, 최악 {1:F0}ms, 끊김 {2}번", 1000.0 * o.songFrames / System.Math.Max(1.0, o.songMs), o.songWorst, o.songHitches));
+            sb.AppendLine();
+            lock (reportLines) foreach (var l in reportLines) sb.AppendLine(l);
+            return sb.ToString();
+        }
+
         private void Commit(HitchRec h)
         {
             h.Time = Time.unscaledTime;   // 알림은 지금부터 센다
+            if (h.IsLoading) totalLoading++; else if (h.IsMod) totalMod++;
+            lock (reportLines)
+            {
+                reportLines.Add(string.Format("{0:HH:mm:ss} {1,5:F0}ms {2}{3}{4} | {5} | {6}", System.DateTime.Now, h.Ms,
+                    h.IsLoading ? "[불러오기] " : "", h.IsMod ? "[모드] " : "", Hitch.Playing ? "[곡 중] " : "", h.Cause, h.Detail));
+                if (reportLines.Count > 400) reportLines.RemoveAt(0);
+            }
             history.Insert(0, h);
             if (history.Count > 6) history.RemoveAt(history.Count - 1);
 

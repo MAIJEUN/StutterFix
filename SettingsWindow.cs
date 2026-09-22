@@ -504,6 +504,29 @@ namespace StutterFix
             });
         }
 
+        // 문제 보고: 바탕화면에 로그 묶음(zip)을 만들어 제작자에게 보낼 수 있게 한다
+        private void ReportCard()
+        {
+            GUILayout.BeginVertical(sCard);
+            GUILayout.Label(T("문제 보고용 로그 만들기", "Create a log for bug reports"), sBody);
+            GUILayout.Space(4);
+            GUILayout.Label(T("게임이 끊기거나 오류가 났다면, 그 판을 끝낸 뒤(게임이 튕겼다면 다시 켠 뒤) 눌러 주세요. 바탕화면에 zip 파일이 생기고, 그 파일을 제작자(naro)에게 보내면 됩니다. 사양, 설정, 모드 목록, 게임 로그, 끊김 기록이 들어가며 윈도우 사용자 이름은 가려집니다.",
+                "If you hit a stutter or an error, press this after that run (or after restarting if the game crashed). A zip file appears on your desktop; send it to the author (naro). It contains specs, settings, the mod list, game logs and the hitch record, with your Windows user name hidden."), sLead);
+            GUILayout.Space(10);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(T("로그 파일 만들기", "Create log file"), sPrimary, GUILayout.Width(170), GUILayout.Height(38)))
+            {
+                if (LogExport.Export() != null) LogExport.Reveal();
+            }
+            GUILayout.Space(10);
+            if (LogExport.LastPath.Length > 0 && GUILayout.Button(T("폴더 열기", "Show file"), sChip, GUILayout.Height(38), GUILayout.ExpandWidth(false))) LogExport.Reveal();
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            if (LogExport.LastError.Length > 0) { GUILayout.Space(6); GUILayout.Label(T("만들지 못했습니다: ", "Failed: ") + LogExport.LastError, sSub); }
+            else if (LogExport.LastPath.Length > 0) { GUILayout.Space(6); GUILayout.Label(T("만든 파일: ", "Created: ") + System.IO.Path.GetFileName(LogExport.LastPath) + T("  (바탕화면)", "  (desktop)"), sSub); }
+            GUILayout.EndVertical();
+        }
+
         private void PageAbout()
         {
             Heading("Stutter Fix", "v" + Main.Entry.Info.Version + "  ·  " + (English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name));
@@ -522,6 +545,8 @@ namespace StutterFix
                     "Scenes stacking many full-screen filters are limited by the GPU, and background apps can cause occasional hitches."),
                 T("소스", "Source"), "github.com/pding4569/StutterFix",
             });
+            GUILayout.Space(14);
+            ReportCard();
         }
 
         private static string LoadSummary()

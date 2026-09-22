@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 플레이어용과 개발자용을 빌드해 UMM 에 바로 넣을 수 있는 zip 두 개를 dist/ 에 만든다.
-#   dist/StutterFix-1.1.0-player.zip     일반 배포용 (수정만, 측정/로그/단축키 없음)
-#   dist/StutterFix-1.1.0-developer.zip  원인 추적용 (끊김 기록, Ctrl+F5, F6~F9)
+#   dist/StutterFix-<버전>-player.zip    일반 배포용 (수정만, 측정/로그/단축키 없음)
+#   dist/StutterFix-<버전>-developer.zip 원인 추적용 (끊김 기록, Ctrl+F5, F6~F9)
 # zip 안은 StutterFix/Info.json + StutterFix.dll 이다(UMM "Install Mod" 로 설치).
 set -e
 cd "$(dirname "$0")"

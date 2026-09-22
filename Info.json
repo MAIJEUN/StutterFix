@@ -2,7 +2,7 @@
   "Id": "StutterFix",
   "DisplayName": "Stutter Fix",
   "Author": "pding4569",
-  "Version": "1.1.0",
+  "Version": "1.2.0",
   "ManagerVersion": "0.22.14.0",
   "AssemblyName": "StutterFix.dll",
   "EntryMethod": "StutterFix.Main.Load",

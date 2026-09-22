@@ -27,7 +27,7 @@ made by **naro** & **Claude**
 | 애니메이션 처리 최적화 | 효과가 많을 때 DOTween이 목록을 반복 재정렬하느라 멈추는 것을 막습니다. 측정: 한 프레임 435ms 중 382ms가 재정렬이던 것을 제거 |
 | 글자 장식 최적화 | 같은 글자를 매 프레임 다시 쓰는 글자 장식을 건너뜁니다. PACL2 같은 모드와 함께 쓸 때 효과가 큽니다. |
 | 그래픽 미리 준비 | 곡 시작 때 셰이더를 미리 준비합니다. |
-| 블렌드 장식 빠르게 그리기 | 더하기(Linear Dodge) 블렌드 장식을 화면 복사 없이 그래픽카드 기본 섞기로 그립니다. 원래는 장식 하나마다 화면 전체를 복사했습니다. 측정: 블렌드 장식 1,500개가 보이는 장면(3440×1440)에서 약 11fps → 크게 상승, 같은 프레임 비교에서 픽셀 차이 0 |
+| 블렌드 장식 빠르게 그리기 | 더하기(Linear Dodge) 블렌드 장식을 화면 복사 없이 그래픽카드 기본 섞기로 그립니다. 원래는 장식 하나마다 화면 전체를 복사했습니다. 측정: 블렌드 장식 1,500개가 보이는 장면(3440×1440)에서 약 11fps 로 떨어지던 구간이 끊김 없이 돌아감. 같은 프레임을 두 방식으로 그려 비교했을 때 픽셀 차이 0 |
 
 ### 맵 불러오기
 
@@ -35,12 +35,23 @@ made by **naro** & **Claude**
 |---|---|
 | 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 CPU 여러 코어에서 동시에 풉니다. 측정: 이미지 700장 맵 67초 → 38초. 윈도우 해독기와 픽셀 단위로 비교해 782장 모두 일치 |
 | 불필요한 정리 건너뛰기 | 맵을 열거나 편집으로 돌아올 때 게임이 부르는 에셋 정리(한 번에 120~200ms)를 건너뜁니다. |
+| 큰 이미지 줄이기 (기본 끔) | 긴 변이 4096 또는 2048을 넘는 장식 이미지를 불러올 때 줄여 VRAM을 아낍니다. 화면에 보이는 크기는 그대로입니다. VRAM이 부족한 컴퓨터용입니다. |
 
 ### 그래픽
 
 | 기능 | 하는 일 |
 |---|---|
 | 멀티스레드 그리기 | 게임 폴더의 `boot.config`에 `force-gfx-jobs=legacy` 한 줄을 넣어 그리기 준비를 여러 코어에 나눕니다. 측정: D3D11 기준 140 → 160fps. 원래 파일은 백업해 두고, 모드를 끄면 되돌립니다. |
+
+## 실시간 모니터
+
+게임 화면 옆에 FPS, CPU, GPU, VRAM, RAM 사용량과 끊김 알림을 띄웁니다. **Shift+Insert**로 아이콘 → 미니 → 상세 → 끔 순서로 바뀌고, 설정 창 "모니터"에서 위치, 크기, 투명도, 보여 줄 항목, 알림 방식을 고릅니다.
+끊기면 원인을 추정해 알려 줍니다(메모리 정리, 효과 몰림, GPU 과부하, 게임 처리, 모드 작업, 게임 바깥). 맵·모드 로딩과 모드 창(UMM, 설정 창)을 쓰는 동안의 멈춤은 끊김으로 세지 않고 회색으로 따로 적습니다. 프레임이 계속 낮은 구간은 "프레임 낮음" 알림 하나로 묶습니다.
+
+## 문제 보고
+
+끊기거나 오류가 났다면 설정 창 **정보 → 로그 파일 만들기**(또는 UMM 모드 설정의 **문제 보고용 로그 만들기**)를 누르세요. 바탕화면에 `StutterFix-log-날짜.zip`이 생깁니다. 이 파일을 제작자에게 보내 주세요.
+들어가는 것: 컴퓨터 사양, 이 모드 설정, 설치된 모드 목록, 게임 로그(이번 실행과 직전 실행), 실시간 모니터의 끊김 기록. 로그 안의 윈도우 사용자 이름은 가려집니다. 자동으로 어디에 올리지는 않습니다.
 
 ## 모드를 끄면
 
@@ -57,7 +68,7 @@ UMM에서 끄면 모든 변경을 즉시 되돌립니다(패치, GC 상태, 작�
 | | 플레이어용 | 개발자용 |
 |---|---|---|
 | 위의 모든 기능 | O | O |
-| 끊김 기록, 함수별 시간 측정, 진단 단축키(F6~F9) | | O |
+| 끊김 기록, 함수별 시간 측정, 진단 단축키(F6~F11) | | O |
 
 일반 플레이에는 **플레이어용**을 쓰세요. 개발자용은 끊김 원인을 추적할 때 씁니다.
 
@@ -84,4 +95,8 @@ Stutter Fix reduces mid-play hitches and level loading times on heavy custom lev
 
 **Install:** download `StutterFix-x.y.z-player.zip` from Releases and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** in game to open the settings window (Korean/English).
 
-**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, drawing additive blend-mode decorations with hardware blending instead of a full-screen grab per object (pixel-identical), parallel PNG decoding for decoration images on level load, skipping asset unloads, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
+**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, drawing additive blend-mode decorations with hardware blending instead of a full-screen grab per object (pixel-identical), parallel PNG decoding for decoration images on level load, skipping asset unloads, optional downscaling of very large decoration images, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
+
+**Live monitor:** FPS, CPU/GPU/VRAM/RAM and hitch alerts with an estimated cause (Shift+Insert cycles icon / mini / detail / off).
+
+**Bug reports:** Settings window → About → *Create log file* makes `StutterFix-log-<date>.zip` on your desktop (specs, settings, mod list, game logs, hitch record; your Windows user name is hidden). Send that file to the author.
