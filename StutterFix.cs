@@ -389,6 +389,7 @@ namespace StutterFix
         internal static void ApplyConfig()
         {
             if (Config.ShowOverlay) { Config.ShowOverlay = false; Config.OverlayMode = 1; }   // 예전 "모니터 켜짐" 은 아이콘으로
+            if (Config.ImageAutoVer < 1) { if (Config.ImageMaxSide == 0) Config.ImageMaxSide = ImagePrefetch.Auto; Config.ImageAutoVer = 1; }   // 1.2.2: 기본을 자동으로
             ApplyToggles();
         }
 
@@ -575,7 +576,8 @@ namespace StutterFix
         public bool ImagePrefetch = true;
         public bool ShaderWarm = true;
         public bool FastBlend = true;       // 더하기 블렌드 장식을 화면 복사 없이 그리기
-        public int ImageMaxSide = 0;        // 큰 이미지 줄이기: 0 끔, 4096, 2048 (긴 변 기준)
+        public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)
+        public int ImageAutoVer = 0;        // 1.2.2 에서 "끔" 이던 설정을 한 번 "자동" 으로 옮겼는지
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;     // 설정 창 열기/닫기
         public int WindowMods = 0;                     // Hotkey.Shift/Ctrl/Alt 조합

@@ -99,9 +99,65 @@ namespace StutterFix
         // 긴 변이 MaxSide 를 넘는 이미지를 작업 스레드에서 풀자마자 줄인다. VRAM 과 로딩 시간이 같이 준다.
         // 스프라이트의 화면 크기는 "픽셀 수 / pixelsPerUnit(100)" 이라, 이미지만 줄이면 장식이 작아진다.
         // 그래서 줄인 비율만큼 pixelsPerUnit 도 줄여서(CustomSprite 생성자) 화면 크기는 그대로 둔다. 화질만 낮아진다.
-        internal static int MaxSide;   // 0 = 끔
+        internal static int MaxSide;   // 0 = 끔, Auto(-1) = 자동, 그 외 = 긴 변 한도
+        internal const int Auto = -1;
+        private static volatile int sideNow;   // 이번 맵에 실제로 쓰는 한도 (자동이면 맵마다 정한다)
         private static int shrunkCount;
         private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
+
+        // 자동: 이 맵의 PNG 머리(가로/세로)만 읽어 텍스처가 VRAM 을 얼마나 먹을지 어림하고,
+        // 그래픽카드 용량의 55% 를 넘으면 넘지 않을 때까지 한도를 4096 -> 2048 -> 1024 로 낮춘다.
+        // 근거: VRAM 7949MB 카드에서 이미지 2천 장 맵이 게임 전용 6026MB(전체 95%)를 쓸 때, 카메라가 새 장식들을
+        // 비추는 순간마다 GPU 가 150~200ms 멈췄다. 2048 로 줄이자 4300MB 가 되고 멈춤이 없어졌다.
+        // VRAM 이 넉넉한 맵과 컴퓨터에서는 아무것도 줄이지 않는다.
+        internal static string AutoNote = "";
+        private static readonly int[] autoCaps = { 0, 4096, 2048, 1024 };
+
+        private static int ChooseAuto(List<Item> list)
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            var dims = new List<long>(list.Count);   // (w << 32) | h
+            var head = new byte[24];
+            foreach (var it in list)
+            {
+                try
+                {
+                    using (var fs = new FileStream(it.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 64))
+                    {
+                        if (fs.Read(head, 0, 24) < 24) continue;
+                        if (head[12] != 'I' || head[13] != 'H' || head[14] != 'D' || head[15] != 'R') continue;
+                        long w = (head[16] << 24) | (head[17] << 16) | (head[18] << 8) | head[19];
+                        long h = (head[20] << 24) | (head[21] << 16) | (head[22] << 8) | head[23];
+                        if (w > 0 && h > 0 && w < 65536 && h < 65536) dims.Add((w << 32) | h);
+                    }
+                }
+                catch { }
+            }
+            long vram = SystemInfo.graphicsMemorySize;
+            long budget = vram * 55 / 100;
+            int pick = 1024;
+            long mbAtPick = 0, mbFull = 0;
+            foreach (int cap in autoCaps)
+            {
+                double bytes = 0;
+                foreach (long d in dims)
+                {
+                    double w = d >> 32, h = d & 0xffffffffL, m = Math.Max(w, h);
+                    if (cap > 0 && m > cap) { double k = cap / m; w = Math.Max(1, Math.Round(w * k)); h = Math.Max(1, Math.Round(h * k)); }
+                    bytes += w * h * 4;
+                }
+                long mb = (long)(bytes / 1048576);
+                if (cap == 0) mbFull = mb;
+                mbAtPick = mb;
+                if (mb <= budget) { pick = cap; break; }
+            }
+            double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+            AutoNote = pick == 0
+                ? string.Format("자동: 이미지 {0}MB, 예산 {1}MB 안이라 그대로", mbFull, budget)
+                : string.Format("자동: 이미지 {0}MB 가 예산 {1}MB(VRAM {2}MB 의 55%) 를 넘어 긴 변 {3} 으로 줄임 -> {4}MB", mbFull, budget, vram, pick, mbAtPick);
+            Main.Entry.Logger.Log(string.Format("[이미지] {0} (머리 {1}장 읽기 {2:F0}ms)", AutoNote, dims.Count, ms));
+            return pick;
+        }
 
         public static void SpritePrefix(Texture2D texture, ref float pixelsPerUnit) { AdjustPixelsPerUnit(texture, ref pixelsPerUnit); }
 
@@ -177,6 +233,7 @@ namespace StutterFix
                 foreach (var ev in __instance.events) if ((int)ev.eventType == 29) add(ev);
 
                 if (list.Count < 8) return;   // 몇 장 안 되면 그냥 원래대로
+                sideNow = MaxSide > 0 ? MaxSide : MaxSide == Auto ? ChooseAuto(list) : 0;
 
                 lock (gate)
                 {
@@ -227,7 +284,7 @@ namespace StutterFix
                 {
                     int len = ReadInto(it.Path, ref fileBuf);
                     ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, out w, out h, out f, out px, out size);
-                    if (ok && MaxSide > 0 && PngDecoder.Downscale(ref px, ref w, ref h, f, ref size, MaxSide, out factor))
+                    if (ok && sideNow > 0 && PngDecoder.Downscale(ref px, ref w, ref h, f, ref size, sideNow, out factor))
                         Interlocked.Increment(ref shrunkCount);
                 }
                 catch { ok = false; }

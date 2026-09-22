@@ -24,6 +24,10 @@ namespace StutterFix
             new[] { "scnEditor", "DrawHolds" }, new[] { "scnEditor", "DrawFloorNums" }, new[] { "scnEditor", "DrawMultiPlanet" },
             new[] { "scnEditor", "ClearFloorGlows" }, new[] { "scnEditor", "DeselectFloors" }, new[] { "scnEditor", "DeselectAllDecorations" },
             new[] { "scnEditor", "SwitchToEditMode" }, new[] { "scnEditor", "OpenLevel" }, new[] { "scnEditor", "OpenLevelCo" },
+            // 맵을 연 뒤 처음 타일을 누를 때 60ms 멈춤 (편집 화면)
+            new[] { "scnEditor", "SelectFloor" }, new[] { "scnEditor", "OnSelectedFloorChange" }, new[] { "InspectorPanel", "ShowTabsForFloor" },
+            new[] { "scnEditor", "ShowEventIndicators" }, new[] { "scnEditor", "ShowEventPicker" }, new[] { "scnEditor", "UpdateFloorDirectionButtons" },
+            new[] { "scnEditor", "DeselectAllFloors" }, new[] { "scnEditor", "DoCameraJump" }, new[] { "scnEditor", "SelectFloorInfo" },
             new[] { "scnGame", "RemakePath" }, new[] { "scnGame", "ApplyEventsToFloors" }, new[] { "scnGame", "ReloadAssets" },
             new[] { "scnGame", "ReloadSong" }, new[] { "scnGame", "UpdateBackgroundSprites" }, new[] { "scnGame", "UpdateDecorationObjects" },
             new[] { "scnGame", "UpdateFloorSprites" }, new[] { "scnGame", "SetBackground" }, new[] { "scnGame", "UpdateVideo" },

@@ -599,7 +599,7 @@ namespace StutterFix
 
         // ── 배치 ───────────────────────────────────────────────────────
         private const float IconW = 64, MiniH = 46, PW = 256;
-        private float scale = 1f, sw, sh;
+        private float scale = 1f, sw, sh, warmedScale = -1f;
         private Rect widget;           // 끌어서 옮기는 본체(아이콘/미니/상세 패널)
         private bool right;
 
@@ -627,10 +627,11 @@ namespace StutterFix
         private void OnGUI()
         {
             if (show <= 0f || C == null) return;
-            if (!built) { Build(); SettingsWindow.WarmStyles(this); }
+            if (!built) Build();
             GUI.depth = 10;   // 설정 창보다 뒤
 
             scale = Mathf.Clamp(Screen.height / 1080f, 0.8f, 2.2f) * Mathf.Clamp(C.OverlayScale, 0.7f, 1.6f);
+            if (Mathf.Abs(scale - warmedScale) > 0.001f && SettingsWindow.WarmStyles(this, scale)) warmedScale = scale;   // 크기를 바꾸면 다시
             sw = Screen.width / scale; sh = Screen.height / scale;
             right = C.OverlayRight;
             if (Mode != 0) lastMode = Mode;

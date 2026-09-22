@@ -119,7 +119,7 @@ namespace StutterFix
                 sb.AppendLine("메모리 정리 미루기 " + On(c.GcPause) + ", 효과 몰림 나누기 " + On(c.EffectSplit) + ", 타일 색 나누기 " + On(c.RecolorSplit));
                 sb.AppendLine("애니메이션 최적화 " + On(c.TweenGuard) + ", 글자 장식 최적화 " + On(c.SkipSameText) + ", 그래픽 미리 준비 " + On(c.ShaderWarm));
                 sb.AppendLine("블렌드 빠르게 " + On(c.FastBlend) + " (지금 " + FastBlend.Count + "개), 이미지 빠르게 불러오기 " + On(c.ImagePrefetch)
-                    + ", 큰 이미지 줄이기 " + (c.ImageMaxSide > 0 ? c.ImageMaxSide + "" : "끔") + ", 정리 건너뛰기 " + On(c.SkipAssetUnload) + ", 멀티스레드 그리기 " + On(c.LegacyGfxJobs));
+                    + ", 큰 이미지 줄이기 " + (c.ImageMaxSide == ImagePrefetch.Auto ? "자동 (" + ImagePrefetch.AutoNote + ")" : c.ImageMaxSide > 0 ? c.ImageMaxSide + "" : "끔") + ", 정리 건너뛰기 " + On(c.SkipAssetUnload) + ", 멀티스레드 그리기 " + On(c.LegacyGfxJobs));
             }
             sb.AppendLine();
 

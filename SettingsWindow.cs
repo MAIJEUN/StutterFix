@@ -63,7 +63,7 @@ namespace StutterFix
         private Vector2 scroll;
         private bool cursorWas;
         private bool built;
-        private float scale = 1f;
+        private float scale = 1f, warmedScale = -1f;
         // ── 애니메이션 ─────────────────────────────────────────────────
         // show: 창이 나타난 정도(0~1). 닫을 때도 0까지 내려간 뒤에야 실제로 닫는다.
         // pageT: 페이지를 바꾼 뒤 본문이 들어온 정도. navY/tabX: 메뉴 선택 표시와 언어 밑줄의 현재 위치.
@@ -145,11 +145,12 @@ namespace StutterFix
         private void OnGUI()
         {
             if (!Open) return;
-            if (!built) { Build(); WarmStyles(this); }
+            if (!built) Build();
             CaptureKey();
 
             // 배율을 먼저 정하고 나서 가운데를 잡는다(예전에는 배율 1로 계산해 구석에 떴다)
             scale = Mathf.Clamp(Screen.height / 1080f * 1.1f, 0.8f, 2.2f);
+            if (Mathf.Abs(scale - warmedScale) > 0.001f && WarmStyles(this, scale)) warmedScale = scale;
             float sw = Screen.width / scale, sh = Screen.height / scale;
             if (needCenter) { rect = new Rect((sw - W) / 2f, (sh - H) / 2f, W, H); needCenter = false; }
             rect.x = Mathf.Clamp(rect.x, 0, Mathf.Max(0, sw - rect.width));
@@ -425,17 +426,17 @@ namespace StutterFix
             GUILayout.BeginHorizontal();
             GUILayout.Label(T("큰 이미지 줄이기", "Downscale large images"), sBody, GUILayout.ExpandWidth(false));
             GUILayout.Space(8);
-            GUILayout.Label("·  " + T("화질이 조금 낮아짐", "slightly lower quality"), sTag, GUILayout.ExpandWidth(false));
+            GUILayout.Label("·  " + T("자동 권장", "Auto recommended"), sTag, GUILayout.ExpandWidth(false));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             GUILayout.Space(4);
-            GUILayout.Label(T("장식 이미지가 수천 장인 맵은 그래픽 메모리(VRAM)가 넘쳐 GPU 가 크게 느려집니다. 긴 변이 기준보다 큰 이미지를 줄여 불러옵니다. 장식의 화면 크기는 그대로이고 선명도만 낮아집니다. 게임을 다시 켠 뒤 연 맵부터 적용됩니다.",
-                "Levels with thousands of decoration images can overflow video memory (VRAM) and slow the GPU badly. Images larger than the limit are loaded smaller. Decorations keep their on-screen size; only sharpness drops. Applies to levels opened after restarting the game."), sDim);
+            GUILayout.Label(T("장식 이미지가 수천 장인 맵은 그래픽 메모리(VRAM)가 넘쳐 GPU 가 크게 느려집니다. 긴 변이 기준보다 큰 이미지를 줄여 불러옵니다. 장식의 화면 크기는 그대로이고 선명도만 낮아집니다. <b>자동</b>은 맵을 열 때 이미지가 그래픽카드 용량의 55% 를 넘을 것 같을 때만 필요한 만큼 줄이고, 넉넉하면 그대로 둡니다. 다음에 여는 맵부터 적용됩니다.",
+                "Levels with thousands of decoration images can overflow video memory (VRAM) and slow the GPU badly. Images larger than the limit are loaded smaller. Decorations keep their on-screen size; only sharpness drops. <b>Auto</b> only shrinks images when a level would use more than 55% of your VRAM, and leaves them alone otherwise. Applies to the next level you open."), sDim);
             GUILayout.Space(10);
-            int cap = c.ImageMaxSide >= 4096 ? 1 : c.ImageMaxSide > 0 ? 2 : 0;
-            if (Segment("imgcap", ref cap, new[] { T("끔", "Off"), T("긴 변 4096", "4096 px"), T("긴 변 2048", "2048 px") }))
+            int cap = c.ImageMaxSide == ImagePrefetch.Auto ? 1 : c.ImageMaxSide >= 4096 ? 2 : c.ImageMaxSide > 0 ? 3 : 0;
+            if (Segment("imgcap", ref cap, new[] { T("끔", "Off"), T("자동", "Auto"), T("긴 변 4096", "4096 px"), T("긴 변 2048", "2048 px") }))
             {
-                c.ImageMaxSide = cap == 1 ? 4096 : cap == 2 ? 2048 : 0;
+                c.ImageMaxSide = cap == 1 ? ImagePrefetch.Auto : cap == 2 ? 4096 : cap == 3 ? 2048 : 0;
                 ch = true;
             }
             GUILayout.EndVertical();
@@ -841,10 +842,16 @@ namespace StutterFix
         // 지금은 창이 실제로 쓰는 스타일마다 쓰는 글자 전부의 크기를 한 번 잰다. 크기를 재려면 TextCore 가 글자를
         // 만들어야 하므로 그때 한꺼번에 만들어진다. 스타일을 만든 직후(OnGUI 안, 불러오기로 표시) 한 번만 한다.
         private const string WarmText = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→←↑↓…°%";
-        internal static void WarmStyles(object owner)
+        // scale: 그 창이 GUI.matrix 로 키우는 배율. 글자는 화면에 실제로 그려지는 크기마다 따로 만들어지므로
+        // 같은 배율을 걸고 재고, 한 번은 실제로(투명하게) 그려 둔다. 그리기 이벤트(Repaint)에서만 한다. 했으면 true.
+        internal static bool WarmStyles(object owner, float scale)
         {
+            if (Event.current == null || Event.current.type != EventType.Repaint) return false;
+            var oldM = GUI.matrix; var oldC = GUI.color;
             try
             {
+                GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
+                GUI.color = new Color(1, 1, 1, 0f);
                 PerfOverlay.MarkLoading(T("글꼴 준비", "Preparing font"));
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var gc = new GUIContent(WarmChars.Text + WarmText);
@@ -855,13 +862,16 @@ namespace StutterFix
                     var s = f.GetValue(owner) as GUIStyle;
                     if (s == null) continue;
                     var ws = new GUIStyle(s) { wordWrap = false, richText = false };
-                    ws.CalcSize(gc);
+                    var size = ws.CalcSize(gc);
+                    GUI.Label(new Rect(0, 0, size.x, size.y), gc, ws);   // 투명하게 한 번 그린다
                     n++;
                 }
                 PerfOverlay.MarkLoading(T("글꼴 준비", "Preparing font"));
-                if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글자 미리 만들기 (" + owner.GetType().Name + "): 스타일 " + n + "개, " + sw.ElapsedMilliseconds + "ms");
+                if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글자 미리 만들기 (" + owner.GetType().Name + "): 배율 " + scale.ToString("F2") + ", 스타일 " + n + "개, " + sw.ElapsedMilliseconds + "ms");
             }
             catch (Exception ex) { if (Edition.Dev) Main.Entry.Logger.Log("[모니터] 글자 미리 만들기 실패: " + ex.Message); }
+            finally { GUI.matrix = oldM; GUI.color = oldC; }
+            return true;
         }
 
         private void Build()
