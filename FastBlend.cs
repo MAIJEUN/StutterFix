@@ -82,20 +82,39 @@ namespace StutterFix
             if (host != null) host.StartCoroutine(CompareRun());
         }
 
+        // 게임 카메라들을 깊이 순서대로 한 장에 직접 그린다 (화면 UI 는 빠진다). 같은 프레임 안에서 두 번 부르면
+        // 시간이 흐르지 않으므로 재질만 다른 똑같은 장면이 나온다.
+        private static Texture2D RenderCams()
+        {
+            int w = Screen.width, h = Screen.height;
+            var rt = RenderTexture.GetTemporary(w, h, 24, RenderTextureFormat.ARGB32);
+            var cams = new List<Camera>(Camera.allCameras);
+            cams.RemoveAll(c => c == null || c.targetTexture != null);
+            cams.Sort((x, y) => x.depth.CompareTo(y.depth));
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt; GL.Clear(true, true, Color.black);
+            foreach (var c in cams) { c.targetTexture = rt; c.Render(); c.targetTexture = null; }
+            RenderTexture.active = rt;
+            var tex = new Texture2D(w, h);
+            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+            return tex;
+        }
+
         private static System.Collections.IEnumerator CompareRun()
         {
-            bool was = On;
+            if (On) { Restore(); yield return null; yield return null; }   // 원래 재질은 다음 Update 에 돌아온다
             yield return new WaitForEndOfFrame();
-            var a = ScreenCapture.CaptureScreenshotAsTexture();
-            Toggle();
-            yield return null; yield return null;
-            yield return new WaitForEndOfFrame();
-            var b = ScreenCapture.CaptureScreenshotAsTexture();
-            Toggle();
+            Texture2D a = null, b = null;
+            try { a = RenderCams(); Toggle(); b = RenderCams(); }
+            catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드 비교] 그리기 실패: " + ex.Message); }
+            if (On) Restore();
+            if (a == null || b == null) yield break;
             try
             {
-                var orig = was ? b : a;
-                var fast = was ? a : b;
+                var orig = a;
+                var fast = b;
                 var po = orig.GetPixels32(); var pf = fast.GetPixels32();
                 int n = Mathf.Min(po.Length, pf.Length), over2 = 0, over8 = 0, max = 0;
                 long sum = 0, brightO = 0, brightF = 0;
@@ -110,16 +129,17 @@ namespace StutterFix
                     diff[i] = new Color32(v, v, v, 255);
                 }
                 string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StutterFix-blend");
+                string stamp = System.DateTime.Now.ToString("HHmmss");
                 System.IO.Directory.CreateDirectory(dir);
                 var dt = new Texture2D(orig.width, orig.height);
                 dt.SetPixels32(diff); dt.Apply();
-                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "원래.png"), orig.EncodeToPNG());
-                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "새방식.png"), fast.EncodeToPNG());
-                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "차이.png"), dt.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "원래-" + stamp + ".png"), orig.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "새방식-" + stamp + ".png"), fast.EncodeToPNG());
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "차이-" + stamp + ".png"), dt.EncodeToPNG());
                 Object.Destroy(dt);
-                Main.Entry.Logger.Log(string.Format("[블렌드 비교] {0}x{1} | 평균 차이 {2:F3}/255, 최대 {3}/255 | 2 넘게 다른 픽셀 {4:F2}%, 8 넘게 {5:F2}% | 전체 밝기 원래 {6:F2} 새 {7:F2} | {8}",
+                Main.Entry.Logger.Log(string.Format("[블렌드 비교] {0}x{1} | 평균 차이 {2:F3}/255, 최대 {3}/255 | 2 넘게 다른 픽셀 {4:F2}%, 8 넘게 {5:F2}% | 전체 밝기 원래 {6:F2} 새 {7:F2} | {8} ({9})",
                     orig.width, orig.height, (double)sum / n, max, 100.0 * over2 / n, 100.0 * over8 / n,
-                    (double)brightO / n / 3, (double)brightF / n / 3, dir));
+                    (double)brightO / n / 3, (double)brightF / n / 3, dir, stamp));
             }
             catch (System.Exception ex) { Main.Entry.Logger.Log("[블렌드 비교] 실패: " + ex.Message); }
             Object.Destroy(a); Object.Destroy(b);

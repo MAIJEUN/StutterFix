@@ -15,7 +15,7 @@ namespace StutterFix
     //   F10        : 지금 켜진 블렌드 장식을 모드/설정/셰이더별로 세어 로그에 적는다 (화면에 보이는 수 포함)
     //   Shift+F10  : 실험 - 모든 블렌드 장식을 "한 번만 복사" 로 바꾼다 / 다시 누르면 원래대로
     //   F11        : 실험 - 더하기/스크린/곱하기 장식을 복사 없이 그리기 (FastBlend) / 다시 누르면 원래대로
-    //   Shift+F11  : 같은 장면을 원래/복사 없는 방식으로 찍어 비교 (일시정지한 채로)
+    //   Shift+F11  : 같은 프레임을 원래/복사 없는 방식으로 두 번 그려 비교 (%TEMP%StutterFix-blend)
     internal static class BlendProbe
     {
         private static readonly Dictionary<BlendModeEffect, bool> changed = new Dictionary<BlendModeEffect, bool>();
