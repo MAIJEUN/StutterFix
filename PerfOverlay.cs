@@ -43,6 +43,28 @@ namespace StutterFix
                 if (m.Name == "ToggleWindow") h.Patch(m, prefix: prefix);
         }
 
+        private static System.Reflection.PropertyInfo ummInstP, ummOpenedP;
+        private static System.Reflection.FieldInfo ummInstF;
+        private static bool ummLooked;
+        private static bool UmmOpen()
+        {
+            try
+            {
+                var ui = typeof(UnityModManagerNet.UnityModManager.UI);
+                if (!ummLooked)
+                {
+                    ummLooked = true;
+                    ummInstP = HarmonyLib.AccessTools.Property(ui, "Instance");
+                    if (ummInstP == null) ummInstF = HarmonyLib.AccessTools.Field(ui, "Instance");
+                    ummOpenedP = HarmonyLib.AccessTools.Property(ui, "Opened");
+                }
+                if (ummOpenedP == null) return false;
+                object inst = ummInstP != null ? ummInstP.GetValue(null, null) : ummInstF != null ? ummInstF.GetValue(null) : null;
+                return inst != null && (bool)ummOpenedP.GetValue(inst, null);
+            }
+            catch { return false; }
+        }
+
         private static void UmmToggle() { MarkLoading(SettingsWindow.T("모드 창 (UMM)", "Mod window (UMM)")); }
 
         internal static void Destroy()
@@ -210,6 +232,9 @@ namespace StutterFix
             CheckSlow();
             if (!hitch || sustained) return;
             if (Mode == 0) { hitchCount++; return; }
+            // 모드 창(UMM, 이 모드의 설정 창)이 열려 있는 동안은 창 안에서 누르는 것(다른 모드 화면 열기, 설정 저장)이 멈춤을 만든다
+            if (UmmOpen()) MarkLoading(T("모드 창 (UMM)", "Mod window (UMM)"));
+            else if (SettingsWindow.Open) MarkLoading(T("설정 창", "Settings window"));
 
             // 불러오기 구간이면 바로 적는다
             var load = LoadingOrNull(ms);
