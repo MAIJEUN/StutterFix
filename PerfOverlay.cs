@@ -41,6 +41,12 @@ namespace StutterFix
             var prefix = new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(UmmToggle));
             foreach (var m in HarmonyLib.AccessTools.GetDeclaredMethods(typeof(UnityModManagerNet.UnityModManager.UI)))
                 if (m.Name == "ToggleWindow") h.Patch(m, prefix: prefix);
+
+            // 편집 화면에서 맵 열기/저장: 윈도우 파일 선택 창이 떠 있는 동안 게임이 통째로 멈춘다(1.1초가 "게임 처리" 로 찍혔다).
+            var file = new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(FileDialog));
+            foreach (var n in new[] { "OpenLevel", "OpenLevelCo", "OpenRecent", "SaveLevel", "SaveLevelAs", "SaveLevelAsCo" })
+                foreach (var m in HarmonyLib.AccessTools.GetDeclaredMethods(typeof(scnEditor)))
+                    if (m.Name == n && !m.IsGenericMethod) { try { h.Patch(m, prefix: file); } catch { } }
         }
 
         private static System.Reflection.PropertyInfo ummInstP, ummOpenedP;
@@ -64,6 +70,8 @@ namespace StutterFix
             }
             catch { return false; }
         }
+
+        private static void FileDialog() { MarkLoading(SettingsWindow.T("맵 열기·저장", "Open / save level")); }
 
         private static void UmmToggle() { MarkLoading(SettingsWindow.T("모드 창 (UMM)", "Mod window (UMM)")); }
 
