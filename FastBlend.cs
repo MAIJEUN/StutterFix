@@ -111,7 +111,7 @@ namespace StutterFix
                 }
                 string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StutterFix-blend");
                 System.IO.Directory.CreateDirectory(dir);
-                var dt = new Texture2D(orig.width, orig.height, TextureFormat.RGBA32, false);
+                var dt = new Texture2D(orig.width, orig.height);
                 dt.SetPixels32(diff); dt.Apply();
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "원래.png"), orig.EncodeToPNG());
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "새방식.png"), fast.EncodeToPNG());

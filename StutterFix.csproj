@@ -95,6 +95,9 @@
       <HintPath>$(GameManaged)/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(GameManaged)/UnityEngine.ScreenCaptureModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>$(GameManaged)/UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
