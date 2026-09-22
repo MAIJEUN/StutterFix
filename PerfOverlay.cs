@@ -11,14 +11,14 @@ namespace StutterFix
     //   아이콘 : 화면 끝의 작은 탭. FPS 와 고른 항목(프레임 시간, CPU, GPU, VRAM ...), 상태 점, 작은 그래프.
     //            누르면 상세 패널이 옆으로 펼쳐진다
     //   미니   : 한 줄짜리 알약. FPS 와 고른 항목을 칸으로 나눠 보여 주고 그래프를 붙인다
-    //   상세   : FPS, 그래프, 이번 곡 통계, CPU/GPU/VRAM/RAM(최근 60초 추이 포함), GC, 최근 끊김 목록
+    //   상세   : FPS, 그래프, 이번 곡 통계, CPU/GPU/VRAM/RAM, GC, 최근 끊김 목록
     // 본체를 잡고 끌면 위아래로 옮겨지고, 화면 반대쪽으로 끌면 그쪽 끝에 붙는다.
     //
     // 끊김 원인 (그 프레임에 있었던 일로 가린다. 정밀 측정이 아니라 추정이다):
     //   GC 가 돌았다 -> 메모리 정리 / 효과 시작에 프레임의 40% 이상 -> 효과 몰림 /
     //   GPU 가 70% 이상 바빴다 -> GPU 과부하 / 메인 스레드가 60% 이상 -> 게임 처리 / 모두 아니다 -> 게임 바깥
     // GPU·메인 스레드 시간은 유니티가 몇 프레임 늦게 준다. 끊긴 순간에만 요청하면 비어서 "원인 불명"이 떴다.
-    // 그래서 모니터가 켜져 있는 동안 매 프레임 수집하고, 최근 4프레임 중 가장 큰 값으로 가린다.
+    // 그래서 모니터가 켜져 있는 동안 매 프레임 수집하고, 끊긴 뒤 5프레임 동안 들어온 값 중 가장 큰 것으로 가린다.
     //
     // 비용: 사용량은 SystemMonitor 가 작업 스레드에서 1초에 한 번 읽는다. 글자는 1초에 4번만 새로 만든다
     // (곡 중에는 GC 가 멈춰 있어서, 매 프레임 문자열을 만들면 그대로 쌓인다).
@@ -92,7 +92,8 @@ namespace StutterFix
         private string sFps = "-", sMs = "", sLow = "", sCpu = "", sCpuSub = "", sGpu = "", sGpuSub = "", sVram = "", sVramSub = "",
             sRam = "", sRamSub = "", sGc = "", sGcSub = "", sFooter = "", sSong = "", sSongSub = "";
         private string sMsShort = "", sLowShort = "", sCpuShort = "", sGpuShort = "", sVramShort = "", sRamShort = "";
-        private string[] sHist = new string[0];
+        private string[] sHist = new string[0], sHistMs = new string[0], sHistAgo = new string[0];
+        private string sSongWorst = "", sSongCount = "";
         private bool vramWarn;
 
         private void Update()
@@ -138,10 +139,10 @@ namespace StutterFix
                 FrameTimingManager.CaptureFrameTimings();
                 if (FrameTimingManager.GetLatestTimings(1, timing) > 0)
                 {
-                    gpuRing[timingHead] = (float)timing[0].gpuFrameTime;
+                    gpuRing[timingHead] = lastGpu = (float)timing[0].gpuFrameTime;
                     // 메인 스레드 시간이 비어 오는 환경이 있다. 그때는 전체 CPU 프레임 시간으로 대신한다
                     double cm = timing[0].cpuMainThreadFrameTime;
-                    cpuRing[timingHead] = (float)(cm > 0 ? cm : timing[0].cpuFrameTime);
+                    cpuRing[timingHead] = lastCpu = (float)(cm > 0 ? cm : timing[0].cpuFrameTime);
                     timingSamples++;
                     timingHead = (timingHead + 1) % gpuRing.Length;
                 }
@@ -182,21 +183,58 @@ namespace StutterFix
             wasPlaying = playing;
             if (playing && ms < 1500f) { songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms; }
 
+            DecidePending();
+
             float limit = Mathf.Max(C != null ? C.AlertMs : 33f, avgMs * 2.2f);
             bool hitch = ms > limit;
             if (ms <= Mathf.Max(25f, avgMs * 2.2f)) avgMs = Mathf.Lerp(avgMs, ms, 0.05f);
             if (!hitch) return;
             if (Mode == 0) { hitchCount++; return; }
 
-            var h = Classify(ms, gcDelta);
-            if (!h.IsLoading)   // 불러오기는 끊김 수와 상태 점에 넣지 않는다
+            // 불러오기 구간이면 바로 적는다
+            var load = LoadingOrNull(ms);
+            if (load != null) { Commit(load); return; }
+
+            // 진짜 끊김: 상태 점과 횟수는 바로, 원인은 5프레임 뒤에 (GPU/CPU 시간이 늦게 오므로)
+            hitchCount++;
+            if (playing) songHitches++;
+            lastHitchTime = Time.unscaledTime;
+            lastHitchMs = ms;
+            flash = 1f;
+            bool modNow = ModCost.FrameMs >= ModCost.LastFrameMs;
+            pending.Add(new Pending
             {
-                hitchCount++;
-                if (playing) songHitches++;
-                lastHitchTime = Time.unscaledTime;
-                lastHitchMs = ms;
-                flash = 1f;
+                Ms = ms, Gc = gcDelta, Frame = Time.frameCount, Time = Time.unscaledTime,
+                Fx = (float)Math.Max(EffectScan.LastFrameEffectMs, EffectScan.FrameEffectMs),
+                Mod = (float)(modNow ? ModCost.FrameMs : ModCost.LastFrameMs),
+                ModWhat = modNow ? ModCost.Top : ModCost.LastTop,
+            });
+        }
+
+        // ── 원인은 몇 프레임 뒤에 정한다 ─────────────────────────────────
+        // 유니티는 한 프레임의 GPU/CPU 시간을 2~4 프레임 늦게 준다. 끊긴 그 순간에 판단하면 앞의 멀쩡한
+        // 프레임 값을 보고 "게임은 한가했다(게임 바깥)" 로 잘못 말했다(다른 모드가 로딩하며 멈춘 것도 그렇게 떴다).
+        // 끊김을 잡아 두고, 그 뒤 5 프레임 동안 들어온 값 중 가장 큰 것으로 정한다.
+        private class Pending { public float Ms, Time, Fx, Mod, Gpu, Cpu; public int Gc, Frame; public string ModWhat; }
+        private readonly List<Pending> pending = new List<Pending>();
+        private float lastGpu, lastCpu;
+
+        private void DecidePending()
+        {
+            for (int i = 0; i < pending.Count; )
+            {
+                var p = pending[i];
+                if (lastGpu > p.Gpu) p.Gpu = lastGpu;
+                if (lastCpu > p.Cpu) p.Cpu = lastCpu;
+                if (Time.frameCount - p.Frame < 5) { i++; continue; }
+                pending.RemoveAt(i);
+                Commit(Classify(p));
             }
+        }
+
+        private void Commit(HitchRec h)
+        {
+            h.Time = Time.unscaledTime;   // 알림은 지금부터 센다
             history.Insert(0, h);
             if (history.Count > 6) history.RemoveAt(history.Count - 1);
 
@@ -207,7 +245,7 @@ namespace StutterFix
                 if (top != null && top.Cause == h.Cause && Time.unscaledTime - top.Time < 1.5f)
                 {
                     top.Count++;
-                    top.Ms = Mathf.Max(top.Ms, ms);
+                    top.Ms = Mathf.Max(top.Ms, h.Ms);
                     top.Time = Time.unscaledTime;
                     top.Tone = top.IsLoading ? LoadTone : top.IsMod ? ModTone : top.Ms >= 50 ? Bad : Warn;
                     TitleOf(top);
@@ -247,7 +285,7 @@ namespace StutterFix
             return h;
         }
 
-        private HitchRec Classify(float ms, int gcDelta)
+        private HitchRec LoadingOrNull(float ms)
         {
             if (startup)
                 return Loading(ms, T("게임·모드 시작 중", "Game / mods starting"),
@@ -255,13 +293,14 @@ namespace StutterFix
             if (ms > 1500f || ImagePrefetch.Running || InLoading)
                 return Loading(ms, T("불러오기", "Loading") + (loadWhat.Length > 0 ? " · " + loadWhat : ""),
                     T("맵이나 곡을 준비하느라 멈췄습니다. 끊김으로 세지 않습니다", "Preparing a level or scene; not counted as a hitch"));
+            return null;
+        }
 
-            float gpu = Max(gpuRing), cpuMain = Max(cpuRing);
-            float fx = (float)Math.Max(EffectScan.LastFrameEffectMs, EffectScan.FrameEffectMs);
-            // 모드 자신이 그 프레임에 쓴 시간 (밀린 효과 실행, 타일 색 나눠 칠하기, 곡 끝난 뒤 메모리 정리 ...)
-            bool modNow = ModCost.FrameMs >= ModCost.LastFrameMs;
-            float mod = (float)(modNow ? ModCost.FrameMs : ModCost.LastFrameMs);
-            string modWhat = modNow ? ModCost.Top : ModCost.LastTop;
+        private HitchRec Classify(Pending p)
+        {
+            float ms = p.Ms, gpu = p.Gpu, cpuMain = p.Cpu, fx = p.Fx, mod = p.Mod;
+            int gcDelta = p.Gc;
+            string modWhat = p.ModWhat;
 
             var h = new HitchRec { Ms = ms, Time = Time.unscaledTime, Tone = ms >= 50 ? Bad : Warn };
             // 모드 때문인지를 가장 먼저 본다. 모드가 한 일은 원래 게임 일을 옮긴 것이어도 따로 알려야 판단할 수 있다.
@@ -346,10 +385,22 @@ namespace StutterFix
             }
             else { sSong = "-"; sSongSub = T("곡을 시작하면 셉니다", "starts counting when a level plays"); }
 
-            if (sHist.Length != history.Count) sHist = new string[history.Count];
+            // 최근 끊김은 ms / 원인 / 몇 초 전을 칸으로 나눠 맞춘다
+            if (sHist.Length != history.Count) { sHist = new string[history.Count]; sHistMs = new string[history.Count]; sHistAgo = new string[history.Count]; }
             for (int i = 0; i < history.Count; i++)
-                sHist[i] = history[i].Ms.ToString("F0") + "ms  " + history[i].Cause + "  ·  " + Ago(Time.unscaledTime - history[i].Time);
-            sFooter = T("전체 끊김 ", "Hitches ") + hitchCount + "   ·   " + T("끌어서 옮기기", "drag to move");
+            {
+                var hr = history[i];
+                sHistMs[i] = hr.Ms >= 1000 ? (hr.Ms / 1000f).ToString("F1") + T("초", "s") : hr.Ms.ToString("F0") + "ms";
+                sHist[i] = hr.Cause + (hr.Count > 1 ? "  ×" + hr.Count : "");
+                sHistAgo[i] = Ago(Time.unscaledTime - hr.Time);
+            }
+            if (songFrames > 30)
+            {
+                sSongWorst = T("가장 긴 프레임 ", "worst ") + songWorst.ToString("F0") + "ms";
+                sSongCount = T("끊김 ", "hitches ") + songHitches;
+            }
+            else { sSongWorst = T("곡을 시작하면", "starts when"); sSongCount = T("셉니다", "a level plays"); }
+            sFooter = T("전체 끊김 ", "Hitches ") + hitchCount;
         }
 
         private static string Ago(float s) { return s < 60 ? s.ToString("F0") + T("초 전", "s ago") : (s / 60f).ToString("F0") + T("분 전", "m ago"); }
@@ -382,7 +433,8 @@ namespace StutterFix
         private bool built;
         private Font font;
         private Texture2D tWhite;
-        private GUIStyle sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall, sCenterLine, sLine, sToastShort;
+        private GUIStyle sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall, sCenterLine, sLine, sToastShort,
+            stHistMs, stHistCause, sSubFaint;
 
         private void Build()
         {
@@ -402,6 +454,9 @@ namespace StutterFix
             sCenterLine = Text(10, Dim, FontStyle.Bold); sCenterLine.alignment = TextAnchor.MiddleCenter;
             sLine = Text(12, Fg, FontStyle.Bold); sLine.alignment = TextAnchor.MiddleCenter;
             sToastShort = Text(12, Fg, FontStyle.Bold); sToastShort.alignment = TextAnchor.MiddleLeft;
+            stHistMs = Text(12, Fg, FontStyle.Bold);
+            stHistCause = Text(12, Dim, FontStyle.Normal); stHistCause.clipping = TextClipping.Clip;
+            sSubFaint = Text(10, new Color(1, 1, 1, 0.22f), FontStyle.Normal); sSubFaint.alignment = TextAnchor.UpperRight;
         }
 
         private GUIStyle Text(int size, Color c, FontStyle style)
@@ -458,14 +513,14 @@ namespace StutterFix
 
         private float PanelHeight()
         {
-            float h = 64;                          // FPS 머리
-            if (C.OvGraph) h += 56;
-            if (C.OvSession) h += 44;
+            float h = 66;                          // FPS 머리
+            if (C.OvGraph) h += 54;
+            if (C.OvSession) h += 52;
             int rows = (C.OvCpu ? 1 : 0) + (C.OvGpu ? 1 : 0) + (C.OvVram ? 1 : 0) + (C.OvRam ? 1 : 0);
-            h += rows * 36;
-            if (C.OvGc) h += 38;
-            if (C.OvHitchList) h += 26 + Mathf.Max(1, sHist.Length) * 17;
-            return h + 30;                         // 아래 줄
+            h += rows * RowH;
+            if (C.OvGc) h += 26;
+            if (C.OvHitchList) h += 34 + Mathf.Max(1, sHist.Length) * 18;
+            return h + 34;                         // 아래 줄
         }
 
         private void OnGUI()
@@ -689,51 +744,65 @@ namespace StutterFix
             Panel(r, 14);
             if (flash > 0) Fill(r, new Color(Warn.r, Warn.g, Warn.b, 0.16f * flash), 14);
 
-            float ix = r.x + 16, iw = r.width - 32, cy = r.y + 12;
+            float ix = r.x + 18, iw = r.width - 36, cy = r.y + 14;
             float pulse;
             Color dot = StatusColor(out pulse);
-            Label(new Rect(ix, cy, 120, 34), sFps, sBig);
-            Label(new Rect(ix + 2, cy + 35, 60, 14), "FPS", sSmall);
-            Fill(new Rect(ix + 34, cy + 39, 6, 6), new Color(dot.r, dot.g, dot.b, pulse), 3);
-            Label(new Rect(ix + iw - 110, cy + 6, 110, 16), sMs, sValue);
-            Label(new Rect(ix + iw - 110, cy + 24, 110, 16), sLow, sSub);
-            cy += 64;
 
-            if (C.OvGraph) { Graph(new Rect(ix, cy, iw, 44), GraphN, true); cy += 56; }
+            // 머리: 큰 FPS + 상태 점 / 오른쪽에 프레임 시간과 1% low
+            Label(new Rect(ix, cy - 2, 120, 34), sFps, sBig);
+            Fill(new Rect(ix, cy + 38, 6, 6), new Color(dot.r, dot.g, dot.b, pulse), 3);
+            Label(new Rect(ix + 11, cy + 34, 60, 14), "FPS", sSmall);
+            Label(new Rect(ix + iw - 120, cy + 6, 120, 16), sMs, sValue);
+            Label(new Rect(ix + iw - 120, cy + 25, 120, 14), sLow, sSub);
+            cy += 58;
+
+            if (C.OvGraph) { Graph(new Rect(ix, cy, iw, 42), GraphN, true); cy += 54; }
+
+            // 이번 곡: 왼쪽 두 줄(제목, 평균 FPS) / 오른쪽 두 줄(가장 긴 프레임, 끊김 수)
             if (C.OvSession)
             {
-                Fill(new Rect(ix, cy, iw, 34), new Color(1, 1, 1, 0.04f), 8);
-                Label(new Rect(ix + 10, cy + 3, 90, 14), T("이번 곡", "This level"), sSmall);
-                Label(new Rect(ix + 10, cy + 16, 100, 16), sSong, sTitle);
-                Label(new Rect(ix + iw - 10 - 150, cy + 10, 150, 14), sSongSub, sSub);
-                cy += 44;
+                var box = new Rect(ix, cy, iw, 42);
+                Fill(box, new Color(1, 1, 1, 0.045f), 9);
+                Label(new Rect(box.x + 12, box.y + 6, 100, 13), T("이번 곡", "This level"), sSmall);
+                Label(new Rect(box.x + 12, box.y + 20, 110, 18), sSong, sTitle);
+                Label(new Rect(box.xMax - 12 - 150, box.y + 7, 150, 14), sSongWorst, sSub);
+                Label(new Rect(box.xMax - 12 - 150, box.y + 22, 150, 14), sSongCount, sSub);
+                cy += 52;
             }
-            if (C.OvCpu) cy = Row(ix, iw, cy, "CPU", sCpu, sCpuSub, cpuBar, false, hCpu);
-            if (C.OvGpu) cy = Row(ix, iw, cy, "GPU", sGpu, sGpuSub, gpuBar, false, hGpu);
-            if (C.OvVram) cy = Row(ix, iw, cy, "VRAM", sVram, sVramSub, vramBar, vramWarn, hVram);
-            if (C.OvRam) cy = Row(ix, iw, cy, "RAM", sRam, sRamSub, ramBar, false, hRam);
+
+            if (C.OvCpu) cy = Row(ix, iw, cy, "CPU", sCpu, sCpuSub, cpuBar, false);
+            if (C.OvGpu) cy = Row(ix, iw, cy, "GPU", sGpu, sGpuSub, gpuBar, false);
+            if (C.OvVram) cy = Row(ix, iw, cy, "VRAM", sVram, sVramSub, vramBar, vramWarn);
+            if (C.OvRam) cy = Row(ix, iw, cy, "RAM", sRam, sRamSub, ramBar, false);
             if (C.OvGc)
             {
-                Label(new Rect(ix, cy + 2, 120, 16), T("메모리 정리", "GC"), sLabel);
-                Label(new Rect(ix + iw - 130, cy + 1, 130, 16), sGc, sValue);
-                Label(new Rect(ix + iw - 130, cy + 18, 130, 14), sGcSub, sSub);
-                cy += 38;
+                Label(new Rect(ix, cy + 2, 110, 16), T("메모리 정리", "GC"), sLabel);
+                RightPair(ix, iw, cy, sGc, sGcSub, false);
+                cy += 26;
             }
+
+            // 최근 끊김: 점 | ms | 원인 ............ 몇 초 전
             if (C.OvHitchList)
             {
-                Fill(new Rect(ix, cy, iw, 1), new Color(1, 1, 1, 0.08f), 0);
-                Label(new Rect(ix, cy + 8, iw, 14), T("최근 끊김", "Recent hitches"), sLabel);
-                cy += 26;
-                if (sHist.Length == 0) { Label(new Rect(ix, cy, iw, 14), T("아직 없음", "None yet"), sSmall); cy += 17; }
+                Fill(new Rect(ix, cy + 4, iw, 1), new Color(1, 1, 1, 0.08f), 0);
+                Label(new Rect(ix, cy + 12, iw, 14), T("최근 끊김", "Recent hitches"), sLabel);
+                cy += 34;
+                if (sHist.Length == 0) { Label(new Rect(ix, cy, iw, 14), T("아직 없음", "None yet"), sSmall); cy += 18; }
                 for (int i = 0; i < sHist.Length && i < history.Count; i++)
                 {
-                    Fill(new Rect(ix, cy + 5, 4, 4), history[i].Tone, 2);
-                    Label(new Rect(ix + 10, cy, iw - 10, 14), sHist[i], i == 0 ? sLabel : sSmall);
-                    cy += 17;
+                    var hr = history[i];
+                    float fade = i == 0 ? 1f : 0.75f;
+                    Fill(new Rect(ix, cy + 5, 5, 5), hr.Tone, 2.5f);
+                    WithColor(stHistMs, new Color(1, 1, 1, 0.9f * fade), new Rect(ix + 12, cy, 52, 15), sHistMs[i]);
+                    WithColor(stHistCause, hr.IsMod ? ModTone : hr.IsLoading ? LoadTone : new Color(1, 1, 1, 0.7f * fade), new Rect(ix + 66, cy, iw - 66 - 58, 15), sHist[i]);
+                    Label(new Rect(ix + iw - 58, cy, 58, 15), sHistAgo[i], sSub);
+                    cy += 18;
                 }
             }
-            Fill(new Rect(ix, r.yMax - 28, iw, 1), new Color(1, 1, 1, 0.08f), 0);
-            Label(new Rect(ix, r.yMax - 20, iw, 14), sFooter, sSmall);
+
+            Fill(new Rect(ix, r.yMax - 30, iw, 1), new Color(1, 1, 1, 0.08f), 0);
+            Label(new Rect(ix, r.yMax - 22, iw / 2, 14), sFooter, sSmall);
+            Label(new Rect(ix + iw / 2, r.yMax - 22, iw / 2, 14), T("끌어서 옮기기", "drag to move"), sSubFaint);
         }
 
         // 최근 n 프레임 그래프: 16.7ms 기준선, 25ms 넘으면 주황, 50ms 넘으면 빨강
@@ -755,38 +824,32 @@ namespace StutterFix
 
         private static Color BarColor(float ms, float normalAlpha) { return ms >= 50 ? Bad : ms >= 25 ? Warn : new Color(1, 1, 1, normalAlpha); }
 
-        // 이름, 값, 보조 값, 사용률 막대, 그리고 이름 옆에 최근 60초 추이
-        private float Row(float x, float w, float y, string label, string value, string sub, float bar, bool warn, float[] hist)
+        private const float RowH = 34;
+        private readonly GUIContent measure = new GUIContent();
+
+        // 한 줄: 이름(왼쪽) ... 보조 값  값(오른쪽), 그 아래 폭 전체의 사용률 막대
+        private float Row(float x, float w, float y, string label, string value, string sub, float bar, bool warn)
         {
-            Label(new Rect(x, y + 2, 60, 16), label, sLabel);
-            Label(new Rect(x + w - 150, y + 1, 150, 16), value, sValue);
-
-            // 추이: 이름과 값 사이의 작은 선그래프 (막대로 그린다)
-            var sp = new Rect(x + 42, y + 4, 60, 12);
-            int n = histCount;
-            if (n > 1)
-            {
-                float bw = sp.width / HistN;
-                for (int i = 0; i < n; i++)
-                {
-                    float v = hist[(histHead - n + i + HistN) % HistN];
-                    float bh = Mathf.Max(1f, sp.height * v);
-                    Fill(new Rect(sp.x + (HistN - n + i) * bw, sp.yMax - bh, Mathf.Max(0.8f, bw - 0.2f), bh), new Color(1, 1, 1, 0.18f), 0);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(sub))
-            {
-                var old = sSub.normal.textColor;
-                if (warn) sSub.normal.textColor = Warn;
-                Label(new Rect(x + w - 150, y + 18, 150, 14), sub, sSub);
-                sSub.normal.textColor = old;
-            }
-            var track = new Rect(x, y + 24, w - 64, 3);
+            Label(new Rect(x, y + 2, 70, 16), label, sLabel);
+            RightPair(x, w, y, value, sub, warn);
+            var track = new Rect(x, y + 23, w, 3);
             Fill(track, Track, 1.5f);
             Color c = warn ? Warn : LoadColor(bar, Bar);
             Fill(new Rect(track.x, track.y, Mathf.Max(3f, track.width * bar), track.height), c, 1.5f);
-            return y + 36;
+            return y + RowH;
+        }
+
+        // 오른쪽 끝에 "보조 값   값" 을 한 줄로 (값은 굵게, 보조 값은 흐리게 바로 왼쪽에)
+        private void RightPair(float x, float w, float y, string value, string sub, bool warn)
+        {
+            measure.text = value;   // 값 길이만큼 비운다 (곡 중엔 GC 가 멈춰 있으니 GUIContent 를 새로 만들지 않는다)
+            float vw = sValue.CalcSize(measure).x;
+            Label(new Rect(x + w - 160, y + 1, 160, 16), value, sValue);
+            if (string.IsNullOrEmpty(sub)) return;
+            var old = sSub.normal.textColor;
+            if (warn) sSub.normal.textColor = Warn;
+            Label(new Rect(x + w - 160 - vw - 8, y + 3, 160, 14), sub, sSub);
+            sSub.normal.textColor = old;
         }
 
         // ── 알림 ───────────────────────────────────────────────────────
