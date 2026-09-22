@@ -43,6 +43,10 @@ namespace StutterFix
                 if (m.Name == "ToggleWindow") h.Patch(m, prefix: prefix);
 
             // 편집 화면에서 맵 열기/저장: 윈도우 파일 선택 창이 떠 있는 동안 게임이 통째로 멈춘다(1.1초가 "게임 처리" 로 찍혔다).
+            // 첫 타일을 치면(행성이 다음 타일로 옮겨 가면) 곡 시작 연출 구간이 끝난다
+            var move = HarmonyLib.AccessTools.Method(typeof(scrPlanet), "MoveToNextFloor");
+            if (move != null) h.Patch(move, prefix: new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(EndStartPhase)));
+
             var file = new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(FileDialog));
             foreach (var n in new[] { "OpenLevel", "OpenLevelCo", "OpenRecent", "SaveLevel", "SaveLevelAs", "SaveLevelAsCo" })
                 foreach (var m in HarmonyLib.AccessTools.GetDeclaredMethods(typeof(scnEditor)))
@@ -412,6 +416,15 @@ namespace StutterFix
         private static bool InLoading { get { return Time.frameCount - loadFrame <= 30 || Time.realtimeSinceStartup - loadTime < 2f; } }
         internal static bool IsLoadingNow { get { return InLoading; } }
 
+        // 곡 시작 연출: 곡이 시작되고 첫 타일을 치기 전(최대 5초). 맵의 첫 효과 수천 개가 한 프레임에 시작되며 60~160ms 멈추는데,
+        // 예전에는 "곡 준비 뒤 30프레임" 안에 들어오면 불러오기, 조금 늦으면 끊김으로 잡혀 판마다 결과가 달랐다.
+        // 첫 타일 전이라 입력에는 영향이 없으므로 따로 적고 끊김으로 세지 않는다.
+        private static bool startPhase;
+        private static float startPhaseAt;
+        internal static void BeginStartPhase() { startPhase = true; startPhaseAt = Time.realtimeSinceStartup; }
+        public static void EndStartPhase() { startPhase = false; }
+        private static bool InStartPhase { get { return startPhase && Time.realtimeSinceStartup - startPhaseAt < 5f; } }
+
         // 끊김이 아닌 안내 (예: VRAM 부족으로 다음부터 이미지를 줄임). 모니터가 켜져 있으면 알림으로 뜬다.
         internal static void Notice(string cause, string detail)
         {
@@ -436,6 +449,9 @@ namespace StutterFix
             if (ms > 1500f || ImagePrefetch.Running || InLoading)
                 return Loading(ms, T("불러오기", "Loading") + (loadWhat.Length > 0 ? " · " + loadWhat : ""),
                     T("맵이나 곡을 준비하느라 멈췄습니다. 끊김으로 세지 않습니다", "Preparing a level or scene; not counted as a hitch"));
+            if (InStartPhase)
+                return Loading(ms, T("곡 시작 연출", "Level start"),
+                    T("곡이 시작되며 맵의 첫 효과들이 한꺼번에 시작됐습니다. 첫 타일 전이라 끊김으로 세지 않습니다", "The level's opening effects all started at once, before the first tile; not counted as a hitch"));
             return null;
         }
 

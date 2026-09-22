@@ -176,6 +176,7 @@ namespace StutterFix
         {
             Hitch.Report();
             PerfOverlay.MarkLoading(SettingsWindow.T("곡 준비", "Level start"));
+            PerfOverlay.BeginStartPhase();
             // 재시작은 어차피 화면이 바뀌는 순간이라 바로 치운다.
             // (재생 누르는 순간부터 GC 를 꺼 두는 것도 해 봤는데, 곡 시작 시간은 그대로였고 시작 직후
             //  "곡 아님" 으로 보이는 순간에 3초 뒤 정리가 예약되어 곡 초반에 끊겼다. 되돌렸다.)
