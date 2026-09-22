@@ -116,7 +116,7 @@ namespace StutterFix
                     rateTimer = 0f;
                 }
 
-                if (realMs >= ThresholdMs && recs.Count < 500)
+                if (realMs >= ThresholdMs && recs.Count < 2000)
                 {
                     var r = new Rec
                     {

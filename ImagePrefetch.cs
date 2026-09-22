@@ -107,6 +107,19 @@ namespace StutterFix
         // 마지막으로 불러온 맵에서 실제로 줄인 결과 (실시간 모니터 VRAM 줄에 보여 준다)
         internal static int LastSide, LastShrunk;
         internal static bool AnyLoad;   // 미리 풀기로 맵을 한 번이라도 불러왔는가
+        internal static float AfterLoadLogAt = -1f;
+        internal static void LogAfterLoad()
+        {
+            if (AfterLoadLogAt < 0 || Time.realtimeSinceStartup < AfterLoadLogAt) return;
+            AfterLoadLogAt = -1f;
+            try
+            {
+                var holder = scnGame.instance != null ? scnGame.instance.imgHolder : null;
+                var c2 = holder != null && spritesField != null ? spritesField.GetValue(holder) as System.Collections.IDictionary : null;
+                Main.Entry.Logger.Log(string.Format("[이미지] 맵 연 뒤: 올라와 있는 이미지 {0}장, VRAM 전체 {1:F0}MB / 게임 {2:F0}MB", c2 != null ? c2.Count : -1, SystemMonitor.VramUsedMB, SystemMonitor.VramGameMB));
+            }
+            catch { }
+        }
         internal static float LastSavedMB;
         private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
 
@@ -204,6 +217,7 @@ namespace StutterFix
                 foreach (var ev in __instance.decorations) add(ev);
                 foreach (var ev in __instance.events) if ((int)ev.eventType == 29) add(ev);
 
+                Main.Entry.Logger.Log(string.Format("[이미지] 맵 열기 전: 이미 올라와 있는 이미지 {0}장, VRAM 전체 {1:F0}MB / 게임 {2:F0}MB", cached != null ? cached.Count : -1, SystemMonitor.VramUsedMB, SystemMonitor.VramGameMB));
                 if (unloaded > 0) Main.Entry.Logger.Log("[이미지] 한도가 바뀌어 이미 올라온 이미지 " + unloaded + "장을 다시 불러옴 (긴 변 " + (sideNow > 0 ? sideNow.ToString() : "원본") + ")");
                 // 이미 올라온 이미지를 다시 쓰는 경우(같은 맵 다시 열기)에는 그때의 한도가 그대로 남는다
                 VramGuard.OnLevelLoaded(__instance.levelPath, sideNow, list.Count >= 8);
@@ -418,6 +432,7 @@ namespace StutterFix
             }
             // 장식을 다 만든 직후 몇 프레임은 장식들이 처음 움직이며(블렌드 재질 만들기 등) 60ms 쯤 걸린다.
             // 곡 시작 전 편집 화면에서 끊김으로 잡혔는데 맵 불러오기의 끝부분이므로 불러오기로 적는다.
+            AfterLoadLogAt = Time.realtimeSinceStartup + 3f;   // 게임이 이전 맵 이미지를 치운 뒤(ReloadAssets 끝)에 남은 양을 적는다
             ShaderWarm.LevelChanged = true;   // 새 장식/이벤트가 올라왔다: 다음 곡 시작 때 필터 셰이더를 다시 본다
             PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load"));
             return __exception;
