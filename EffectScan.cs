@@ -109,10 +109,10 @@ namespace StutterFix
         public static bool Pre(object __instance, MethodBase __originalMethod, object[] __args, out long __state)
         {
             __state = Stopwatch.GetTimestamp();
-            if (__instance != null && __instance.GetType().Name == "ffxFloorAppearPlus")
-            {
-                if (LogFloorAppear && GcControl.Paused && EffectBudget.OuterCall) DescribeFloorAppear(__instance);
-            }
+            // GetType().Name 은 부를 때마다 문자열을 새로 만든다. 효과가 시작될 때마다 돌던 자리라,
+            // 기록이 꺼진 플레이어용에서는 아예 들어오지 않게 순서를 바꿨다.
+            if (LogFloorAppear && __instance != null && GcControl.Paused && EffectBudget.OuterCall
+                && __instance.GetType().Name == "ffxFloorAppearPlus") DescribeFloorAppear(__instance);
             if (!EffectBudget.ShouldRun(__instance, __originalMethod, __args)) return false;
             EffectBudget.Enter();
             return true;

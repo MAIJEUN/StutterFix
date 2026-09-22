@@ -169,6 +169,7 @@ namespace StutterFix
 
         private static void SongStarted()
         {
+            endLogged = false;
             PerfOverlay.BeginStartPhase();   // 첫 타일 전(최대 5초)의 시작 연출 멈춤은 끊김으로 세지 않는다
             EffectBudget.Reset();
             EffectBudget.Suspend(3f);
@@ -180,14 +181,18 @@ namespace StutterFix
         // 예전에는 여기서 비워서 완주 연출이 이상하게 보였다. 남은 것은 다음 프레임들에서 마저 실행된다
         // (사라진 효과는 실행할 때 건너뛴다). 비우는 것은 재시작과 곡 시작 때만 한다.
         // 곡이 끝나면 장식 이동 최적화가 실제로 무엇을 얼마나 줄였는지 한 줄 남긴다(플레이어용 로그로도 확인할 수 있게).
+        private static bool endLogged;
+
         private static void SongEnded()
         {
             try
             {
                 // 곡이 끝난 뒤(결과 화면 등) 재생 상태가 프레임마다 켜졌다 꺼졌다 해서 이 줄이 수백 번 찍혔다.
                 // 한 일이 없으면 남기지 않는다.
-                if (ZeroTween.Fast > 0 || MoveApply.PosWrites > 0)
+                // 곡이 끝난 뒤에도 결과 화면에서 장식이 조금씩 움직여 이 요약이 수십 번 찍혔다. 곡마다 한 번만 남긴다.
+                if (!endLogged && (ZeroTween.Fast > 100 || MoveApply.PosWrites > 1000))
                 {
+                    endLogged = true;
                     string perf = PerfOverlay.SongSummary();
                     if (perf != null) Main.Entry.Logger.Log("[곡] " + perf);
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary());
