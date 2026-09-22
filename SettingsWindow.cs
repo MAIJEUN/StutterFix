@@ -575,8 +575,8 @@ namespace StutterFix
             GUILayout.BeginVertical(sCard);
             GUILayout.Label(T("문제 보고용 로그 만들기", "Create a log for bug reports"), sBody);
             GUILayout.Space(4);
-            GUILayout.Label(T("게임이 끊기거나 오류가 났다면, 그 판을 끝낸 뒤(게임이 튕겼다면 다시 켠 뒤) 눌러 주세요. 바탕화면에 zip 파일이 생기고, 그 파일을 제작자(naro)에게 보내면 됩니다. 사양, 설정, 모드 목록, 게임 로그, 끊김 기록이 들어가며 윈도우 사용자 이름은 가려집니다.",
-                "If you hit a stutter or an error, press this after that run (or after restarting if the game crashed). A zip file appears on your desktop; send it to the author (naro). It contains specs, settings, the mod list, game logs and the hitch record, with your Windows user name hidden."), sLead);
+            GUILayout.Label(T("게임이 끊기거나 오류가 났다면, 그 판을 끝낸 뒤(게임이 튕겼다면 다시 켠 뒤) 눌러 주세요. 바탕화면에 zip 파일이 생기고, 그 파일을 디스코드 <b>narooh</b> 에게 DM 으로 보내 주세요. 사양, 설정, 모드 목록, 게임 로그, 끊김 기록이 들어가며 윈도우 사용자 이름은 가려집니다.",
+                "If you hit a stutter or an error, press this after that run (or after restarting if the game crashed). A zip file appears on your desktop; send it to <b>narooh</b> on Discord (DM). It contains specs, settings, the mod list, game logs and the hitch record, with your Windows user name hidden."), sLead);
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("로그 파일 만들기", "Create log file"), sPrimary, GUILayout.Width(170), GUILayout.Height(38)))

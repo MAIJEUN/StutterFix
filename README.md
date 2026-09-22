@@ -50,7 +50,7 @@ made by **naro** & **Claude**
 
 ## 문제 보고
 
-끊기거나 오류가 났다면 설정 창 **정보 → 로그 파일 만들기**(또는 UMM 모드 설정의 **문제 보고용 로그 만들기**)를 누르세요. 바탕화면에 `StutterFix-log-날짜.zip`이 생깁니다. 이 파일을 제작자에게 보내 주세요.
+끊기거나 오류가 났다면 설정 창 **정보 → 로그 파일 만들기**(또는 UMM 모드 설정의 **문제 보고용 로그 만들기**)를 누르세요. 바탕화면에 `StutterFix-log-날짜.zip`이 생깁니다. 이 파일을 디스코드 **narooh** 에게 DM 으로 보내 주세요.
 들어가는 것: 컴퓨터 사양, 이 모드 설정, 설치된 모드 목록, 게임 로그(이번 실행과 직전 실행), 실시간 모니터의 끊김 기록. 로그 안의 윈도우 사용자 이름은 가려집니다. 자동으로 어디에 올리지는 않습니다.
 
 ## 모드를 끄면
@@ -99,4 +99,4 @@ Stutter Fix reduces mid-play hitches and level loading times on heavy custom lev
 
 **Live monitor:** FPS, CPU/GPU/VRAM/RAM and hitch alerts with an estimated cause (Shift+Insert cycles icon / mini / detail / off).
 
-**Bug reports:** Settings window → About → *Create log file* makes `StutterFix-log-<date>.zip` on your desktop (specs, settings, mod list, game logs, hitch record; your Windows user name is hidden). Send that file to the author.
+**Bug reports:** Settings window → About → *Create log file* makes `StutterFix-log-<date>.zip` on your desktop (specs, settings, mod list, game logs, hitch record; your Windows user name is hidden). Send that file to **narooh** on Discord (DM).

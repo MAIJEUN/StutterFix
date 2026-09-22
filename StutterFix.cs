@@ -434,7 +434,7 @@ namespace StutterFix
             }
             string lr = LogExport.LastError.Length > 0 ? SettingsWindow.T("   만들지 못했습니다: ", "   Failed: ") + LogExport.LastError
                 : LogExport.LastPath.Length > 0 ? SettingsWindow.T("   바탕화면에 만들었습니다: ", "   Saved to desktop: ") + System.IO.Path.GetFileName(LogExport.LastPath)
-                : SettingsWindow.T("   끊김이나 오류가 있었다면 눌러서 생긴 zip 파일을 naro 에게 보내 주세요.", "   After a stutter or error, press it and send the zip file to naro.");
+                : SettingsWindow.T("   끊김이나 오류가 있었다면 눌러서 생긴 zip 파일을 디스코드 <b>narooh</b> 에게 DM 으로 보내 주세요.", "   After a stutter or error, press it and send the zip file to <b>narooh</b> on Discord (DM).");
             GUILayout.Label(lr, GUILayout.Height(30));
             GUILayout.EndHorizontal();
         }
