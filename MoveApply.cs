@@ -80,12 +80,25 @@ namespace StutterFix
             return code;
         }
 
+        // 편집기 피벗 표시는 화면에 하나뿐인 편집기 UI 다. 그런데 장식 위치를 넣을 때마다 갱신해서 곡 하나에 578만 번 불렸다
+        // (길이가 있는 애니메이션이 매 프레임 장식 위치를 넣기 때문). 프레임당 한 번만 한다.
+        private static ADOFAI.DecorationPivot pivotObj;
+        private static bool pivotArg;
         public static void PivotNow(ADOFAI.DecorationPivot p, bool arg)
         {
             PivotCalls++;
-            if (depth > 0 && Enabled) { pivotDirty = true; return; }
+            if (Enabled) { pivotDirty = true; pivotObj = p; pivotArg = arg; return; }
             PivotDone++;
             pivotCross(p, arg);
+        }
+
+        // 프레임마다 한 번 (모드 갱신에서 부른다)
+        internal static void Tick()
+        {
+            if (!pivotDirty) return;
+            pivotDirty = false;
+            PivotDone++;
+            try { pivotCross(pivotObj, pivotArg); } catch { }
         }
 
         public static void ClampNow(scrDecoration d)
@@ -127,12 +140,7 @@ namespace StutterFix
             }
             dirty.Clear();
             inList.Clear();
-            if (pivotDirty)
-            {
-                pivotDirty = false;
-                PivotDone++;
-                try { pivotCross(ADOBase.editor != null ? ADOBase.editor.decPivot : null, true); } catch { }
-            }
+
         }
 
         internal static string Summary()

@@ -344,6 +344,7 @@ namespace StutterFix
             EffectBudget.Tick();
             RecolorSplit.Tick();
             FastBlend.Tick();
+            MoveApply.Tick();
             VramGuard.Tick();
             ImagePrefetch.LogAfterLoad();
 
