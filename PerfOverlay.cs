@@ -76,7 +76,7 @@ namespace StutterFix
         private int songFrames, songHitches;
         private float songWorst;
 
-        private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod; public string Cause, Detail, Title, Short; public Color Tone; }
+        private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod, IsLoading; public string Cause, Detail, Title, Short; public Color Tone; }
         private readonly List<HitchRec> history = new List<HitchRec>();   // 최근 끊김 (상세 패널 목록)
         private readonly List<HitchRec> toasts = new List<HitchRec>();    // 떠 있는 알림
         private readonly Dictionary<HitchRec, float> toastY = new Dictionary<HitchRec, float>();
@@ -168,6 +168,8 @@ namespace StutterFix
             int gcDelta = gc - lastGc;
             lastGc = gc;
 
+            if (startup) { smooth = ms < 50f ? smooth + ms / 1000f : 0f; if (smooth > 3f) startup = false; }
+
             graph[graphHead] = ms; graphHead = (graphHead + 1) % GraphN;
             recent[recentHead] = ms; recentHead = (recentHead + 1) % LowN;
             if (recentCount < LowN) recentCount++;
@@ -185,12 +187,14 @@ namespace StutterFix
             if (Mode == 0) { hitchCount++; return; }
 
             var h = Classify(ms, gcDelta);
-            if (h == null) return;   // 불러오기
-            hitchCount++;
-            if (playing) songHitches++;
-            lastHitchTime = Time.unscaledTime;
-            lastHitchMs = ms;
-            flash = 1f;
+            if (!h.IsLoading)   // 불러오기는 끊김 수와 상태 점에 넣지 않는다
+            {
+                hitchCount++;
+                if (playing) songHitches++;
+                lastHitchTime = Time.unscaledTime;
+                lastHitchMs = ms;
+                flash = 1f;
+            }
             history.Insert(0, h);
             if (history.Count > 6) history.RemoveAt(history.Count - 1);
 
@@ -203,7 +207,7 @@ namespace StutterFix
                     top.Count++;
                     top.Ms = Mathf.Max(top.Ms, ms);
                     top.Time = Time.unscaledTime;
-                    top.Tone = top.IsMod ? ModTone : top.Ms >= 50 ? Bad : Warn;
+                    top.Tone = top.IsLoading ? LoadTone : top.IsMod ? ModTone : top.Ms >= 50 ? Bad : Warn;
                     TitleOf(top);
                 }
                 else
@@ -215,10 +219,40 @@ namespace StutterFix
             textTimer = 0f;   // 목록을 바로 갱신
         }
 
+        // ── 불러오기 구간 ──────────────────────────────────────────────
+        // 게임·모드가 처음 뜨는 동안, 맵 불러오기, 곡 준비(재생/재시작), 화면 전환 직후에 튀는 프레임은
+        // 끊김이 아니라 불러오기다. 예전에는 다른 모드들이 로딩하며 멈춘 것까지 "메모리 정리", "원인 불명",
+        // "게임 바깥" 으로 떠서 헷갈렸다. 회색으로 따로 적고 끊김 수에는 넣지 않는다.
+        private static int loadFrame = -1000;
+        private static float loadTime = -999f;
+        private static string loadWhat = "";
+        private bool startup = true;   // 게임을 켠 뒤 프레임이 3초 동안 안정될 때까지
+        private float smooth;
+
+        internal static void MarkLoading(string what)
+        {
+            loadFrame = Time.frameCount;          // 긴 프레임은 시간으로 재면 창을 넘기므로 프레임 수로도 본다
+            loadTime = Time.realtimeSinceStartup;
+            loadWhat = what;
+        }
+
+        private static bool InLoading { get { return Time.frameCount - loadFrame <= 30 || Time.realtimeSinceStartup - loadTime < 2f; } }
+
+        private HitchRec Loading(float ms, string cause, string detail)
+        {
+            var h = new HitchRec { Ms = ms, Time = Time.unscaledTime, IsLoading = true, Tone = LoadTone, Cause = cause, Detail = detail };
+            TitleOf(h);
+            return h;
+        }
+
         private HitchRec Classify(float ms, int gcDelta)
         {
-            // 한참 멈춘 것은 끊김이 아니라 불러오기다
-            if (ms > 1500f || ImagePrefetch.Running) return null;
+            if (startup)
+                return Loading(ms, T("게임·모드 시작 중", "Game / mods starting"),
+                    T("게임과 모드들이 처음 준비되는 중입니다. 끊김으로 세지 않습니다", "The game and mods are still loading; not counted as a hitch"));
+            if (ms > 1500f || ImagePrefetch.Running || InLoading)
+                return Loading(ms, T("불러오기", "Loading") + (loadWhat.Length > 0 ? " · " + loadWhat : ""),
+                    T("맵이나 곡을 준비하느라 멈췄습니다. 끊김으로 세지 않습니다", "Preparing a level or scene; not counted as a hitch"));
 
             float gpu = Max(gpuRing), cpuMain = Max(cpuRing);
             float fx = (float)Math.Max(EffectScan.LastFrameEffectMs, EffectScan.FrameEffectMs);
@@ -250,8 +284,15 @@ namespace StutterFix
         // 자세히: "끊김 42ms · 효과 몰림  ×3" (정도는 글로도), 간단: "42ms  효과 몰림  ×3"
         private static void TitleOf(HitchRec h)
         {
-            string sev = h.Ms >= 100 ? T("큰 끊김", "Big hitch") : h.Ms >= 50 ? T("끊김", "Hitch") : T("짧은 끊김", "Short hitch");
             string times = h.Count > 1 ? "  ×" + h.Count : "";
+            if (h.IsLoading)   // 불러오기는 정도 대신 걸린 시간만
+            {
+                string len = h.Ms >= 1000 ? (h.Ms / 1000f).ToString("F1") + T("초", "s") : h.Ms.ToString("F0") + "ms";
+                h.Title = h.Cause + "  " + len + times;
+                h.Short = len + "   " + h.Cause + times;
+                return;
+            }
+            string sev = h.Ms >= 100 ? T("큰 끊김", "Big hitch") : h.Ms >= 50 ? T("끊김", "Hitch") : T("짧은 끊김", "Short hitch");
             h.Title = sev + " " + h.Ms.ToString("F0") + "ms  ·  " + h.Cause + times;
             h.Short = h.Ms.ToString("F0") + "ms   " + h.Cause + times;
         }
@@ -332,6 +373,7 @@ namespace StutterFix
             Track = new Color(1, 1, 1, 0.10f), Bar = new Color(1, 1, 1, 0.85f), Good = Hex(0x5FD39B), Warn = Hex(0xF2B24B), Bad = Hex(0xFF6B6B),
             Base = new Color(0.06f, 0.065f, 0.08f, 1f);
         private static readonly Color ModTone = Hex(0xB39DFF);   // 모드 때문에 끊긴 것
+        private static readonly Color LoadTone = Hex(0x8A8F9C);  // 불러오기 (끊김으로 세지 않음)
 
         private static Color LoadColor(float load, Color normal) { return load > 0.9f ? Bad : load > 0.75f ? Warn : normal; }
 

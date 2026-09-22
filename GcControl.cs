@@ -136,6 +136,7 @@ namespace StutterFix
         {
             endedByHook = true;
             Hitch.Report();
+            PerfOverlay.MarkLoading(SettingsWindow.T("화면 전환", "Scene change"));
             Resume("씬 바뀜");
         }
 
@@ -148,7 +149,7 @@ namespace StutterFix
             patched = false;   // 다시 켜면 다시 건다
         }
 
-        public static void AfterLoad() { endedByHook = false; Resume("맵 로딩"); }
+        public static void AfterLoad() { endedByHook = false; PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); Resume("맵 로딩"); }
 
         public static void OnSongEnd(MethodBase __originalMethod)
         {
@@ -168,6 +169,7 @@ namespace StutterFix
         public static void OnSongRestart(MethodBase __originalMethod)
         {
             Hitch.Report();
+            PerfOverlay.MarkLoading(SettingsWindow.T("곡 준비", "Level start"));
             // 재시작은 어차피 화면이 바뀌는 순간이라 바로 치운다.
             // (재생 누르는 순간부터 GC 를 꺼 두는 것도 해 봤는데, 곡 시작 시간은 그대로였고 시작 직후
             //  "곡 아님" 으로 보이는 순간에 3초 뒤 정리가 예약되어 곡 초반에 끊겼다. 되돌렸다.)
