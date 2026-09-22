@@ -34,6 +34,17 @@ namespace StutterFix
             Instance = go.AddComponent<PerfOverlay>();
         }
 
+        // UMM 창(Ctrl+F10)을 열고 닫을 때: 열 때는 UMM 과 각 모드가 설정 화면을 처음 만들고, 닫을 때는 모드들이
+        // 설정을 파일로 저장한다(AdofaiTweaks 는 11개). 그 순간의 멈춤은 게임 끊김이 아니라 "모드 창" 으로 적는다.
+        internal static void Install(HarmonyLib.Harmony h)
+        {
+            var prefix = new HarmonyLib.HarmonyMethod(typeof(PerfOverlay), nameof(UmmToggle));
+            foreach (var m in HarmonyLib.AccessTools.GetDeclaredMethods(typeof(UnityModManagerNet.UnityModManager.UI)))
+                if (m.Name == "ToggleWindow") h.Patch(m, prefix: prefix);
+        }
+
+        private static void UmmToggle() { MarkLoading(SettingsWindow.T("모드 창 (UMM)", "Mod window (UMM)")); }
+
         internal static void Destroy()
         {
             if (Instance == null) return;
@@ -475,6 +486,7 @@ namespace StutterFix
         private void Build()
         {
             built = true;
+            MarkLoading(SettingsWindow.T("모드 창 준비", "Preparing mod window"));   // 글꼴/모양 그림을 처음 만드는 프레임
             font = SettingsWindow.UiFont();
             SettingsWindow.WarmFont();
             tWhite = Texture2D.whiteTexture;

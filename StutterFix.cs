@@ -108,6 +108,7 @@ namespace StutterFix
                 GcControl.Install();
                 SettingsWindow.Create();
                 PerfOverlay.Create();
+                Try(() => PerfOverlay.Install(harmony));
 
                 // 측정 (개발자용만)
                 if (Edition.Dev)

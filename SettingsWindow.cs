@@ -778,6 +778,7 @@ namespace StutterFix
         private void Build()
         {
             built = true;
+            PerfOverlay.MarkLoading(T("모드 창 준비", "Preparing mod window"));   // 둥근 카드 그림을 처음 만드는 프레임
             WarmFont();
             font = UiFont();
             if (font == null) font = GUI.skin.font;
