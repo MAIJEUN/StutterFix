@@ -382,7 +382,7 @@ namespace StutterFix
         // 설정 파일에 저장된 켜기/끄기를 각 기능에 반영한다.
         internal static void ApplyConfig()
         {
-            if (Config.ShowOverlay) { Config.ShowOverlay = false; Config.OverlayMode = 3; }
+            if (Config.ShowOverlay) { Config.ShowOverlay = false; Config.OverlayMode = 1; }   // 예전 "모니터 켜짐" 은 아이콘으로
             ApplyToggles();
         }
 
@@ -557,7 +557,7 @@ namespace StutterFix
         public bool ShaderWarm = true;
         public string Language = "";   // "" = 윈도우 언어를 따름, "ko", "en"
         public KeyCode WindowKey = KeyCode.Insert;
-        public bool ShowOverlay = false;   // 예전 설정 (켜져 있었으면 상세 모드로 옮긴다)
+        public bool ShowOverlay = false;   // 예전 설정 (켜져 있었으면 아이콘 모드로 옮긴다)
 
         // 실시간 모니터: 0 끔, 1 아이콘(화면 끝의 작은 탭), 2 미니(한 줄), 3 상세(패널). Shift+키로 차례로 바꾼다.
         public int OverlayMode = 1;
