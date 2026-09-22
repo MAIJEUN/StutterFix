@@ -430,8 +430,8 @@ namespace StutterFix
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             GUILayout.Space(4);
-            GUILayout.Label(T("장식 이미지가 수천 장인 맵은 그래픽 메모리(VRAM)가 넘쳐 GPU 가 크게 느려집니다. 긴 변이 기준보다 큰 이미지를 줄여 불러옵니다. 장식의 화면 크기는 그대로이고 선명도만 낮아집니다. <b>자동</b>은 맵을 열 때 이미지가 그래픽카드 용량의 55% 를 넘을 것 같을 때만 필요한 만큼 줄이고, 넉넉하면 그대로 둡니다. 다음에 여는 맵부터 적용됩니다.",
-                "Levels with thousands of decoration images can overflow video memory (VRAM) and slow the GPU badly. Images larger than the limit are loaded smaller. Decorations keep their on-screen size; only sharpness drops. <b>Auto</b> only shrinks images when a level would use more than 55% of your VRAM, and leaves them alone otherwise. Applies to the next level you open."), sDim);
+            GUILayout.Label(T("장식 이미지가 수천 장인 맵은 그래픽 메모리(VRAM)가 넘쳐 GPU 가 크게 느려집니다. 긴 변이 기준보다 큰 이미지를 줄여 불러옵니다. 장식의 화면 크기는 그대로이고 선명도만 낮아집니다. <b>자동</b>은 맵을 열 때 그래픽카드에 남은 여유를 보고, 모자랄 것 같을 때만 끊기지 않을 만큼 큰 이미지부터 줄입니다. 넉넉하면 그대로 둡니다. 다음에 여는 맵부터 적용됩니다.",
+                "Levels with thousands of decoration images can overflow video memory (VRAM) and slow the GPU badly. Images larger than the limit are loaded smaller. Decorations keep their on-screen size; only sharpness drops. <b>Auto</b> checks how much VRAM is free and shrinks only the largest images, only as far as needed to avoid stutter. Applies to the next level you open."), sDim);
             GUILayout.Space(10);
             int cap = c.ImageMaxSide == ImagePrefetch.Auto ? 1 : c.ImageMaxSide >= 4096 ? 2 : c.ImageMaxSide > 0 ? 3 : 0;
             if (Segment("imgcap", ref cap, new[] { T("끔", "Off"), T("자동", "Auto"), T("긴 변 4096", "4096 px"), T("긴 변 2048", "2048 px") }))

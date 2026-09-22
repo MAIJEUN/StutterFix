@@ -35,7 +35,7 @@ made by **naro** & **Claude**
 |---|---|
 | 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 CPU 여러 코어에서 동시에 풉니다. 측정: 이미지 700장 맵 67초 → 38초. 윈도우 해독기와 픽셀 단위로 비교해 782장 모두 일치 |
 | 불필요한 정리 건너뛰기 | 맵을 열거나 편집으로 돌아올 때 게임이 부르는 에셋 정리(한 번에 120~200ms)를 건너뜁니다. |
-| 큰 이미지 줄이기 (기본 자동) | 맵을 열 때 이미지 크기만 먼저 읽어, 텍스처가 그래픽카드 용량의 55%를 넘을 것 같으면 큰 이미지를 긴 변 4096 → 2048 → 1024 순으로 필요한 만큼 줄여 불러옵니다. 화면에 보이는 크기는 그대로이고 선명도만 낮아집니다. VRAM이 넉넉하면 그대로 둡니다. 측정: 이미지 2,000장 맵(VRAM 8GB)에서 VRAM 95% → 74%, 카메라 이동 때 150~200ms 멈춤이 사라짐 |
+| 큰 이미지 줄이기 (기본 자동) | 맵을 열 때 이미지 크기만 먼저 읽고 그래픽카드의 남은 여유와 비교해, VRAM 사용이 85%를 넘을 것 같을 때만 큰 이미지를 긴 변 4096 → 3072 → 2048 → 1536 → 1024 중 필요한 단계까지만 줄여 불러옵니다. 화면에 보이는 크기는 그대로이고 선명도만 낮아집니다. VRAM이 넉넉하면 그대로 둡니다. 측정: 이미지 2,000장 맵(VRAM 8GB)에서 VRAM 95% → 74%, 카메라 이동 때 150~200ms 멈춤이 사라짐 |
 
 ### 그래픽
 
@@ -95,7 +95,7 @@ Stutter Fix reduces mid-play hitches and level loading times on heavy custom lev
 
 **Install:** download `StutterFix-x.y.z-player.zip` from Releases and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** in game to open the settings window (Korean/English); both shortcuts can be rebound on its Home page.
 
-**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, drawing additive blend-mode decorations with hardware blending instead of a full-screen grab per object (pixel-identical), parallel PNG decoding for decoration images on level load, skipping asset unloads, automatic downscaling of large decoration images only when a level would overflow VRAM, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
+**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, shader warm-up, drawing additive blend-mode decorations with hardware blending instead of a full-screen grab per object (pixel-identical), parallel PNG decoding for decoration images on level load, skipping asset unloads, automatic downscaling of the largest decoration images, only as far as needed when a level would overflow VRAM, and multithreaded rendering via one line in `boot.config` (reverted when the mod is turned off).
 
 **Live monitor:** FPS, CPU/GPU/VRAM/RAM and hitch alerts with an estimated cause (Shift+Insert cycles icon / mini / detail / off).
 

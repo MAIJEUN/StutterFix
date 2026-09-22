@@ -105,23 +105,33 @@ namespace StutterFix
         private static int shrunkCount;
         private static readonly Dictionary<Texture2D, float> shrunk = new Dictionary<Texture2D, float>();
 
-        // 자동: 이 맵의 PNG 머리(가로/세로)만 읽어 텍스처가 VRAM 을 얼마나 먹을지 어림하고,
-        // 그래픽카드 용량의 55% 를 넘으면 넘지 않을 때까지 한도를 4096 -> 2048 -> 1024 로 낮춘다.
-        // 근거: VRAM 7949MB 카드에서 이미지 2천 장 맵이 게임 전용 6026MB(전체 95%)를 쓸 때, 카메라가 새 장식들을
-        // 비추는 순간마다 GPU 가 150~200ms 멈췄다. 2048 로 줄이자 4300MB 가 되고 멈춤이 없어졌다.
-        // VRAM 이 넉넉한 맵과 컴퓨터에서는 아무것도 줄이지 않는다.
+        // 자동: 이 맵의 PNG 머리(가로/세로)만 읽어 텍스처가 VRAM 을 얼마나 먹을지 어림하고, 모자랄 때만 필요한 만큼 줄인다.
+        // 한도 후보는 원본 -> 4096 -> 3072 -> 2048 -> 1536 -> 1024 (큰 이미지부터 줄어든다). 넘지 않는 첫 단계를 고른다.
+        //
+        // 근거 (VRAM 7949MB, 이미지 2천 장 맵):
+        //   원본: 게임 전용 6026MB, 전체 7579MB(95%) -> 카메라가 새 장식을 비출 때마다 GPU 150~200ms 멈춤
+        //   2048: 게임 전용 4300MB, 전체 5883MB(74%) -> 멈춤 없음, 화질 차이 거의 안 보임
+        //   1024: 멈춤 없음, 화질이 눈에 띄게 낮아짐 (처음 자동은 VRAM 55% 를 예산으로 잡아 여기까지 줄였다)
+        // 머리로 어림한 양(가로x세로x4)은 실제보다 크게 나왔다(원본 어림 9532MB 인데 실제 장식 몫은 약 5000MB).
+        // 그래서 어림에 0.6 을 곱해 실제 양으로 보고, 전체가 VRAM 의 85% 를 넘지 않을 만큼만 쓴다.
+        //   장식에 쓸 수 있는 양 = VRAM x 0.85 - 다른 프로그램이 쓰는 양 - 게임이 지금 쓰는 양
+        // 다른 프로그램/게임 사용량은 실시간 모니터가 읽은 값을 쓰고, 없으면 VRAM 의 15% / 1000MB 로 본다.
         internal static string AutoNote = "";
-        private static readonly int[] autoCaps = { 0, 4096, 2048, 1024 };
+        private static readonly int[] autoCaps = { 0, 4096, 3072, 2048, 1536, 1024 };
+        private const double EstimateToReal = 0.6, TargetUse = 0.85;
 
         private static int ChooseAuto(List<Item> list)
         {
             long t0 = Stopwatch.GetTimestamp();
             var dims = new List<long>(list.Count);   // (w << 32) | h
             var head = new byte[24];
+            var seenFull = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int dup = 0;
             foreach (var it in list)
             {
                 try
                 {
+                    if (!seenFull.Add(Path.GetFullPath(it.Path))) { dup++; continue; }   // 같은 파일을 다른 경로로 적은 것
                     using (var fs = new FileStream(it.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 64))
                     {
                         if (fs.Read(head, 0, 24) < 24) continue;
@@ -134,7 +144,13 @@ namespace StutterFix
                 catch { }
             }
             long vram = SystemInfo.graphicsMemorySize;
-            long budget = vram * 55 / 100;
+            float used = SystemMonitor.VramUsedMB, game = SystemMonitor.VramGameMB;
+            bool measured = used > 0 && game > 0;
+            double other = measured ? Math.Max(0, used - game) : vram * 0.15;
+            double gameNow = measured ? game : 1000;
+            double realBudget = Math.Max(500, vram * TargetUse - other - gameNow);
+            double budget = realBudget / EstimateToReal;   // 어림 단위로 바꾼 예산
+
             int pick = 1024;
             long mbAtPick = 0, mbFull = 0;
             foreach (int cap in autoCaps)
@@ -152,12 +168,15 @@ namespace StutterFix
                 if (mb <= budget) { pick = cap; break; }
             }
             double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+            string basis = string.Format("장식에 쓸 수 있는 VRAM {0:F0}MB (VRAM {1}MB x 0.85 - 다른 프로그램 {2:F0}MB - 게임 {3:F0}MB{4})",
+                realBudget, vram, other, gameNow, measured ? "" : ", 어림값");
             AutoNote = pick == 0
-                ? string.Format("자동: 이미지 {0}MB, 예산 {1}MB 안이라 그대로", mbFull, budget)
-                : string.Format("자동: 이미지 {0}MB 가 예산 {1}MB(VRAM {2}MB 의 55%) 를 넘어 긴 변 {3} 으로 줄임 -> {4}MB", mbFull, budget, vram, pick, mbAtPick);
-            Main.Entry.Logger.Log(string.Format("[이미지] {0} (머리 {1}장 읽기 {2:F0}ms)", AutoNote, dims.Count, ms));
+                ? string.Format("자동: 그대로 (이미지 약 {0:F0}MB, {1})", mbFull * EstimateToReal, basis)
+                : string.Format("자동: 긴 변 {0} 으로 줄임 (이미지 약 {1:F0}MB -> {2:F0}MB, {3})", pick, mbFull * EstimateToReal, mbAtPick * EstimateToReal, basis);
+            Main.Entry.Logger.Log(string.Format("[이미지] {0} (머리 {1}장 읽기 {2:F0}ms, 겹친 경로 {3}개)", AutoNote, dims.Count, ms, dup));
             return pick;
         }
+
 
         public static void SpritePrefix(Texture2D texture, ref float pixelsPerUnit) { AdjustPixelsPerUnit(texture, ref pixelsPerUnit); }
 
