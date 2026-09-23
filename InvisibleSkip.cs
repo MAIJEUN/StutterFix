@@ -169,7 +169,7 @@ namespace StutterFix
 
         public static bool LazyPrefix(scrDecoration __instance, Vector2 pivotPos, Vector2 pivotOffset)
         {
-            if (!LazyMove || !Enabled || !Hitch.Playing) return true;   // 편집기에서는 선택 테두리가 이 위치를 쓴다
+            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return true;   // 편집기에서는 선택 테두리가 이 위치를 쓴다
             // 보이는 장식은 필드 하나만 읽고 바로 원래대로 간다 (SetPosition 은 곡 하나에 500만 번 넘게 불린다)
             if (colorRef(__instance).a > 0f) return true;
             var v = __instance as scrVisualDecoration;
@@ -193,13 +193,21 @@ namespace StutterFix
             setPosition(v, pivotPosRef(v), pivotOffRef(v));
         }
 
+        // 곡이 끝날 때는 아직 "재생 중" 으로 보여서, 반영하려고 부른 SetPosition 이 도로 미뤄졌다. 반영하는 동안은 막는다.
+        private static bool applyingAll;
+
         internal static void ApplyAllLazy()
         {
             if (lazy.Count == 0) return;
             var list = new List<scrDecoration>(lazy);
             lazy.Clear();
-            foreach (var d in list)
-                if (d != null) { LazyApplied++; setPosition(d, pivotPosRef(d), pivotOffRef(d)); }
+            applyingAll = true;
+            try
+            {
+                foreach (var d in list)
+                    if (d != null) { LazyApplied++; setPosition(d, pivotPosRef(d), pivotOffRef(d)); }
+            }
+            finally { applyingAll = false; }
         }
 
         internal static bool IsHidden(scrDecoration d)
