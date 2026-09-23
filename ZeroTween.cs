@@ -112,6 +112,15 @@ namespace StutterFix
         // FastMove 가 쓴다: 대역에 게임 코드처럼 SetEase(ease) 를 한 뒤의 이징 끝점 (Flash 계열의 overshoot 정수화까지 같은 경로)
         private static TweenerCore<Vector2, Vector2, VectorOptions> kT;
         internal static bool CanEase { get { return activeRef != null && easeEval != null; } }
+        // DecoAnim 이 쓴다: 게임 코드처럼 SetEase(ease) 를 한 애니메이션의 overshoot/period 와, 같은 이징 함수 호출
+        internal static void EaseParams(Ease ease, out float over, out float period)
+        {
+            var t = Proxy(ref kT);
+            t.SetEase(ease);
+            over = overshootRef(t); period = periodRef(t);
+            activeRef(t) = false;
+        }
+        internal static float Eval(Ease ease, float time, float duration, float over, float period) { return easeEval(ease, null, time, duration, over, period); }
         internal static float EaseEnd(Ease ease)
         {
             var t = Proxy(ref kT);

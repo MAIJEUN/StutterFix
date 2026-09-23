@@ -65,6 +65,7 @@
     <Compile Include="FastMove.cs" />
     <Compile Include="Precheck.cs" />
     <Compile Include="FrameParts.cs" />
+    <Compile Include="DecoAnim.cs" />
     <Compile Include="UiDraw.cs" />
     <Compile Include="LogExport.cs" />
     <Compile Include="Hotkey.cs" />

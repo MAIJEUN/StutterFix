@@ -106,7 +106,7 @@ namespace StutterFix
                     return false;
                 }
                 if (!Take(__instance)) return Orig(__instance);   // 원래 코드가 돈다 (아직 아무것도 안 바꿨다)
-                bool sample = Edition.Dev && ((Effects + 1) % 16) == 1;
+                bool sample = Edition.Dev && durRef(__instance) <= 0f && ((Effects + 1) % 16) == 1;   // 길이 있는 효과는 원래 코드로 다시 돌리면 애니메이션을 끊어 버려 검증하지 않는다
                 if (sample) { hidBefore.Clear(); foreach (var dec in src) hidBefore.Add(InvisibleSkip.IsHidden(dec)); }
                 Run(__instance);
                 if (sample) Verify(__instance, __args);
@@ -215,7 +215,7 @@ namespace StutterFix
                 int key = (int)kv.Key;
                 if (key < 0 || key >= 31 || (mask & (1 << key)) == 0) continue;
                 var t = kv.Value;
-                if (t != null && !ReferenceEquals(t, dead) && t.active) return false;
+                if (t != null && !ReferenceEquals(t, dead) && (t.active || DecoAnim.IsRunning(t))) return false;
             }
             return true;
         }
@@ -263,7 +263,11 @@ namespace StutterFix
         // 맡을 수 있는지 보고, 맡으면 대상 목록을 만든다. 여기까지는 게임 상태를 바꾸지 않는다.
         private static bool Take(ffxMoveDecorationsPlus fx)
         {
-            if (durRef(fx) > 0f) { if (Edition.Dev || Main.MeasureBuild) CountAnim(fx); return No(0); }
+            if (durRef(fx) > 0f)
+            {
+                if (Edition.Dev || Main.MeasureBuild) CountAnim(fx);
+                if (!CanAnim(fx)) return No(0);   // 길이 있는 효과: 모드 애니메이터가 맡을 수 있을 때만 (DecoAnim)
+            }
             if (!ADOBase.customLevel) return No(1);                                        // 공식 맵: 길이 보정(AdjustDurationForHardbake)이 있다
             if ((int)ADOBase.controller.visualQuality == 10) return No(2);                 // 원래 코드의 그래픽 설정 검사는 원래대로
             if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) return No(3);
@@ -383,6 +387,21 @@ namespace StutterFix
             for (int i = 0; i < list.Count && i < 8; i++) sb.AppendFormat(" {0} 효과 {1}개 장식 {2}개,", MixName(list[i].Key), list[i].Value[0], list[i].Value[1]);
             return sb.ToString().TrimEnd(',');
         }
+        // 길이 있는 효과를 모드 애니메이터(DecoAnim)로 맡을 수 있는가: 위치·회전·크기·색·불투명도만 (피벗·시차 오프셋·시차 배율이 섞이면 원래대로),
+        // 곡 시작 직후(되감기 구간)가 아님
+        private static bool CanAnim(ffxMoveDecorationsPlus fx)
+        {
+            if (!DecoAnim.Active || EffectBudget.InGrace) return false;
+            if (parUsed(fx)) return false;
+            if (!fdt(fx))
+            {
+                var a = tParOff(fx); if (parOffUsed(fx) && (!float.IsNaN(a.x) || !float.IsNaN(a.y))) return false;
+                var b = tPiv(fx); if (pivUsed(fx) && (!float.IsNaN(b.x) || !float.IsNaN(b.y))) return false;
+            }
+            return true;
+        }
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, float> tRot = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, float>("targetRot");
+        internal static long AnimEffects;
         private static bool No(int w) { why[w]++; Fallbacks++; return false; }
 
         private static void Run(ffxMoveDecorationsPlus fx)
@@ -396,7 +415,10 @@ namespace StutterFix
             var tp = tPos(fx); var tpo = tParOff(fx); var tpv = tPiv(fx);
             bool px = !float.IsNaN(tp.x), py = !float.IsNaN(tp.y), pox = !float.IsNaN(tpo.x), poy = !float.IsNaN(tpo.y), pvx = !float.IsNaN(tpv.x), pvy = !float.IsNaN(tpv.y);
             bool sx = !float.IsNaN(sc.x), sy = !float.IsNaN(sc.y);
-            float k = (scale || par) ? ZeroTween.EaseEnd(easeRef(fx)) : 1f;
+            bool anim = durRef(fx) > 0f;   // 길이 있는 효과: 모드 애니메이터(DecoAnim)로
+            float dur = durRef(fx); var ease = easeRef(fx);
+            float k = (!anim && (scale || par)) ? ZeroTween.EaseEnd(ease) : 1f;
+            if (anim) AnimEffects++;
             Vector2 parTarget = tParallax(fx) / 100f;
             var mt = mtRef(fx); bool visV = visible(fx); int depth = tDepth(fx);
 
@@ -419,6 +441,25 @@ namespace StutterFix
                 {
                     var dec = targets[i];
                     var d = tweensRef(dec);
+                    if (anim)
+                    {
+                        // 원래 블록 순서: 배치 -> 위치X/Y -> 회전 -> 크기X/Y -> 색 -> 불투명도 -> 보이기 -> 깊이 (피벗·시차는 CanAnim 에서 뺐다)
+                        if (Precheck.Active != 0) InvisibleSkip.TouchDeco(dec, "애니메이션 시작");   // 애니메이션 칸이 살아 있게 된다
+                        if (placement) setPlacement(dec, mt);
+                        if (pos)
+                        {
+                            Vector2 sp = relative ? pivotPosRef(dec) : startPosRef(dec);
+                            if (px) DecoAnim.Pos(dec, d, 1, sp.x, tp.x, dur, ease);
+                            if (py) DecoAnim.Pos(dec, d, 2, sp.y, tp.y, dur, ease);
+                        }
+                        if (rot) DecoAnim.Rot(dec, d, tRot(fx), dur, ease);
+                        if (scale) { if (sx) DecoAnim.Scale(dec, d, 7, sc, dur, ease); if (sy) DecoAnim.Scale(dec, d, 8, sc, dur, ease); }
+                        if (col) DecoAnim.Col(dec, d, tCol(fx), dur, ease);
+                        if (opa) DecoAnim.Opa(dec, d, tOpa(fx), dur, ease);
+                        if (vis) setVisible(dec, visV ? !forceHideRef(dec) : false);
+                        if (dep) setDepth(dec, depth);
+                        continue;
+                    }
                     InstantMove.DecoStart(AllDead(d));
                     if (placement) setPlacement(dec, mt);
                     if (pos)
@@ -580,8 +621,9 @@ namespace StutterFix
             else if (First.Length > 0) s += First;
             s += Precheck.Summary();
             s += AnimSummary();
+            s += DecoAnim.Summary();
             return s;
         }
-        internal static void Reset() { animMix.Clear(); Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { animMix.Clear(); DecoAnim.ResetStats(); AnimEffects = 0; Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }
