@@ -122,6 +122,7 @@ namespace StutterFix
         // 곡 하나의 평균을 로그로 남기려고 GPU/CPU 시간도 함께 더해 둔다.
         // "왜 프레임이 떨어졌나" 는 둘 중 어느 쪽이 큰지를 봐야 알 수 있다.
         private double songGpu, songCpu, songMod;
+        private float songWorstPlay;
         private int songTiming;
         // 곡 평균만으로는 "가벼운 구간에서 몇 FPS 까지 나오나" 를 알 수 없다(같은 설정으로도 곡 평균이 121~149 로 흔들렸다).
         // 곡을 10초씩 잘라 구간마다 평균을 남긴다.
@@ -304,7 +305,7 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
+            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
             wasPlaying = playing;
             if (!playing) SongBucket = -1;
             if (playing && ms < 1500f)
@@ -313,6 +314,7 @@ namespace StutterFix
                 SongBucket = b < MaxBuckets ? b : -1;
                 if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
+                if (!InStartWindow && ms > songWorstPlay) songWorstPlay = ms;   // 곡 시작 멈춤에 가려지지 않게 따로
                 if (lastGpu > 0f || lastCpu > 0f) { songGpu += lastGpu; songCpu += lastCpu; songTiming++; }
                 songMod += ModCost.LastFrameMs;   // 모드가 그 프레임에 쓴 시간(모니터 그리기 포함)
             }
@@ -472,8 +474,8 @@ namespace StutterFix
         {
             var o = Instance;
             if (o == null || o.songFrames < 30) return null;
-            string s = string.Format("평균 {0:F0} FPS ({1:F1}ms), 가장 긴 프레임 {2:F0}ms, 끊김 {3}번, 프레임 {4}개",
-                1000.0 * o.songFrames / System.Math.Max(1.0, o.songMs), o.songMs / o.songFrames, o.songWorst, o.songHitches, o.songFrames);
+            string s = string.Format("평균 {0:F0} FPS ({1:F1}ms), 가장 긴 프레임 {2:F0}ms, 곡 시작 연출 뒤 가장 긴 프레임 {5:F0}ms, 끊김 {3}번, 프레임 {4}개",
+                1000.0 * o.songFrames / System.Math.Max(1.0, o.songMs), o.songMs / o.songFrames, o.songWorst, o.songHitches, o.songFrames, o.songWorstPlay);
             if (o.songTiming > 0)
                 s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);

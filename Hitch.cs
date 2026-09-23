@@ -202,7 +202,7 @@ namespace StutterFix
                     string perf = PerfOverlay.SongSummary();
                     if (perf != null) Main.Entry.Logger.Log("[곡] " + perf);
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary() + EffectBudget.Summary());
-                    EffectBudget.DeferredByEstimate = 0;
+                    EffectBudget.ResetLate();
                     if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary());
                 }
                 ZeroTween.Reset(); MoveApply.Reset();

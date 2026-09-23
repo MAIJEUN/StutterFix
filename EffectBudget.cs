@@ -32,6 +32,8 @@ namespace StutterFix
             public object Instance;
             public MethodBase Method;
             public object[] Args;
+            public float Time;   // 원래 시작해야 했던 때(실시간)
+            public int Frame;
         }
 
         private static readonly List<Pending> queue = new List<Pending>();
@@ -76,7 +78,7 @@ namespace StutterFix
                 if (usedMs < BudgetMs) DeferredByEstimate++;
             }
 
-            queue.Add(new Pending { Instance = instance, Method = method, Args = args });
+            queue.Add(new Pending { Instance = instance, Method = method, Args = args, Time = UnityEngine.Time.realtimeSinceStartup, Frame = UnityEngine.Time.frameCount });
             DeferredTotal++;
             return false;
         }
@@ -87,7 +89,14 @@ namespace StutterFix
         // 비용은 옮길 장식 수에 거의 비례한다. 대상 장식 수는 taggedDecorations[태그] 목록 길이의 합이라 사전 조회 몇 번으로 센다
         // (같은 장식이 여러 태그에 있으면 조금 많게 센다 - 넉넉한 쪽이라 괜찮다). 장식 하나당 비용은 실행할 때마다 재서 학습한다.
         internal static long DeferredByEstimate;
-        internal static string Summary() { return DeferredByEstimate > 0 ? string.Format(" | 효과 나누기: 무거울 것 같아 다음 프레임으로 미룬 효과 {0}개 (장식 하나당 {1:F2}us 로 학습)", DeferredByEstimate, PerDecoMs * 1000) : ""; }
+        internal static long LateN; internal static double LateSumMs; internal static float LateMaxMs; internal static int LateMaxFrames;
+        internal static void ResetLate() { DeferredByEstimate = 0; LateN = 0; LateSumMs = 0; LateMaxMs = 0; LateMaxFrames = 0; }
+        internal static string Summary()
+        {
+            if (LateN == 0 && DeferredByEstimate == 0) return "";
+            return string.Format(" | 효과 나누기: 뒤로 미룬 효과 {0}개(그중 무거울 것 같아 미룬 것 {1}개), 늦게 시작한 정도 평균 {2:F1}ms 최대 {3:F1}ms ({4}프레임), 장식 하나당 {5:F2}us 로 학습",
+                LateN, DeferredByEstimate, LateN > 0 ? LateSumMs / LateN : 0, LateMaxMs, LateMaxFrames, PerDecoMs * 1000);
+        }
         internal static double PerDecoMs = 0.0015;   // 처음 값. 실행하며 맞춰 간다
         private static int lastCount, curCount;
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, List<string>> tagsRef =
@@ -167,6 +176,9 @@ namespace StutterFix
                     var uo = p.Instance as UnityEngine.Object;
                     if (uo == null) continue;
 
+                    // 얼마나 늦게 시작했나 (연출이 늦어지는 정도를 눈 대신 숫자로 본다)
+                    float late = (UnityEngine.Time.realtimeSinceStartup - p.Time) * 1000f; int lateF = UnityEngine.Time.frameCount - p.Frame;
+                    LateN++; LateSumMs += late; if (late > LateMaxMs) LateMaxMs = late; if (lateF > LateMaxFrames) LateMaxFrames = lateF;
                     long t0 = Stopwatch.GetTimestamp();
                     try { p.Method.Invoke(p.Instance, p.Args); }
                     catch { failed++; }
