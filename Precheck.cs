@@ -49,7 +49,7 @@ namespace StutterFix
         internal static long InvTouch, InvEffect, InvList, NotReady, NotNoop, NoBit, Resets;
         internal static string FirstNotNoop = "", VerifyFirst = "";
         private static readonly Dictionary<string, int> skipWhy = new Dictionary<string, int>();
-        private static int bigSkipped; private static string bigWhy = "";
+        private static int bigSkipped, logged; private static string bigWhy = "";
 
         private static readonly AccessTools.FieldRef<scrVfxPlus, List<ffxPlusBase>> effRef = AccessTools.FieldRefAccess<scrVfxPlus, List<ffxPlusBase>>("effects");
         private static readonly AccessTools.FieldRef<scrVfxPlus, int> idxRef = AccessTools.FieldRefAccess<scrVfxPlus, int>("currentVfxIndex");
@@ -232,6 +232,7 @@ namespace StutterFix
         private static void NotNoopWhy(Plan p, string why)
         {
             p.Valid = false; NotNoop++;
+            if (Edition.Dev && ++logged <= 20) Main.Entry.Logger.Log(string.Format("[미리 확인] 장식 {0}개 효과 ({1:F2}초) 포기: {2} ({3}번째 장식)", p.Targets.Count, startRef(p.Fx), why, p.Checked + 1));
             if (FirstNotNoop.Length < 200 && FirstNotNoop.IndexOf(why, StringComparison.Ordinal) < 0) FirstNotNoop += (FirstNotNoop.Length > 0 ? ", " : "") + why;
         }
 
@@ -240,7 +241,7 @@ namespace StutterFix
         {
             if (d.GetType() != typeof(scrVisualDecoration)) return "일반 이미지 장식 아님";
             if (stickRef(d)) return "타일에 붙은 장식";
-            if (!FastMove.AllDeadMask(tweensRef(d), p.Keys)) return "애니메이션이 살아 있음";
+            if (!FastMove.NoLiveMask(tweensRef(d), p.Keys)) return "애니메이션이 살아 있음";
             if (p.Pos)
             {
                 if (!InvisibleSkip.NoParallax(d))
@@ -338,7 +339,7 @@ namespace StutterFix
         {
             ResetAll();
             Created = Ready = Used = UsedDecos = Checks = VerifyN = VerifyDecos = VerifyMismatch = 0;
-            InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = "";
+            InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = ""; logged = 0;
         }
     }
 }

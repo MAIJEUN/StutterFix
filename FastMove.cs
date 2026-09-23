@@ -186,6 +186,22 @@ namespace StutterFix
         internal static IEqualityComparer<scrDecoration> DecoEq { get { return RefEq.I; } }
         internal static bool IsClean(List<scrDecoration> l, int ver) { int at; return cleanAt.TryGetValue(l, out at) && at == ver; }
         internal static void MarkClean(List<scrDecoration> l, int ver) { cleanAt[l] = ver; }
+        // 키 묶음 중 실제로 돌고 있는 애니메이션이 없는가 (칸이 없거나, 끝난 대역이거나, 이미 끝난 애니메이션).
+        // 원래 코드는 이런 칸을 "끊고(아무 일 없음) 끝난 대역을 넣는다". 칸이 새로 생기거나 끝난 것끼리 바뀌는 것 말고는 달라지는 게 없다
+        // (게임 코드에서 이 사전을 읽는 곳은 효과 시작과 장식 삭제뿐이고, 둘 다 끝난 애니메이션에는 아무것도 안 한다).
+        internal static bool NoLiveMask(Dictionary<global::TweenType, Tween> d, int mask)
+        {
+            if (d == null) return false;
+            var dead = InstantMove.Dead;
+            foreach (var kv in d)
+            {
+                int key = (int)kv.Key;
+                if (key < 0 || key >= 31 || (mask & (1 << key)) == 0) continue;
+                var t = kv.Value;
+                if (t != null && !ReferenceEquals(t, dead) && t.active) return false;
+            }
+            return true;
+        }
         // 키 묶음(비트 = TweenType 번호)이 사전에 모두 있고 전부 "끝난 대역" 인가
         internal static bool AllDeadMask(Dictionary<global::TweenType, Tween> d, int mask)
         {
