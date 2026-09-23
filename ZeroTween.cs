@@ -223,6 +223,7 @@ namespace StutterFix
             var onUpdate = t.onUpdate; var onComplete = t.onComplete;
             if (onUpdate == null && onComplete == null) NoCallback++;
             bool prof = Edition.Dev && (Fast % 64) == 0;
+            if (prof) { Note(onUpdate, true); Note(onComplete, false); }   // 이름 만들기는 시간 재기 밖에서 (예전엔 OnUpdate 시간에 섞여 4us 로 보였다)
             long t0 = prof ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             try
             {
@@ -237,7 +238,6 @@ namespace StutterFix
             gF = null; sF = null; gV = null; sV = null; gC = null; sC = null;
             activeRef(t) = false;
             Fast++;
-            if (prof) { Note(onUpdate, true); Note(onComplete, false); }
             if (onUpdate != null) { try { onUpdate(); } catch (Exception ex) { Log(ex); } }
             long t2 = prof ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             if (onComplete != null) { try { onComplete(); } catch (Exception ex) { Log(ex); } }
