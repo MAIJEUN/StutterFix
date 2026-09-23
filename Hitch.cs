@@ -175,6 +175,7 @@ namespace StutterFix
         private static void SongStarted()
         {
             endLogged = false;
+            RestartAdvisor.SongStarted();
             InvisibleSkip.ResetPeak();
             PerfOverlay.BeginStartPhase();   // 첫 타일 전(최대 5초)의 시작 연출 멈춤은 끊김으로 세지 않는다
             EffectBudget.Reset();

@@ -120,6 +120,7 @@ namespace StutterFix
                 TweenFix.Install(harmony);
                 GcControl.Install();
                 SettingsWindow.Create();
+                RestartAdvisor.Init();
                 PerfOverlay.Create();
                 Try(() => PerfOverlay.Install(harmony));
 

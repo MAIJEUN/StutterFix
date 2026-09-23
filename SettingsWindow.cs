@@ -159,7 +159,8 @@ namespace StutterFix
         private bool panelOpen;
         private float panelT;       // 패널이 펼쳐진 정도(0~1)
         private Texture2D[] icons;
-        private GUIStyle sTip;
+        private GUIStyle sTip, sTipLeft;
+        private float restartArmedUntil;
 
         private string[] PageNames()
         {
@@ -168,7 +169,7 @@ namespace StutterFix
 
         private Rect DockRect(float sw, float sh, float e)
         {
-            float h = 6 * IconS + 5 * IconGap + 20;
+            float h = 7 * IconS + 6 * IconGap + 20 + 10;   // 기능 6개 + 구분선 + 재시작
             return new Rect(sw - DockW - 12 + (1 - e) * (DockW + 24), (sh - h) / 2f, DockW, h);   // 오른쪽 밖에서 미끄러져 들어온다
         }
 
@@ -279,6 +280,40 @@ namespace StutterFix
                 }
                 if (GUI.Button(r, GUIContent.none, GUIStyle.none)) TogglePanel(i);
                 y += IconS + IconGap;
+            }
+
+            // 맨 아래: 게임 재시작 (실수로 눌리지 않게 3초 안에 한 번 더 눌러야 한다). 재시작하면 좋은 때면 주황 점.
+            Fill(new Rect(d.x + 14, y + 3, d.width - 28, 1), new Color(1, 1, 1, 0.14f), 0);
+            y += 10;
+            var rr = new Rect(d.x + (d.width - IconS) / 2f, y, IconS, IconS);
+            bool armed = Time.realtimeSinceStartup < restartArmedUntil;
+            bool rhov = rr.Contains(m);
+            var why = RestartAdvisor.Reasons();
+            if (armed) Fill(rr, new Color(0.92f, 0.32f, 0.30f, 0.55f), 12);
+            else if (rhov) Fill(rr, new Color(1, 1, 1, 0.09f), 12);
+            if (Event.current.type == EventType.Repaint && icons != null && icons.Length > 6)
+            {
+                var c = GUI.color;
+                GUI.color = new Color(1, 1, 1, c.a * (armed || rhov ? 1f : 0.72f));
+                GUI.DrawTexture(new Rect(rr.x + 10, rr.y + 10, IconS - 20, IconS - 20), icons[6]);
+                GUI.color = c;
+                if (why.Count > 0) Fill(new Rect(rr.xMax - 13, rr.y + 5, 8, 8), new Color(1f, 0.62f, 0.2f, c.a), 4);
+            }
+            if (GUI.Button(rr, GUIContent.none, GUIStyle.none))
+            {
+                if (armed) { restartArmedUntil = 0; RestartAdvisor.Restart(); }
+                else restartArmedUntil = Time.realtimeSinceStartup + 3f;
+            }
+            if (rhov && panelT <= 0f)
+            {
+                var lines = new List<string>();
+                lines.Add(armed ? T("한 번 더 누르면 게임을 다시 켭니다", "Click again to restart the game") : T("게임 재시작", "Restart game"));
+                if (why.Count > 0) { lines.Add(T("지금 재시작하면 좋은 이유:", "Good time to restart:")); foreach (var s in why) lines.Add("· " + s); }
+                float w = 0; foreach (var s in lines) w = Mathf.Max(w, sTip.CalcSize(new GUIContent(s)).x);
+                w += 22; float h = lines.Count * 22 + 8;
+                var tr = new Rect(d.x - 10 - w, rr.center.y - h / 2f, w, h);
+                Fill(tr, new Color(0.06f, 0.065f, 0.08f, 0.9f), 9);
+                for (int i = 0; i < lines.Count; i++) GUI.Label(new Rect(tr.x + 11, tr.y + 4 + i * 22, w - 22, 22), lines[i], i == 0 ? sTip : sTipLeft);
             }
 
             // 이름표: 마우스를 올린 아이콘 왼쪽에 (패널이 펼쳐져 있으면 패널 제목이 대신한다)
@@ -422,6 +457,14 @@ namespace StutterFix
                     float d = (x - 0.5f) * (x - 0.5f) + (y - 0.5f) * (y - 0.5f);
                     return (d <= 0.46f * 0.46f && d >= 0.36f * 0.36f) || InCircle(x, y, 0.5f, 0.31f, 0.065f) || InBox(x, y, 0.445f, 0.43f, 0.555f, 0.73f);
                 }),
+                // 재시작: 위쪽이 끊긴 동그라미 + 끊긴 자리의 화살촉 (시계 방향)
+                MakeIcon((x, y) =>
+                {
+                    float dx = x - 0.5f, dy = y - 0.54f; float dd = Mathf.Sqrt(dx * dx + dy * dy);
+                    float ang = Mathf.Atan2(-dy, dx) * Mathf.Rad2Deg;
+                    bool ring = dd >= 0.25f && dd <= 0.37f && !(ang > 15f && ang < 82f);
+                    return ring || InTri(x, y, 0.50f, 0.07f, 0.50f, 0.36f, 0.74f, 0.215f);
+                }),
             };
         }
 
@@ -445,6 +488,22 @@ namespace StutterFix
             Stat(jobs ? T("켜짐", "On") : T("꺼짐", "Off"), T("멀티스레드 그리기", "Multithreaded rendering"), false);
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
+
+            // 지금 재시작하면 좋은 때 (메모리가 쌓임, 멀티스레드 그리기 변경, 모드 업데이트 등)
+            var why = RestartAdvisor.Reasons();
+            if (why.Count > 0)
+            {
+                InfoCard(new[] { T("재시작 권장", "Restart suggested"), string.Join("\n", why.ToArray()) });
+                GUILayout.BeginHorizontal();
+                bool armed = Time.realtimeSinceStartup < restartArmedUntil;
+                if (GUILayout.Button(armed ? T("한 번 더 누르면 재시작", "Click again to restart") : T("지금 재시작", "Restart now"), sPrimary, GUILayout.Width(190), GUILayout.Height(38)))
+                {
+                    if (armed) { restartArmedUntil = 0; RestartAdvisor.Restart(); }
+                    else restartArmedUntil = Time.realtimeSinceStartup + 3f;
+                }
+                GUILayout.EndHorizontal();
+                GUILayout.Space(14);
+            }
 
             InfoCard(new[]
             {
@@ -525,9 +584,11 @@ namespace StutterFix
         private void PagePlay()
         {
             var c = Main.Config;
-            Heading(T("플레이", "Gameplay"), T("곡을 플레이하는 동안의 끊김을 줄입니다. 모두 켜 두는 것을 권장합니다.",
-                "Reduces hitches while a level is playing. Keeping everything on is recommended."));
+            Heading(T("플레이", "Gameplay"), T("곡을 플레이하는 동안의 끊김을 줄입니다. 모두 켜 두는 것을 권장합니다. 들여 쓴 기능은 위 기능이 켜져 있을 때만 동작합니다.",
+                "Reduces hitches while a level is playing. Keeping everything on is recommended. Indented features only work while the feature above them is on."));
             bool ch = false;
+
+            Section(T("기본", "General"));
             ch |= Option("gc", ref c.GcPause, T("메모리 정리 미루기", "Defer memory cleanup"),
                 T("플레이 중 게임이 메모리를 정리하느라 잠깐 멈추는 것을 막습니다. 곡이 끝나고 몇 초 뒤 한 번에 정리합니다.",
                   "Stops the game from pausing to clean up memory mid-song. Cleanup runs once, a few seconds after the level ends."),
@@ -541,37 +602,6 @@ namespace StutterFix
             ch |= Option("tween", ref c.TweenGuard, T("애니메이션 처리 최적화", "Animation list guard"),
                 T("효과가 많을 때 게임이 애니메이션 목록을 반복해서 다시 정리하느라 느려지는 문제를 막습니다.",
                   "Prevents the game from repeatedly re-sorting its animation list when many effects are running."), null);
-            ch |= Option("zerotween", ref c.ZeroTween, T("즉시 이동 최적화", "Instant decoration moves"),
-                T("장식을 즉시(길이 0) 옮기는 이벤트를 애니메이션 없이 바로 처리하고, 곧바로 덮어써질 중간 호출은 건너뜁니다. 결과는 게임과 똑같습니다(26만 개를 비트 단위로 비교해 확인).",
-                  "Applies instant (zero-length) decoration moves without creating animations and skips intermediate calls that are overwritten right away. Identical results (verified bit-for-bit over 260,000 cases)."),
-                T("장식 많은 맵", "Decoration-heavy maps"));
-            ch |= Option("instant", ref c.InstantDirect, T("즉시 이동 직접 처리", "Direct instant moves"),
-                T("즉시 이동이 한꺼번에 몰리는 순간(효과 몰림) 게임 코드가 속성마다 애니메이션 객체를 만드는 과정 자체를 건너뛰고 최종 값만 넣습니다. Arche 효과 몰림 68 → 36ms.",
-                  "When many instant moves land at once, skips the game's per-property animation setup entirely and applies only the final values. Arche effect burst 68 → 36 ms."),
-                T("효과 몰림", "Effect bursts"));
-            ch |= Option("samevalue", ref c.SkipSame, T("투명 장식 빠른 처리", "Fast path for hidden decorations"),
-                T("즉시 이동이 투명한 장식을 옮기면 게임 함수를 거치지 않고 위치를 바로 \"보일 때 반영\" 목록에 넣고, 이미 가진 것과 같은 색을 다시 넣을 때는 설정 함수를 부르지 않습니다. 게임 상태는 원래와 똑같습니다(\"즉시 이동 직접 처리\"가 켜져 있어야 동작, 위치는 \"투명한 장식 위치 미루기\"도 필요).",
-                  "When an instant move touches a transparent decoration, its position goes straight into the apply-when-visible list without the game's setter chain, and re-writing an unchanged color is skipped. Game state stays identical (needs \"Direct instant moves\"; positions also need \"Defer hidden decoration moves\")."),
-                T("효과 몰림", "Effect bursts"));
-            ch |= Option("fastloop", ref c.FastLoop, T("장식 이동 루프", "Decoration move loop"),
-                T("길이 0 장식 이동 효과를 게임 코드 대신 모드의 루프로 돕니다. 게임 코드는 장식마다 객체를 여러 개 만들고 대상 목록을 여러 겹으로 훑는데, 같은 순서로 같은 일만 합니다. 이미지·마스크를 바꾸는 효과는 원래대로 둡니다(\"즉시 이동 최적화\"와 \"즉시 이동 직접 처리\"가 켜져 있어야 동작).",
-                  "Runs zero-length decoration move effects in the mod's own loop instead of the game code, which allocates several objects per decoration and walks the target list through layered queries. Same work in the same order. Effects that change images or masks are left alone (needs \"Instant decoration moves\" and \"Direct instant moves\")."),
-                T("효과 몰림", "Effect bursts"));
-            ch |= Option("precheck", ref c.Precheck, T("미리 확인", "Look-ahead check"),
-                T("곧 발동할 무거운 장식 이동 효과(대상 200개 이상)가 이미 투명하고 값도 그대로인 장식에만 닿는지 몇 초 앞서 여유 있는 프레임에 나눠 확인해 두고, 발동할 때까지 대상이 하나도 안 바뀌었으면 효과를 통째로 건너뜁니다. 대상이 바뀌는 모든 길을 지켜보다가 하나라도 바뀌면 원래대로 돕니다(\"장식 이동 루프\"와 \"투명 장식 빠른 처리\"가 켜져 있어야 동작).",
-                  "Checks upcoming heavy decoration moves (200+ targets) a few seconds ahead, spread over idle frames, and skips the whole effect when every target is already hidden with the same values and nothing touched them since. Any change to a watched decoration cancels the check (needs \"Decoration move loop\" and \"Fast path for hidden decorations\")."),
-                T("효과 몰림", "Effect bursts"));
-            ch |= Option("decoanim", ref c.DecoAnim, T("장식 애니메이션 직접 처리", "Decoration animations"),
-                T("길이가 있는 장식 이동(위치·회전·크기·색·불투명도)의 애니메이션을 DOTween 대신 모드가 돌립니다. 시간 누적, 이징, 콜백 순서, 끊기까지 DOTween 과 똑같이 하고, 애니메이션 관리 비용만 줄입니다. 피벗·시차가 섞인 효과는 원래대로 둡니다(\"장식 이동 루프\"가 켜져 있어야 동작).",
-                  "Runs decoration move animations (position, rotation, scale, color, opacity) in the mod instead of DOTween, with the same timing, easing, callback order and kill behavior, cutting only the tween bookkeeping. Effects that also animate pivot or parallax stay on DOTween (needs \"Decoration move loop\")."),
-                T("무거운 구간", "Heavy sections"));
-            ch |= Option("movefinish", ref c.MoveFinish, T("장식 위치 계산 줄이기", "Fewer position updates"),
-                T("장식을 옮길 때 위치 마무리 계산을 한 번으로 묶고, 값이 그대로인 쓰기와 플레이 중 필요 없는 편집기 작업을 건너뜁니다. 보이는 장식의 위치 재계산은 어차피 같은 프레임에 게임이 다시 하므로 그때 한 번만 합니다.",
-                  "Batches position finishing per decoration, skips unchanged writes and editor-only work while playing, and leaves visible decorations' position recompute to the game's own once-per-frame pass."), null);
-            ch |= Option("dormant", ref c.DormantSkip, T("장식 순회 줄이기", "Skip idle decorations"),
-                T("게임은 매 프레임 장식 전부를 훑습니다. 안 보이고 바뀔 일이 없는 장식과, 히트박스가 없는 장식은 그 순회에서 빼 둡니다. 장식이 수만 개인 맵에서 평소 프레임이 크게 오릅니다(Arche 곡 평균 107 → 170fps).",
-                  "The game walks every decoration every frame. Idle invisible decorations and decorations without hitboxes are left out of those walks. Big everyday FPS gain on maps with tens of thousands of decorations (Arche 107 → 170 fps)."),
-                T("장식 많은 맵", "Decoration-heavy maps"));
             ch |= Option("text", ref c.SkipSameText, T("글자 장식 최적화", "Text decoration skip"),
                 T("같은 글자를 매 프레임 다시 쓰는 글자 장식은 건너뜁니다. PACL2 같은 모드를 함께 쓸 때 효과가 큽니다.",
                   "Skips text decorations that are re-set to the same text every frame. Helps a lot with mods like PACL2."), null);
@@ -582,13 +612,88 @@ namespace StutterFix
                 T("더하기(Linear Dodge) 블렌드 장식을 화면 복사 없이 그립니다. 모양은 같고, 블렌드 장식이 많은 맵에서 프레임이 크게 오릅니다.",
                   "Draws additive (Linear Dodge) blend decorations without copying the screen. Looks identical; big FPS gain on maps with many blend decorations."),
                 T("무거운 맵", "Heavy maps"));
+
+            Section(T("투명한 장식", "Hidden decorations"));
             ch |= Option("invis", ref c.SkipInvisible, T("투명한 장식 그리지 않기", "Skip invisible decorations"),
                 T("투명도가 0 이라 보이지 않는 이미지 장식을 그리기에서 뺍니다. 다시 보이게 되면 바로 그립니다. 화면은 같고, 나중에 나타날 이미지를 깔아 둔 맵에서 프레임이 오릅니다.",
                   "Leaves fully transparent image decorations out of rendering and draws them again as soon as they become visible. Looks identical; raises FPS on maps that pre-place hidden images."), null);
             ch |= Option("lazy", ref c.LazyHidden, T("투명한 장식 위치 미루기", "Defer hidden decoration moves"),
-                T("투명해서 안 보이는 장식은 옮겨도 값만 저장했다가, 보이게 되는 순간 한 번 반영합니다. 히트박스·마스크 장식은 제외합니다. \"투명한 장식 그리지 않기\" 가 켜져 있어야 동작합니다.",
-                  "Hidden decorations only store their new position until they become visible, then apply it once. Hitbox and mask decorations are excluded. Requires \"Skip invisible decorations\"."), null);
+                T("투명해서 안 보이는 장식은 옮겨도 값만 저장했다가, 보이게 되는 순간 한 번 반영합니다. 히트박스·마스크 장식은 제외합니다.",
+                  "Hidden decorations only store their new position until they become visible, then apply it once. Hitbox and mask decorations are excluded."),
+                null, 1, Need(c.SkipInvisible, T("투명한 장식 그리지 않기", "Skip invisible decorations")));
+
+            Section(T("장식 이동", "Decoration moves"));
+            ch |= Option("zerotween", ref c.ZeroTween, T("즉시 이동 최적화", "Instant decoration moves"),
+                T("장식을 즉시(길이 0) 옮기는 이벤트를 애니메이션 없이 바로 처리하고, 곧바로 덮어써질 중간 호출은 건너뜁니다. 결과는 게임과 똑같습니다(26만 개를 비트 단위로 비교해 확인).",
+                  "Applies instant (zero-length) decoration moves without creating animations and skips intermediate calls that are overwritten right away. Identical results (verified bit-for-bit over 260,000 cases)."),
+                T("장식 많은 맵", "Decoration-heavy maps"));
+            string zt = Need(c.ZeroTween, T("즉시 이동 최적화", "Instant decoration moves"));
+            ch |= Option("instant", ref c.InstantDirect, T("즉시 이동 직접 처리", "Direct instant moves"),
+                T("즉시 이동이 한꺼번에 몰리는 순간(효과 몰림) 게임 코드가 속성마다 애니메이션 객체를 만드는 과정 자체를 건너뛰고 최종 값만 넣습니다. Arche 효과 몰림 68 → 36ms.",
+                  "When many instant moves land at once, skips the game's per-property animation setup entirely and applies only the final values. Arche effect burst 68 → 36 ms."),
+                T("효과 몰림", "Effect bursts"), 1, zt);
+            string id = zt ?? Need(c.InstantDirect, T("즉시 이동 직접 처리", "Direct instant moves"));
+            ch |= Option("fastloop", ref c.FastLoop, T("장식 이동 루프", "Decoration move loop"),
+                T("장식 이동 효과를 게임 코드 대신 모드의 루프로 돕니다. 게임 코드는 장식마다 객체를 여러 개 만들고 대상 목록을 여러 겹으로 훑는데, 같은 순서로 같은 일만 합니다. 이미지·마스크를 바꾸는 효과는 원래대로 둡니다.",
+                  "Runs decoration move effects in the mod's own loop instead of the game code, which allocates several objects per decoration and walks the target list through layered queries. Same work in the same order. Effects that change images or masks are left alone."),
+                T("효과 몰림", "Effect bursts"), 2, id);
+            string fl = id ?? Need(c.FastLoop, T("장식 이동 루프", "Decoration move loop"));
+            ch |= Option("decoanim", ref c.DecoAnim, T("장식 애니메이션 직접 처리", "Decoration animations"),
+                T("길이가 있는 장식 이동(위치·회전·크기·색·불투명도)의 애니메이션을 DOTween 대신 모드가 돌립니다. 시간 누적, 이징, 콜백 순서, 끊기까지 DOTween 과 똑같이 하고(33만 개를 DOTween 과 나란히 돌려 비트 단위로 확인), 애니메이션 관리 비용만 줄입니다. 피벗·시차가 섞인 효과는 원래대로 둡니다.",
+                  "Runs decoration move animations (position, rotation, scale, color, opacity) in the mod instead of DOTween, with the same timing, easing, callback order and kill behavior (verified bit-for-bit against DOTween over 330,000 animations), cutting only the tween bookkeeping. Effects that also animate pivot or parallax stay on DOTween."),
+                T("무거운 구간", "Heavy sections"), 3, fl);
+            string ss = id ?? Need(c.SkipInvisible, T("투명한 장식 그리지 않기", "Skip invisible decorations"));
+            ch |= Option("samevalue", ref c.SkipSame, T("투명 장식 빠른 처리", "Fast path for hidden decorations"),
+                T("즉시 이동이 투명한 장식을 옮기면 게임 함수를 거치지 않고 위치를 바로 \"보일 때 반영\" 목록에 넣고, 이미 가진 것과 같은 색은 다시 넣지 않으며, 바뀌어도 투명한 채라면 값만 저장합니다. 게임 상태는 원래와 똑같습니다.",
+                  "When an instant move touches a transparent decoration, its position goes straight into the apply-when-visible list, re-writing an unchanged color is skipped, and color changes that stay transparent only store values. Game state stays identical."),
+                T("효과 몰림", "Effect bursts"), 2, ss);
+            string pc = fl ?? ss ?? Need(c.SkipSame, T("투명 장식 빠른 처리", "Fast path for hidden decorations")) ?? Need(c.LazyHidden, T("투명한 장식 위치 미루기", "Defer hidden decoration moves"));
+            ch |= Option("precheck", ref c.Precheck, T("미리 확인", "Look-ahead check"),
+                T("곧 발동할 무거운 장식 이동 효과(대상 200개 이상)가 이미 투명하고 값도 그대로인 장식에만 닿는지 몇 초 앞서 여유 있는 프레임에 나눠 확인해 두고, 발동할 때까지 대상이 하나도 안 바뀌었으면 효과를 통째로 건너뜁니다. 대상이 바뀌는 모든 길을 지켜보다가 바뀐 장식만 원래대로 처리합니다.",
+                  "Checks upcoming heavy decoration moves (200+ targets) a few seconds ahead, spread over idle frames, and skips the whole effect when every target is already hidden with the same values. Every write path to a watched decoration is tracked; decorations touched in between are processed normally."),
+                T("효과 몰림", "Effect bursts"), 3, pc);
+            ch |= Option("movefinish", ref c.MoveFinish, T("장식 위치 계산 줄이기", "Fewer position updates"),
+                T("장식을 옮길 때 위치 마무리 계산을 한 번으로 묶고, 값이 그대로인 쓰기와 플레이 중 필요 없는 편집기 작업을 건너뜁니다. 보이는 장식의 위치 재계산은 어차피 같은 프레임에 게임이 다시 하므로 그때 한 번만 합니다.",
+                  "Batches position finishing per decoration, skips unchanged writes and editor-only work while playing, and leaves visible decorations' position recompute to the game's own once-per-frame pass."), null);
+            ch |= Option("dormant", ref c.DormantSkip, T("장식 순회 줄이기", "Skip idle decorations"),
+                T("게임은 매 프레임 장식 전부를 훑습니다. 안 보이고 바뀔 일이 없는 장식과, 히트박스가 없는 장식은 그 순회에서 빼 둡니다. 장식이 수만 개인 맵에서 평소 프레임이 크게 오릅니다(Arche 107 → 170 fps).",
+                  "The game walks every decoration every frame. Idle invisible decorations and decorations without hitboxes are left out of those walks. Big everyday FPS gain on maps with tens of thousands of decorations (Arche 107 → 170 fps)."),
+                T("장식 많은 맵", "Decoration-heavy maps"));
             if (ch) Save();
+        }
+
+        // 묶음 제목
+        private void Section(string title)
+        {
+            GUILayout.Space(6);
+            GUILayout.Label(title, sTag);
+            GUILayout.Space(6);
+        }
+
+        // 상위 기능이 꺼져 있으면 그 이름("… 꺼짐"), 켜져 있으면 null
+        private static string Need(bool on, string name) { return on ? null : name; }
+
+        // 하위 기능: 들여 쓰고 왼쪽에 이어지는 선. 상위 기능이 꺼져 있으면(off != null) 흐리게, 누를 수 없게, 무엇이 꺼져 있는지 적는다.
+        private bool Option(string key, ref bool value, string title, string desc, string tag, int depth, string off)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(depth * 26);
+            GUILayout.BeginVertical();
+            var oldC = GUI.color;
+            if (off != null) GUI.color = new Color(oldC.r, oldC.g, oldC.b, oldC.a * 0.45f);
+            string t2 = off != null ? T("쉬는 중 · ", "Paused · ") + off + T(" 꺼짐", " is off") : tag;
+            bool changed = Option(key, ref value, title, desc, t2, off == null);
+            GUI.color = oldC;
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            if (depth > 0 && Event.current.type == EventType.Repaint)
+            {
+                var r = GUILayoutUtility.GetLastRect();
+                float lx = r.x + depth * 26 - 14;
+                Fill(new Rect(lx, r.y - 12, 2, 35), Rule, 1);   // 위 기능에서 내려오는 선
+                Fill(new Rect(lx, r.y + 21, 11, 2), Rule, 1);
+            }
+            return changed;
         }
 
         private void PageLoad()
@@ -824,7 +929,7 @@ namespace StutterFix
             GUILayout.Space(18);
         }
 
-        private bool Option(string key, ref bool value, string title, string desc, string tag)
+        private bool Option(string key, ref bool value, string title, string desc, string tag, bool clickable = true)
         {
             GUILayout.BeginHorizontal(sCard);
             GUILayout.BeginVertical();
@@ -850,7 +955,7 @@ namespace StutterFix
 
             // 카드 아무 데나 눌러도 바뀐다
             var e = Event.current;
-            if (e.type == EventType.MouseDown && e.button == 0 && card.Contains(e.mousePosition))
+            if (clickable && e.type == EventType.MouseDown && e.button == 0 && card.Contains(e.mousePosition))
             {
                 e.Use();
                 value = !value;
@@ -1096,6 +1201,7 @@ namespace StutterFix
 
             sTitle = Label(17, Ink, FontStyle.Bold);
             sTip = Label(12, Color.white, FontStyle.Bold); sTip.alignment = TextAnchor.MiddleCenter;   // 아이콘 이름표
+            sTipLeft = Label(12, Hex(0xFFFFFF, 0.85f), FontStyle.Normal); sTipLeft.alignment = TextAnchor.MiddleLeft;
             sSub = Label(12, Text3, FontStyle.Normal);
             sH1 = Label(25, Ink, FontStyle.Bold);
             sLead = Label(13, Text2, FontStyle.Normal); sLead.wordWrap = true;
