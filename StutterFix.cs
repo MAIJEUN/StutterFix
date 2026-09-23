@@ -20,6 +20,8 @@ namespace StutterFix
     // 이벤트 분산, 스프라이트/메시 컬링. 전부 A/B에서 오차 범위였다.
     public static class Main
     {
+        // 측정용 플레이어 빌드 표시: 켜면 플레이어용에서도 엔진 단계별 시간을 잰다(곡 요약의 무거운 프레임 5개에 붙음). 배포 전에 false.
+        internal const bool MeasureBuild = true;
         internal static UnityModManager.ModEntry Entry;
         internal static Settings Config;
 
@@ -389,6 +391,10 @@ namespace StutterFix
                 ModWatch.Install();   // 다른 모드들이 다 올라온 뒤에 감싼다
                 SamplerWatch.Install();
                 PhaseWatch.Install();  // 끊긴 프레임의 범인을 단계 단위로 지목하려면 항상 켜져 있어야 한다
+            }
+            else if (MeasureBuild)
+            {
+                PhaseWatch.Install();  // 측정용 플레이어 빌드: 무거운 프레임의 엔진 단계를 곡 요약에 남긴다
             }
             try
             {

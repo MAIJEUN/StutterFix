@@ -488,7 +488,7 @@ namespace StutterFix
         // 곡이 끝나면 그 곡의 평균을 한 줄 남긴다. 끊김이 없는데도 프레임이 낮은 맵을 가려내려면
         // 평균 FPS 와 GPU/CPU 어느 쪽이 큰지가 필요하다(모니터가 꺼져 있으면 GPU/CPU 는 비어 있다).
         // ── 곡에서 가장 무거운 프레임 5개 (곡 시간, 효과, 애니메이션 갱신, 장식 갱신) ──
-        private struct TopFrame { public float Ms, T, Fx, Move, Tw, Upd, Late; public int N; }
+        private struct TopFrame { public float Ms, T, Fx, Move, Tw, Upd, Late; public int N; public string Ph; }
         private const int TopN = 5;
         private readonly TopFrame[] top = new TopFrame[TopN];
         private void AddTop(float ms)
@@ -501,7 +501,7 @@ namespace StutterFix
                 Fx = (float)(last ? EffectScan.LastFrameEffectMs : EffectScan.FrameEffectMs), Move = (float)(last ? EffectScan.LastFrameMoveMs : EffectScan.FrameMoveMs),
                 N = last ? EffectScan.LastFrameN : EffectScan.FrameN,
                 Tw = (float)(last ? FrameParts.LastTween : FrameParts.Tween), Upd = (float)(last ? FrameParts.LastDecoUpdate : FrameParts.DecoUpdate),
-                Late = (float)(last ? FrameParts.LastDecoLate : FrameParts.DecoLate) };
+                Late = (float)(last ? FrameParts.LastDecoLate : FrameParts.DecoLate), Ph = PhaseWatch.Installed ? PhaseWatch.TopOfLastFrame(4) : "" };
             int i = TopN - 1;
             while (i > 0 && top[i - 1].Ms < ms) { top[i] = top[i - 1]; i--; }
             top[i] = f;
@@ -512,8 +512,8 @@ namespace StutterFix
             for (int i = 0; i < TopN; i++)
             {
                 var f = top[i]; if (f.Ms <= 0) break;
-                sb.AppendFormat(" [{0:F0}ms @{1:F1}초: 효과 {2}개 {3:F1}(장식 이동 {4:F1}), 애니메이션 갱신 {5:F1}, 장식 갱신 {6:F1}+{7:F1}, 나머지 {8:F1}]",
-                    f.Ms, f.T, f.N, f.Fx, f.Move, f.Tw, f.Upd, f.Late, f.Ms - f.Fx - f.Tw - f.Upd - f.Late);
+                sb.AppendFormat(" [{0:F0}ms @{1:F1}초: 효과 {2}개 {3:F1}(장식 이동 {4:F1}), 애니메이션 갱신 {5:F1}, 장식 갱신 {6:F1}+{7:F1}, 나머지 {8:F1}{9}]",
+                    f.Ms, f.T, f.N, f.Fx, f.Move, f.Tw, f.Upd, f.Late, f.Ms - f.Fx - f.Tw - f.Upd - f.Late, string.IsNullOrEmpty(f.Ph) ? "" : " / 엔진 단계: " + f.Ph);
             }
             return sb.ToString();
         }
