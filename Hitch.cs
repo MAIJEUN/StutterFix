@@ -172,6 +172,7 @@ namespace StutterFix
         private static void SongStarted()
         {
             endLogged = false;
+            InvisibleSkip.ResetPeak();
             PerfOverlay.BeginStartPhase();   // 첫 타일 전(최대 5초)의 시작 연출 멈춤은 끊김으로 세지 않는다
             EffectBudget.Reset();
             EffectBudget.Suspend(3f);
@@ -198,6 +199,7 @@ namespace StutterFix
                     string perf = PerfOverlay.SongSummary();
                     if (perf != null) Main.Entry.Logger.Log("[곡] " + perf);
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary());
+                    if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary());
                 }
                 ZeroTween.Reset(); MoveApply.Reset();
             }
