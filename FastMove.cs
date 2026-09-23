@@ -100,8 +100,10 @@ namespace StutterFix
             try
             {
                 if (!Take(__instance)) return true;   // 원래 코드가 돈다 (아직 아무것도 안 바꿨다)
+                bool sample = Edition.Dev && ((Effects + 1) % 16) == 1;
+                if (sample) { hidBefore.Clear(); foreach (var dec in list) hidBefore.Add(InvisibleSkip.IsHidden(dec)); }
                 Run(__instance);
-                if (Edition.Dev && (Effects % 16) == 1) Verify(__instance, __args);
+                if (sample) Verify(__instance, __args);
                 return false;
             }
             catch (Exception ex)
@@ -212,6 +214,8 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrDecoration, Transform> pivotTransRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("pivotTrans");
         private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> srRef = AccessTools.FieldRefAccess<scrVisualDecoration, SpriteRenderer>("spriteRenderer");
         private static readonly List<S> before = new List<S>();
+        private static readonly List<bool> hidBefore = new List<bool>();
+        internal static long Explained;
 
         private static S Snap(scrDecoration dec)
         {
@@ -245,6 +249,9 @@ namespace StutterFix
                 var a = before[i]; var b = Snap(decs[i]);
                 CheckedDecos++;
                 string diff = Diff(a, b);
+                // 루프가 보이는 장식을 옮긴 뒤 같은 효과의 색·불투명도로 투명해졌다면, 두 번째 실행에서는 투명한 상태라 위치가 미루기 목록으로 간다.
+                // 첫 실행 때 보였으니 루프가 원래 코드와 같은 일을 한 것이다(값은 같고 목록만 다름). 따로 센다.
+                if (diff != null && !a.Lz && b.Lz && a.Hid && i < hidBefore.Count && !hidBefore[i] && diff.StartsWith("미루기 목록")) { Explained++; continue; }
                 if (diff == null) continue;
                 Mismatch++;
                 if (First.Length < 700) First += " [" + decs[i].name + ": " + diff + "]";
@@ -288,10 +295,10 @@ namespace StutterFix
             if (Effects == 0 && Fallbacks == 0) return "";
             string s = string.Format(" | 장식 이동 루프: 효과 {0}개(장식 {1}개), 원래 코드로 넘긴 효과 {2}개 [길이 있음 {3}, 공식 맵 {4}, 그래픽 설정 {5}, 이미지·마스크 {6}, 대상 없음 {7}, null {8}]",
                 Effects, DecoCount, Fallbacks, why[0], why[1], why[2], why[3], why[4], why[5]);
-            if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + First + ")";
+            if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + ", 보이다 투명해져서 목록만 다른 것 " + Explained + First + ")";
             else if (First.Length > 0) s += First;
             return s;
         }
-        internal static void Reset() { Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }
