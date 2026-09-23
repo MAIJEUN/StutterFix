@@ -301,7 +301,7 @@ namespace StutterFix
         internal static string SameSummary()
         {
             if (SameSkipped == 0 && SameChecked == 0) return "";
-            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + SameFirst + ")" : "");
+            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + SameFirst + ")" + InvisibleSkip.LazyNoSummary() : "");
         }
 
         // 개발자용 쪼개기(MoveProf): 설정 함수 시간, 이미 같은 값이었는지, 투명한 채로 남았는지
@@ -342,6 +342,7 @@ namespace StutterFix
                 }
                 snap = Take(dec); snap.Pp = p; snap.Po = off; snap.Lz = true; snapPending = true;   // 원래대로 부른 뒤 이 상태여야 한다
             }
+            else if (NoopOn && InvisibleSkip.NoParallax(dec) && Skip(dec)) { if (P) MoveProf.Skipped(key); return Done(d, key); }   // 원래 함수가 아무것도 안 하는 경우
             if (P)
             {
                 bool same = key == 1 ? Eq(pivotPosRef(dec).x, p.x) : Eq(pivotPosRef(dec).y, p.y);
@@ -466,6 +467,6 @@ namespace StutterFix
             if (Handled == 0 && Checked == 0) return "";
             return " | 즉시 이동 직접 처리 " + Handled + "번" + (Edition.Dev ? " (대조 " + Checked + "번 중 다름 " + Mismatch + First + ")" : "") + SameSummary();
         }
-        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = 0; SameFirst = ""; }
+        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = 0; SameFirst = ""; Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length); }
     }
 }

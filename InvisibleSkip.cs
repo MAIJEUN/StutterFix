@@ -197,15 +197,26 @@ namespace StutterFix
         // Arche 효과 몰림의 1만 4천 개 장식 이동이 거의 전부 이 경우였고, 함수 사슬(SetPositionX -> WithX -> SetPosition 감싸기 -> 앞 패치)만 7ms 넘게 썼다.
         internal static bool LazyCan(scrDecoration d)
         {
-            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return false;
-            if (colorRef(d).a > 0f) return false;
+            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return No(0);
+            if (colorRef(d).a > 0f) return No(1);
             var v = d as scrVisualDecoration;
-            if ((object)v == null || d.hitbox != 0) return false;
+            if ((object)v == null) return No(2);
+            if (d.hitbox != 0) return No(3);
             var r = rendererRef(v);
-            if ((object)r == null || !hidden.Contains(r) || isMask(v)) return false;
-            if (parallaxRef(d) == null) return false;
-            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) & 7) == 0) return false;   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
+            if ((object)r == null || !hidden.Contains(r)) return No(4);
+            if (isMask(v)) return No(5);
+            if (parallaxRef(d) == null) return No(6);
+            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) & 7) == 0) return No(7);   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
             return true;
+        }
+        // 개발자용: 빠른 길을 못 탄 이유별 수 (꺼짐/재생 아님, 보임, 이미지 장식 아님, 히트박스, 안 그리는 목록에 없음, 마스크, 시차 없음, 정답 표본)
+        internal static readonly long[] LazyNo = new long[8];
+        private static bool No(int why) { if (Edition.Dev) LazyNo[why]++; return false; }
+        internal static string LazyNoSummary()
+        {
+            if (!Edition.Dev) return "";
+            return string.Format(" [빠른 길 못 탄 이유: 꺼짐 {0}, 보임 {1}, 이미지 아님 {2}, 히트박스 {3}, 안 그리는 목록에 없음 {4}, 마스크 {5}, 시차 없음 {6}, 정답 표본 {7}]",
+                LazyNo[0], LazyNo[1], LazyNo[2], LazyNo[3], LazyNo[4], LazyNo[5], LazyNo[6], LazyNo[7]);
         }
         internal static void LazyStore(scrDecoration d, Vector2 pos, Vector2 off)
         {
@@ -215,6 +226,8 @@ namespace StutterFix
             LazySkips++;
         }
         internal static bool InLazy(scrDecoration d) { return lazy.Contains(d); }
+        // SetPosition 은 시차 부품이 없으면 첫 줄에서 아무것도 안 하고 끝난다(IL 확인). 그런 장식은 부를 필요가 없다.
+        internal static bool NoParallax(scrDecoration d) { return parallaxRef(d) == null; }
 
         // 보이게 되는 순간 저장해 둔 위치를 반영한다
         private static void ApplyLazy(scrVisualDecoration v)
