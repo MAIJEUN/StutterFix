@@ -21,7 +21,7 @@ namespace StutterFix
     public static class Main
     {
         // 측정용 플레이어 빌드 표시: 켜면 플레이어용에서도 엔진 단계별 시간을 잰다(곡 요약의 무거운 프레임 5개에 붙음). 배포 전에 false.
-        internal const bool MeasureBuild = true;
+        internal const bool MeasureBuild = false;
         internal static UnityModManager.ModEntry Entry;
         internal static Settings Config;
 
