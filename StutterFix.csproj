@@ -61,6 +61,7 @@
     <Compile Include="InvisibleSkip.cs" />
     <Compile Include="Dormancy.cs" />
     <Compile Include="InstantMove.cs" />
+    <Compile Include="UiDraw.cs" />
     <Compile Include="LogExport.cs" />
     <Compile Include="Hotkey.cs" />
     <Compile Include="FilterTrace.cs" />

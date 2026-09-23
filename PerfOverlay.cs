@@ -733,6 +733,7 @@ namespace StutterFix
             built = true;
             MarkLoading(SettingsWindow.T("모드 창 준비", "Preparing mod window"));   // 글꼴/모양 그림을 처음 만드는 프레임
             font = SettingsWindow.UiFont();
+            if (!ui.Ready) ui.Create(font, 30000);   // 게임 UI 위, 설정 창(IMGUI) 아래
             tWhite = Texture2D.whiteTexture;
             sBig = Text(28, Fg, FontStyle.Bold);
             sMid = Text(18, Fg, FontStyle.Bold);
@@ -767,26 +768,29 @@ namespace StutterFix
             Border(r, new Color(1, 1, 1, 0.09f), radius);
         }
 
+        // 그리기는 uGUI 쪽(UiDraw)으로 보낸다. 배치 계산은 예전 IMGUI 코드 그대로다.
+        // ga 는 예전 GUI.color.a 자리(나타나기, 옆 패널 펼치기, 알림 사라지기가 곱해진다).
+        private readonly UiDraw ui = new UiDraw();
+        private float ga = 1f;
+
         private void Fill(Rect r, Color c, float radius)
         {
-            c.a *= GUI.color.a;
-            GUI.DrawTexture(r, tWhite, ScaleMode.StretchToFill, true, 0, c, 0, radius);
+            c.a *= ga;
+            ui.Fill(r, c, radius);
         }
 
         private void Border(Rect r, Color c, float radius)
         {
-            c.a *= GUI.color.a;
-            GUI.DrawTexture(r, tWhite, ScaleMode.StretchToFill, true, 0, c, 1, radius);
+            c.a *= ga;
+            ui.Border(r, c, radius);
         }
 
-        private static void Label(Rect r, string s, GUIStyle st) { GUI.Label(r, s, st); }
+        private void Label(Rect r, string s, GUIStyle st) { var c = st.normal.textColor; c.a *= ga; ui.Label(r, s, st, c); }
 
         private void WithColor(GUIStyle st, Color c, Rect r, string s)
         {
-            var old = st.normal.textColor;
-            st.normal.textColor = c;
-            GUI.Label(r, s, st);
-            st.normal.textColor = old;
+            c.a *= ga;
+            ui.Label(r, s, st, c);
         }
 
         // ── 배치 ───────────────────────────────────────────────────────
@@ -817,79 +821,96 @@ namespace StutterFix
             return h + 34;                         // 아래 줄
         }
 
-        // (개발자용) OnGUI 는 한 프레임에 여러 번 불린다(배치 계산, 그리기, 입력). 그리기가 아닌 호출의 비용도 따로 잰다.
+        // (개발자용) 모니터 비용: 그리기(LateUpdate, 프레임당 한 번)와 입력(OnGUI)
         internal static double GuiOtherMs, GuiRepaintMs; internal static long GuiOtherN, GuiRepaintN;
         internal static double[] GuiSeg = new double[5]; internal static long GuiSegN, PanelOpenN;
-        private void OnGUI()
-        {
-            if (!Edition.Dev) { OnGUIInner(); return; }
-            long a = Stopwatch.GetTimestamp();
-            bool rep = Event.current.type == EventType.Repaint;
-            OnGUIInner();
-            double ms = (Stopwatch.GetTimestamp() - a) * 1000.0 / Stopwatch.Frequency;
-            if (rep) { GuiRepaintMs += ms; GuiRepaintN++; } else { GuiOtherMs += ms; GuiOtherN++; }
-        }
 
-        private void OnGUIInner()
+        // 그리기: 프레임마다 한 번. 배치 계산은 예전 IMGUI 코드 그대로이고, 기본 동작만 uGUI 요소로 간다(UiDraw).
+        // uGUI 요소는 값이 바뀐 것만 다시 만들어진다(글자는 초당 4번 바뀐다).
+        private float slide;   // 나타날 때 옆에서 미끄러져 들어오는 거리(모니터 단위)
+        private void LateUpdate()
         {
-            if (show <= 0f || C == null) return;
+            if (show <= 0f || C == null) { if (ui.Ready) ui.Hide(); return; }
             if (!built) Build();
-            GUI.depth = 10;   // 설정 창보다 뒤
+            long drawStart = Stopwatch.GetTimestamp();
 
             scale = Mathf.Clamp(Screen.height / 1080f, 0.8f, 2.2f) * Mathf.Clamp(C.OverlayScale, 0.7f, 1.6f);
-            if (Mathf.Abs(scale - warmedScale) > 0.001f && SettingsWindow.WarmStyles(this, scale)) warmedScale = scale;   // 크기를 바꾸면 다시
+            if (Mathf.Abs(scale - warmedScale) > 0.001f) { WarmUi(scale); warmedScale = scale; }   // 크기를 바꾸면 다시
             sw = Screen.width / scale; sh = Screen.height / scale;
             right = C.OverlayRight;
             if (Mode != 0) lastMode = Mode;
             int mode = lastMode;   // 사라지는 동안에는 마지막 모양을 유지한다
             CollectCompact();
 
-            long drawStart = Stopwatch.GetTimestamp();
-            var oldM = GUI.matrix; var oldC = GUI.color;
             float e = EaseOut(show);
-            // 붙어 있는 쪽 바깥에서 미끄러져 들어온다
-            GUI.matrix = Matrix4x4.TRS(new Vector3((right ? 1 : -1) * (1 - e) * 60f * scale, 0, 0), Quaternion.identity, new Vector3(scale, scale, 1));
-            GUI.color = new Color(1, 1, 1, e);
+            slide = (right ? 1 : -1) * (1 - e) * 60f;   // 붙어 있는 쪽 바깥에서 미끄러져 들어온다
+            ui.Begin(scale, slide);
+            ga = e;
             try
             {
                 if (mode == 1) widget = IconRect();
                 else if (mode == 2) widget = EdgeRect(MiniWidth(), MiniH, 12);
                 else widget = EdgeRect(PW, PanelHeight(), 12);
 
-                bool rp = Edition.Dev && Event.current.type == EventType.Repaint;
-                long g0 = rp ? Stopwatch.GetTimestamp() : 0;
-                if (Mode != 0) HandleMouse(mode);
-                long g1 = rp ? Stopwatch.GetTimestamp() : 0;
-
-                if (Event.current.type == EventType.Repaint)
+                long g1 = Edition.Dev ? Stopwatch.GetTimestamp() : 0, g2 = 0, g3 = 0;
+                Rect side = widget;
+                if (mode == 1)
                 {
-                    Rect side = widget;
-                    long g2 = 0, g3 = 0;
-                    if (mode == 1)
-                    {
-                        DrawIcon(widget);
-                        g2 = rp ? Stopwatch.GetTimestamp() : 0;
-                        if (open > 0f) side = DrawPanelBeside(widget);
-                        g3 = rp ? Stopwatch.GetTimestamp() : 0;
-                    }
-                    else if (mode == 2) DrawMini(widget);
-                    else DrawPanel(widget);
-                    if (rp && mode != 1) { g2 = Stopwatch.GetTimestamp(); g3 = g2; }
-                    DrawToasts(side);
-                    if (rp)
-                    {
-                        double f = 1000.0 / Stopwatch.Frequency; long g4 = Stopwatch.GetTimestamp();
-                        GuiSeg[0] += (g0 - drawStart) * f; GuiSeg[1] += (g1 - g0) * f; GuiSeg[2] += (g2 - g1) * f; GuiSeg[3] += (g3 - g2) * f; GuiSeg[4] += (g4 - g3) * f; GuiSegN++;
-                        if (open > 0f) PanelOpenN++;
-                    }
+                    DrawIcon(widget);
+                    g2 = Edition.Dev ? Stopwatch.GetTimestamp() : 0;
+                    if (open > 0f) side = DrawPanelBeside(widget);
+                    g3 = Edition.Dev ? Stopwatch.GetTimestamp() : 0;
+                }
+                else if (mode == 2) DrawMini(widget);
+                else DrawPanel(widget);
+                if (Edition.Dev && mode != 1) { g2 = Stopwatch.GetTimestamp(); g3 = g2; }
+                DrawToasts(side);
+                if (Edition.Dev)
+                {
+                    double f = 1000.0 / Stopwatch.Frequency; long g4 = Stopwatch.GetTimestamp();
+                    GuiSeg[0] += (g1 - drawStart) * f; GuiSeg[2] += (g2 - g1) * f; GuiSeg[3] += (g3 - g2) * f; GuiSeg[4] += (g4 - g3) * f; GuiSegN++;
+                    if (open > 0f) PanelOpenN++;
                 }
             }
             finally
             {
-                GUI.matrix = oldM; GUI.color = oldC;
-                if (Event.current.type == EventType.Repaint)   // 모니터 자신도 "모드 작업" 으로 센다
-                    ModCost.Add(T("모니터 그리기", "Monitor drawing"), (Stopwatch.GetTimestamp() - drawStart) * 1000.0 / Stopwatch.Frequency);
+                ga = 1f;
+                ui.End();
+                double ms = (Stopwatch.GetTimestamp() - drawStart) * 1000.0 / Stopwatch.Frequency;
+                ModCost.Add(T("모니터 그리기", "Monitor drawing"), ms);   // 모니터 자신도 "모드 작업" 으로 센다
+                if (Edition.Dev) { GuiRepaintMs += ms; GuiRepaintN++; }
             }
+        }
+
+        // 입력만(누르면 펼치기, 끌면 옮기기). 그리지는 않는다. 좌표는 예전처럼 모니터 단위로 받는다.
+        private void OnGUI()
+        {
+            if (show <= 0f || C == null || Mode == 0 || !built) return;
+            long a = Edition.Dev ? Stopwatch.GetTimestamp() : 0;
+            var oldM = GUI.matrix;
+            GUI.matrix = Matrix4x4.TRS(new Vector3(slide * scale, 0, 0), Quaternion.identity, new Vector3(scale, scale, 1));
+            try { HandleMouse(lastMode); }
+            finally
+            {
+                GUI.matrix = oldM;
+                if (Edition.Dev) { GuiOtherMs += (Stopwatch.GetTimestamp() - a) * 1000.0 / Stopwatch.Frequency; GuiOtherN++; }
+            }
+        }
+
+        // 그리기 중(LateUpdate)의 마우스 위치를 모니터 단위로
+        private Vector2 MouseGui()
+        {
+            var m = Input.mousePosition;
+            return new Vector2(m.x / scale - slide, (Screen.height - m.y) / scale);
+        }
+
+        // uGUI 글꼴 텍스처에 쓰는 글자를 크기·굵기마다 미리 올린다(처음 보일 때 멈추지 않게)
+        private void WarmUi(float s)
+        {
+            MarkLoading(T("글꼴 준비", "Preparing font"));
+            try { ui.Warm(WarmChars.Text + SettingsWindow.WarmAscii, new[] { sBig, sMid, sLabel, sValue, sSub, sSmall, sTitle, sDetail, sCenterBig, sCenterSmall, sCenterLine, sLine, sToastShort, stHistMs, stHistCause, sSubFaint }, s); }
+            catch { }
+            MarkLoading(T("글꼴 준비", "Preparing font"));
         }
 
         // 화면 끝에 붙은 탭: 바깥쪽 모서리는 화면 밖으로 넘겨 안쪽만 둥글게 보이게 한다
@@ -983,7 +1004,7 @@ namespace StutterFix
         private void DrawIcon(Rect r)
         {
             if (Edition.Dev) { IconN++; segT = Stopwatch.GetTimestamp(); }
-            bool hover = r.Contains(Event.current.mousePosition) && Cursor.visible;
+            bool hover = r.Contains(MouseGui()) && Cursor.visible;
             Panel(r, 14);
             if (hover || dragging) Fill(r, new Color(1, 1, 1, 0.05f), 14);
             if (flash > 0) Fill(r, new Color(Warn.r, Warn.g, Warn.b, 0.22f * flash), 14);
@@ -1041,12 +1062,12 @@ namespace StutterFix
         {
             var target = PanelBesideRect(icon);
             float e = EaseOut(open);
-            var old = GUI.color;
-            GUI.color = new Color(old.r, old.g, old.b, old.a * e);
+            float old = ga;
+            ga = old * e;
             // 아이콘 쪽에서 살짝 미끄러져 나온다
             var r = new Rect(target.x + (right ? 1 : -1) * (1 - e) * 18f, target.y, target.width, target.height);
             DrawPanel(r);
-            GUI.color = old;
+            ga = old;
             return r;
         }
 
@@ -1165,50 +1186,11 @@ namespace StutterFix
         }
 
         // ── 막대 한 번에 그리기 ──
-        // 모니터는 IMGUI 라 그리는 요소 하나하나가 매 프레임 따로 그리기 호출이 된다. 요소를 세어 보니 그래프 막대가 대부분이었다
-        // (아이콘 약 35번 중 24번, 상세 150번 넘게 중 90번). 켜 두면 메인·렌더 스레드에 각각 프레임당 0.6ms 가 붙었다
-        // (Arche 가벼운 구간 모니터 끔 341fps / 켬 278fps). 막대는 모서리가 없는 단색 사각형이라, GL 로 한 번에 그린다.
-        // 좌표는 IMGUI 와 같게: GUI.matrix 를 곱하고, GL 은 아래가 원점이라 세로를 뒤집는다. 색 알파에는 GUI.color 를 곱한다(나타나기 효과).
-        // 이 빌드에 색 셰이더가 없으면 예전처럼 하나씩 그린다.
-        private static Material barMat;
-        private static bool barMatTried;
-        private Matrix4x4 barM;
-
-        private bool BarsBegin()
-        {
-            if (!barMatTried)
-            {
-                barMatTried = true;
-                var sh = Shader.Find("Hidden/Internal-Colored");
-                if (sh != null)
-                {
-                    barMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
-                    barMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                    barMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                    barMat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
-                    barMat.SetInt("_ZWrite", 0);
-                    barMat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
-                }
-            }
-            if (barMat == null) return false;
-            barM = GUI.matrix;
-            barMat.SetPass(0);
-            GL.PushMatrix();
-            GL.LoadPixelMatrix();
-            GL.Begin(GL.QUADS);
-            return true;
-        }
-
-        private void GlBar(Rect r, Color c)
-        {
-            c.a *= GUI.color.a;
-            GL.Color(c);
-            float H = Screen.height;
-            Vector3 a = barM.MultiplyPoint3x4(new Vector3(r.xMin, r.yMin, 0)), b = barM.MultiplyPoint3x4(new Vector3(r.xMax, r.yMax, 0));
-            GL.Vertex3(a.x, H - a.y, 0); GL.Vertex3(b.x, H - a.y, 0); GL.Vertex3(b.x, H - b.y, 0); GL.Vertex3(a.x, H - b.y, 0);
-        }
-
-        private static void BarsEnd() { GL.End(); GL.PopMatrix(); }
+        // 그래프 막대는 모서리 없는 단색 사각형이라 uGUI 그래픽 하나(UiBars)에 모아 한 메시로 그린다(값이 그대로면 다시 만들지 않는다).
+        private UiBars curBars;
+        private bool BarsBegin() { curBars = ui.Bars(); return true; }
+        private void GlBar(Rect r, Color c) { c.a *= ga; curBars.Add(r, c); }
+        private void BarsEnd() { if (curBars != null) curBars.Commit(); curBars = null; }
 
         private static Color BarColor(float ms, float normalAlpha) { return ms >= 50 ? Bad : ms >= 25 ? Warn : new Color(1, 1, 1, normalAlpha); }
 
@@ -1230,8 +1212,7 @@ namespace StutterFix
         // 오른쪽 끝에 "보조 값   값" 을 한 줄로 (값은 굵게, 보조 값은 흐리게 바로 왼쪽에)
         private void RightPair(float x, float w, float y, string value, string sub, bool warn)
         {
-            measure.text = value;   // 값 길이만큼 비운다 (곡 중엔 GC 가 멈춰 있으니 GUIContent 를 새로 만들지 않는다)
-            float vw = sValue.CalcSize(measure).x;
+            float vw = ui.Width(value, sValue);   // 값 길이만큼 비운다 (같은 글자는 다시 재지 않는다)
             Label(new Rect(x + w - 160, y + 1, 160, 16), value, sValue);
             if (string.IsNullOrEmpty(sub)) return;
             var old = sSub.normal.textColor;
@@ -1277,8 +1258,8 @@ namespace StutterFix
                 float ein = EaseOut(age / 0.28f), outT = Mathf.Clamp01((ToastLife - age) / 0.5f);
                 var r = new Rect(x + enter.x * (1 - ein), y + enter.y * (1 - ein), TW, TH);
 
-                var old = GUI.color;
-                GUI.color = new Color(old.r, old.g, old.b, old.a * ein * outT);
+                float old = ga;
+                ga = old * ein * outT;
                 if (detailed)
                 {
                     Panel(r, 12);
@@ -1294,11 +1275,11 @@ namespace StutterFix
                     Fill(new Rect(r.x + 13, r.center.y - 3, 6, 6), t.Tone, 3);
                     WithColor(sToastShort, t.IsMod ? ModTone : Fg, new Rect(r.x + 26, r.y, r.width - 34, r.height), t.Short);
                 }
-                GUI.color = old;
+                ga = old;
                 ty += dir * (TH + gap);
             }
         }
 
-        private void OnDestroy() { SystemMonitor.Stop(); StopRecorders(); UiInputBlock.Remove(this); }
+        private void OnDestroy() { SystemMonitor.Stop(); StopRecorders(); UiInputBlock.Remove(this); ui.Destroy(); }
     }
 }

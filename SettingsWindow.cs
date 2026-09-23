@@ -872,6 +872,7 @@ namespace StutterFix
         // (Font.RequestCharactersInTexture)으로 미리 만들었는데 TextCore 와는 상관이 없어 효과가 없었고 1.1초만 먹었다.
         // 지금은 창이 실제로 쓰는 스타일마다 쓰는 글자 전부의 크기를 한 번 잰다. 크기를 재려면 TextCore 가 글자를
         // 만들어야 하므로 그때 한꺼번에 만들어진다. 스타일을 만든 직후(OnGUI 안, 불러오기로 표시) 한 번만 한다.
+        internal const string WarmAscii = WarmText;
         private const string WarmText = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→←↑↓…°%";
         // scale: 그 창이 GUI.matrix 로 키우는 배율. 글자는 화면에 실제로 그려지는 크기마다 따로 만들어지므로
         // 같은 배율을 걸고 재고, 한 번은 실제로(투명하게) 그려 둔다. 그리기 이벤트(Repaint)에서만 한다. 했으면 true.
