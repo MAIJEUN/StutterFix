@@ -174,6 +174,27 @@ namespace StutterFix
             return p;
         }
 
+        // ── (개발자용) 효과 몰림 프레임 쪼개기: 이 프레임에 즉시 이동 경로의 각 단계에 쓴 시간 ──
+        // 효과 시간에서 이것들을 빼면 나머지(클로저·델리게이트 할당, 사전 찾기/저장, 이징·콜백 설정, 태그 찾기)가 나온다.
+        internal static double FrameToMs, FrameDoneMs, FrameKillMs;
+        internal static int FrameTo, FrameDone, FrameKill;
+        private static readonly double TickMs = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        internal static void ResetFrame() { FrameToMs = FrameDoneMs = FrameKillMs = 0; FrameTo = FrameDone = FrameKill = 0; }
+        internal static string FrameSummary()
+        {
+            if (FrameTo + FrameDone + FrameKill == 0) return "";
+            return string.Format(" | 장식 이동 안: 애니메이션 만들기 {0}번 {1:F1}ms, Done(값·콜백) {2}번 {3:F1}ms, 이전 것 끊기 {4}번 {5:F1}ms",
+                FrameTo, FrameToMs, FrameDone, FrameDoneMs, FrameKill, FrameKillMs);
+        }
+
+        public static void KillT(Tween t, bool complete)
+        {
+            if (!Edition.Dev) { t.Kill(complete); return; }
+            long a = System.Diagnostics.Stopwatch.GetTimestamp();
+            try { t.Kill(complete); }
+            finally { FrameKill++; FrameKillMs += (System.Diagnostics.Stopwatch.GetTimestamp() - a) * TickMs; }
+        }
+
         // ── Done ─────────────────────────────────────────────────────
         public static TweenerCore<float, float, FloatOptions> DoneF(TweenerCore<float, float, FloatOptions> t)
         {
