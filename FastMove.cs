@@ -243,6 +243,7 @@ namespace StutterFix
                 string diff = Diff(a[i], Snap(decs[i]));
                 if (diff == null) continue;
                 if (diff.StartsWith("미루기 목록") && InvisibleSkip.IsTruthSample(decs[i])) { TruthDiff++; continue; }   // 개발자용 정답 표본: 게임 함수가 미루지 않고 바로 반영한 장식
+                if (diff.StartsWith("미루기 목록") && !a[i].Lz && a[i].Hid && Precheck.ShownBefore.Contains(decs[i])) { Precheck.VerifyExplained++; continue; }   // 따로 처리할 때 보이다가 같은 효과의 색으로 투명해진 장식
                 bad++;
                 if (first.Length < 300) first += " [" + decs[i].name + ": " + diff + "]";
             }

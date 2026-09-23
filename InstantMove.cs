@@ -268,7 +268,7 @@ namespace StutterFix
         //          -> ApplyColor 는 같은 색을 다시 넣을 뿐이다 (그리기 끄기 상태, 잠든 장식 상태도 그대로)
         // 개발자용은 건너뛸 것 16개 중 1개를 일부러 불러, 부르기 전후 상태(필드, 엔진 색, 그리기 끄기, 미루기 목록)가 같은지 대조한다.
         internal static bool SkipSame = true;
-        internal static long SameSkipped, SameChecked, SameMismatch;
+        internal static long SameSkipped, SameChecked, SameMismatch, SameTruth;
         internal static string SameFirst = "";
         private static long sameCounter;
         private static bool NoopOn { get { return SkipSame && Hitch.Playing; } }
@@ -319,6 +319,7 @@ namespace StutterFix
             bool same = V2(a.Pp, b.Pp) && V2(a.Po, b.Po) && a.Lz == b.Lz && a.Hid == b.Hid && a.Fro == b.Fro && C4(a.Rc, b.Rc) && C4(a.Col, b.Col) && C4(a.Src, b.Src)
                 && Eq(a.Opa, b.Opa) && Eq(a.Child.x, b.Child.x) && Eq(a.Child.y, b.Child.y) && Eq(a.Child.z, b.Child.z);
             if (same) return;
+            if (InvisibleSkip.IsTruthSample(dec)) { SameTruth++; return; }   // 개발자용 정답 표본: 게임 함수가 미루지 않고 바로 반영했다 (개발자용에만 있는 길)
             SameMismatch++;
             if (SameFirst.Length < 500) SameFirst += string.Format(" [{0}: 미루기 {1}->{2}, 안그림 {3}->{4}, 그리기색 {5}->{6}, 엔진색 {7}->{8}, 안쪽 {9}->{10}]",
                 what, a.Lz, b.Lz, a.Fro, b.Fro, a.Rc.ToString("R"), b.Rc.ToString("R"), a.Src.ToString("R"), b.Src.ToString("R"), a.Child.ToString("F5"), b.Child.ToString("F5"));
@@ -328,7 +329,7 @@ namespace StutterFix
         internal static string SameSummary()
         {
             if (SameSkipped == 0 && SameChecked == 0) return "";
-            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + SameFirst + ")" + InvisibleSkip.LazyNoSummary() : "");
+            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + ", 개발자용 정답 표본 " + SameTruth + SameFirst + ")" + InvisibleSkip.LazyNoSummary() : "");
         }
 
         // 개발자용 쪼개기(MoveProf): 설정 함수 시간, 이미 같은 값이었는지, 투명한 채로 남았는지
@@ -557,6 +558,6 @@ namespace StutterFix
             if (Handled == 0 && Checked == 0) return "";
             return " | 즉시 이동 직접 처리 " + Handled + "번" + (Edition.Dev ? " (대조 " + Checked + "번 중 다름 " + Mismatch + First + ")" : "") + SameSummary();
         }
-        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = 0; SameFirst = ""; Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length); }
+        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = SameTruth = 0; SameFirst = ""; Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length); }
     }
 }

@@ -47,7 +47,7 @@ namespace StutterFix
         private static int cleanMask;
         private static int scanIdx, lastCur = -1;
 
-        internal static long Created, Ready, Used, UsedDecos, UsedLazyAdds, Checks, VerifyN, VerifyDecos, VerifyMismatch;
+        internal static long Created, Ready, Used, UsedDecos, UsedLazyAdds, Checks, VerifyN, VerifyDecos, VerifyMismatch, VerifyExplained;
         internal static long InvTouch, InvEffect, InvList, NotReady, NotNoop, NoBit, Resets, TooDirty, UsedDirty;
         internal static string FirstNotNoop = "", VerifyFirst = "";
         private static readonly Dictionary<string, int> skipWhy = new Dictionary<string, int>();
@@ -247,6 +247,8 @@ namespace StutterFix
         }
 
         // 이 장식에 대해 효과가 아무것도 안 바꾸는가. 바꾸면 그 이유를 돌려준다.
+        // 개발자용: 따로 처리하기 직전에 보이던 장식 (검증 재실행은 투명해진 뒤라 위치가 목록으로 간다 - 그 차이는 따로 센다)
+        internal static readonly HashSet<scrDecoration> ShownBefore = new HashSet<scrDecoration>();
         private static bool needLazy;
         private static string NoopNow(Plan p, scrDecoration d)
         {
@@ -275,6 +277,7 @@ namespace StutterFix
         internal static bool TrySkip(ffxMoveDecorationsPlus fx)
         {
             if (Active == 0) return false;
+            if (Edition.Dev) ShownBefore.Clear();
             Plan p = null;
             for (int b = 0; b < MaxPlans; b++) if (plans[b] != null && ReferenceEquals(plans[b].Fx, fx)) { p = plans[b]; break; }
             if (p == null) return false;
@@ -290,7 +293,12 @@ namespace StutterFix
             if (!ok) { if (!p.Ready || !p.Valid) NotReady++; Free(p); return false; }
             // 그대로인 장식: 목록 추가만 (값은 이미 같다). 건드려진 장식: 원래 경로(장식 이동 루프)로 처리
             if (p.AddLazy != null) foreach (var d in p.AddLazy) if (p.Dirty == null || !p.Dirty.Contains(d)) InvisibleSkip.LazyAdd(d);
-            if (p.DirtyList != null && p.DirtyList.Count > 0) { UsedDirty += p.DirtyList.Count; FastMove.RunOn(fx, new List<scrDecoration>(p.DirtyList)); }
+            if (p.DirtyList != null && p.DirtyList.Count > 0)
+            {
+                UsedDirty += p.DirtyList.Count;
+                if (Edition.Dev) { ShownBefore.Clear(); foreach (var d in p.DirtyList) if (!InvisibleSkip.IsHidden(d)) ShownBefore.Add(d); }
+                FastMove.RunOn(fx, new List<scrDecoration>(p.DirtyList));
+            }
             Used++; UsedDecos += p.Targets.Count; if (p.AddLazy != null) UsedLazyAdds += p.AddLazy.Count;
             Free(p);
             return true;
@@ -348,13 +356,13 @@ namespace StutterFix
                 foreach (var kv in skipWhy) s += " " + kv.Key + " " + kv.Value + "개,";
                 s += " 가장 큰 것 장식 " + bigSkipped + "개(" + bigWhy + ")";
             }
-            if (Edition.Dev) s += " (검증: 건너뛴 효과 " + VerifyN + "번을 실제로 돌려 장식 " + VerifyDecos + "개 중 바뀐 것 " + VerifyMismatch + VerifyFirst + ")";
+            if (Edition.Dev) s += " (검증: 건너뛴 효과 " + VerifyN + "번을 실제로 돌려 장식 " + VerifyDecos + "개 중 바뀐 것 " + VerifyMismatch + ", 보이다 투명해져서 목록만 다른 것 " + VerifyExplained + VerifyFirst + ")";
             return s;
         }
         internal static void ResetStats()
         {
             ResetAll();
-            Created = Ready = Used = UsedDecos = UsedLazyAdds = Checks = VerifyN = VerifyDecos = VerifyMismatch = 0;
+            Created = Ready = Used = UsedDecos = UsedLazyAdds = Checks = VerifyN = VerifyDecos = VerifyMismatch = VerifyExplained = 0;
             InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = TooDirty = UsedDirty = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = ""; logged = 0;
         }
     }
