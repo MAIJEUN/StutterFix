@@ -479,6 +479,11 @@ namespace StutterFix
             if (o.songTiming > 0)
                 s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
+            if (Edition.Dev && IconN > 0)
+                s += string.Format("
+[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
+                    GuiRepaintN, GuiRepaintN > 0 ? GuiRepaintMs / GuiRepaintN : 0, GuiOtherN, GuiOtherN > 0 ? GuiOtherMs / GuiOtherN : 0,
+                    IconSeg[0] / IconN, IconSeg[1] / IconN, IconSeg[2] / IconN, IconSeg[3] / IconN, IconSeg[4] / IconN);
             var sb = new System.Text.StringBuilder("\n[곡] 10초 구간별 FPS (메인/렌더 스레드/화면 대기 ms):");
             int best = -1; double bestFps = 0;
             for (int i = 0; i < MaxBuckets; i++)
@@ -811,7 +816,19 @@ namespace StutterFix
             return h + 34;                         // 아래 줄
         }
 
+        // (개발자용) OnGUI 는 한 프레임에 여러 번 불린다(배치 계산, 그리기, 입력). 그리기가 아닌 호출의 비용도 따로 잰다.
+        internal static double GuiOtherMs, GuiRepaintMs; internal static long GuiOtherN, GuiRepaintN;
         private void OnGUI()
+        {
+            if (!Edition.Dev) { OnGUIInner(); return; }
+            long a = Stopwatch.GetTimestamp();
+            bool rep = Event.current.type == EventType.Repaint;
+            OnGUIInner();
+            double ms = (Stopwatch.GetTimestamp() - a) * 1000.0 / Stopwatch.Frequency;
+            if (rep) { GuiRepaintMs += ms; GuiRepaintN++; } else { GuiOtherMs += ms; GuiOtherN++; }
+        }
+
+        private void OnGUIInner()
         {
             if (show <= 0f || C == null) return;
             if (!built) Build();
@@ -943,12 +960,19 @@ namespace StutterFix
         }
 
         // ── 그리기: 아이콘 ────────────────────────────────────────────
+        // (개발자용) 아이콘 그리기 구간별 시간: 판 배경 / FPS 글자 / 항목 글자 / 막대 / 나머지
+        internal static double[] IconSeg = new double[5]; internal static long IconN;
+        private static long segT;
+        private static void Seg(int i) { if (!Edition.Dev) return; long n = Stopwatch.GetTimestamp(); if (i >= 0) IconSeg[i] += (n - segT) * 1000.0 / Stopwatch.Frequency; segT = n; }
+
         private void DrawIcon(Rect r)
         {
+            if (Edition.Dev) { IconN++; segT = Stopwatch.GetTimestamp(); }
             bool hover = r.Contains(Event.current.mousePosition) && Cursor.visible;
             Panel(r, 14);
             if (hover || dragging) Fill(r, new Color(1, 1, 1, 0.05f), 14);
             if (flash > 0) Fill(r, new Color(Warn.r, Warn.g, Warn.b, 0.22f * flash), 14);
+            Seg(0);
 
             float cx = right ? r.x : r.x + 16;          // 화면 안쪽으로 보이는 부분의 왼쪽 끝
             var inner = new Rect(cx, r.y, IconW, r.height);
@@ -958,6 +982,7 @@ namespace StutterFix
             float pulse;
             Color dot = StatusColor(out pulse);
             Fill(new Rect(inner.xMax - 13, inner.y + 7, 6, 6), new Color(dot.r, dot.g, dot.b, pulse), 3);
+            Seg(1);
 
             // 고른 항목: FPS 아래에 한 줄씩. 사용률이 높으면 주황/빨강
             float ly = inner.y + 44;
@@ -967,6 +992,7 @@ namespace StutterFix
                 WithColor(sCenterLine, compactLoad[i] < 0 ? Dim : LoadColor(compactLoad[i], Dim), new Rect(inner.x, ly + 1, inner.width, 13), compact[i]);
                 ly += 15;
             }
+            Seg(2);
 
             // 작은 그래프 (최근 24프레임)
             var g = new Rect(inner.x + 9, r.yMax - 14, inner.width - 18, 9);
@@ -981,10 +1007,12 @@ namespace StutterFix
                 if (batch) GlBar(br, BarColor(v, 0.5f)); else Fill(br, BarColor(v, 0.5f), 0);
             }
             if (batch) BarsEnd();
+            Seg(3);
 
             // 펼칠 수 있다는 표시 (안쪽 가장자리의 짧은 선)
             float lx = right ? inner.x + 3 : inner.xMax - 5;
             Fill(new Rect(lx, r.center.y - 8, 2, 16), new Color(1, 1, 1, hover ? 0.4f : 0.15f), 1);
+            Seg(4);
         }
 
         private Rect PanelBesideRect(Rect icon)
