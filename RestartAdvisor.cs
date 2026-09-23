@@ -77,6 +77,12 @@ namespace StutterFix
                     + (argList.Length > 0 ? " -ArgumentList '" + argList + "'" : "") + " -WorkingDirectory '" + Path.GetDirectoryName(exe).Replace("'", "''") + "'";
                 var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -WindowStyle Hidden -Command \"" + ps.Replace("\"", "\\\"") + "\"")
                 { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
+                // 모드 로더(Doorstop, winhttp.dll)는 "이미 붙었음" 을 DOORSTOP_ 환경 변수로 남기고, 이 값은 게임이 띄운 프로세스로 물려진다.
+                // 그대로 두면 새로 켠 게임에서 Doorstop 이 이미 붙은 줄 알고 모드를 안 불러온다. 재시작용 프로세스에서는 지운다.
+                var keys = new List<string>();
+                foreach (System.Collections.DictionaryEntry kv in Environment.GetEnvironmentVariables()) { var k = kv.Key as string; if (k != null && k.StartsWith("DOORSTOP", StringComparison.OrdinalIgnoreCase)) keys.Add(k); }
+                foreach (var k in keys) psi.EnvironmentVariables.Remove(k);
+                Main.Entry.Logger.Log("[재시작] 지운 모드 로더 표시: " + (keys.Count > 0 ? string.Join(", ", keys.ToArray()) : "없음"));
                 Process.Start(psi);
                 Main.Entry.Logger.Log("[재시작] 게임을 다시 켭니다");
                 try { Main.Config.Save(Main.Entry); } catch { }
