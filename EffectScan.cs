@@ -124,7 +124,7 @@ namespace StutterFix
             EffectBudget.Exit(ms);
             // 실시간 모니터가 "왜 끊겼는지"를 가리려면 플레이어용에서도 프레임마다 효과 시작 시간 합계가 필요하다.
             // 이미 잰 값을 더하기만 하므로 비용은 없다.
-            if (EffectBudget.OuterCall) FrameEffectMs += ms;
+            if (EffectBudget.OuterCall) { FrameEffectMs += ms; FrameN++; if (__instance is ffxMoveDecorationsPlus) FrameMoveMs += ms; }
             if (!Enabled) return;
 
             string name = __instance != null ? __instance.GetType().Name : "?";
@@ -217,11 +217,13 @@ namespace StutterFix
         }
 
         // 지난 프레임과 이번 프레임의 효과 시작 시간 합계 (항상 켜짐)
-        internal static double FrameEffectMs, LastFrameEffectMs;
+        internal static double FrameEffectMs, LastFrameEffectMs, FrameMoveMs, LastFrameMoveMs;   // 그중 장식 이동
+        internal static int FrameN, LastFrameN;
 
         internal static void ResetFrame()
         {
-            LastFrameEffectMs = FrameEffectMs;
+            LastFrameEffectMs = FrameEffectMs; LastFrameMoveMs = FrameMoveMs; LastFrameN = FrameN;
+            FrameMoveMs = 0; FrameN = 0;
             FrameEffectMs = 0;
             StartedThisFrame = 0;
             MsThisFrame = 0;
