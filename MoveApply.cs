@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
+using UnityEngine;
 
 namespace StutterFix
 {
@@ -60,6 +61,11 @@ namespace StutterFix
                 h.Patch(mUpdate, transpiler: new HarmonyMethod(typeof(MoveApply), nameof(Transpiler)));   // 마무리 쪽 위치 쓰기도 같은 값이면 건너뛴다
                 if (Edition.Dev) h.Patch(set, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ProfStart)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(ProfEnd)));
                 h.Patch(start, prefix: new HarmonyMethod(typeof(MoveApply), nameof(Enter)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(Exit)));
+                var mgrLate = AccessTools.Method(typeof(scrDecorationManager), "LateUpdate");
+                var mLogic = AccessTools.Method(typeof(scrDecoration), "LogicUpdate");
+                if (mLogic != null) logicUpdate = (Action<scrDecoration, bool>)Delegate.CreateDelegate(typeof(Action<scrDecoration, bool>), mLogic);
+                if (mgrLate != null) h.Patch(mgrLate, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerLatePrefix)), postfix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerLatePostfix)),
+                    transpiler: logicUpdate != null ? new HarmonyMethod(typeof(MoveApply), nameof(ManagerLateTranspiler)) : null);
                 Main.Entry.Logger.Log("[장식 마무리] 설치" + (Patched ? "" : " - 모양이 달라 적용 안 함"));
             }
             catch (Exception ex) { Main.Entry.Logger.Error("[장식 마무리] 설치 실패: " + ex.Message); }
@@ -203,6 +209,110 @@ namespace StutterFix
             t.localPosition = v;
         }
 
+        // ── Update 단계에서 보이는 장식의 위치 재계산은 LateUpdate 에 맡긴다 ──
+        // 게임은 LateUpdate(scrDecorationManager.LateUpdate -> LogicUpdate)에서 보이는 장식마다 매 프레임 UpdatePosition 을 처음부터 다시 한다.
+        // UpdatePosition 을 부르는 곳은 SetPosition 과 LogicUpdate 두 곳뿐이다. 그래서 Update 단계(애니메이션 진행, 효과 시작)에서
+        // SetPosition 이 부르는 UpdatePosition 은, 보이는 장식이라면 같은 프레임에 그대로 덮어써진다.
+        // X, Y 이동이 따로 걸린 장식은 한 프레임에 같은 계산을 세 번 하고 마지막 한 번만 화면에 남았다.
+        // UpdatePosition 은 그 순간의 값(장식 값, 카메라, 부모 타일)만으로 정해지고 이전 호출 결과를 쓰지 않는다(시차 SetTrans 포함).
+        // 안전장치: 히트박스 장식 제외(Update 단계 충돌 판정이 위치를 읽음), 지난 프레임에 게임 LateUpdate 가 실제로 돌았을 때만,
+        // 그리고 LateUpdate 시점에 안 보이게 돼서 게임이 갱신하지 않는 장식은 끝에서 원래대로 갱신한다.
+        internal static bool LateSkip = true;
+        internal static long LateSkips, LateFixups, LateNotInList, LateChecked, LateMismatch;
+        private static int managerLateFrame = -10;
+        private static readonly List<scrDecoration> lateSkipped = new List<scrDecoration>();
+        private static readonly HashSet<scrDecoration> lateSkippedSet = new HashSet<scrDecoration>(RefEqDeco.Instance);
+
+        private sealed class RefEqDeco : IEqualityComparer<scrDecoration>
+        {
+            internal static readonly RefEqDeco Instance = new RefEqDeco();
+            public bool Equals(scrDecoration a, scrDecoration b) { return ReferenceEquals(a, b); }
+            public int GetHashCode(scrDecoration o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
+        }
+
+        private static bool SkipForLate(scrDecoration d)
+        {
+            if (!LateSkip || !Enabled || (object)d == null || !Hitch.Playing) return false;
+            if (managerLateFrame != UnityEngine.Time.frameCount - 1) return false;   // 이번 프레임 LateUpdate 가 이미 시작됐거나, 지난 프레임에 안 돌았다
+            if (d.hitbox != 0 || !d.GetVisible()) return false;
+            if (lateSkippedSet.Add(d)) lateSkipped.Add(d);
+            LateSkips++;
+            return true;
+        }
+
+        public static void ManagerLatePrefix() { managerLateFrame = UnityEngine.Time.frameCount; }
+
+        private static HashSet<scrDecoration> devAll;
+        private static readonly AccessTools.FieldRef<scrDecorationManager, List<scrDecoration>> allRef =
+            AccessTools.FieldRefAccess<scrDecorationManager, List<scrDecoration>>("allDecorations");
+
+        public static void ManagerLatePostfix(scrDecorationManager __instance)
+        {
+            if (lateSkipped.Count == 0) return;
+            if (Edition.Dev && devAll == null) { try { devAll = new HashSet<scrDecoration>(allRef(__instance), RefEqDeco.Instance); } catch { devAll = new HashSet<scrDecoration>(RefEqDeco.Instance); } }
+            for (int i = 0; i < lateSkipped.Count; i++)
+            {
+                var d = lateSkipped[i];
+                if (d == null) continue;
+                try
+                {
+                    if (!d.GetVisible()) { update(d); LateFixups++; continue; }   // 게임이 이번엔 안 해 줬다
+                    if (!Edition.Dev) continue;
+                    // 개발자용: 게임 목록에 없는 장식이면 LogicUpdate 가 안 돌아서 위치가 안 바뀐다 -> 세고 원래대로 갱신
+                    if (!devAll.Contains(d)) { LateNotInList++; update(d); continue; }
+                    // 개발자용: 32개 중 1개는 게임이 LateUpdate 에서 만든 값이 "지금 값으로 한 번 더 계산" 과 같은지 본다
+                    if ((LateChecked++ & 31) != 0) continue;
+                    var p = pivotRef(d);
+                    if (p == null) continue;
+                    Vector3 a = p.localPosition, s = p.localScale; Quaternion r = p.rotation;
+                    update(d);
+                    if ((a - p.localPosition).sqrMagnitude > 1e-8f || (s - p.localScale).sqrMagnitude > 1e-8f || Quaternion.Angle(r, p.rotation) > 0.01f) LateMismatch++;
+                }
+                catch { }
+            }
+            lateSkipped.Clear();
+            lateSkippedSet.Clear();
+        }
+
+        private static readonly AccessTools.FieldRef<scrDecoration, Transform> pivotRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("pivotTrans");
+
+        // ── 매 프레임 장식 순회에서 "아무것도 안 바뀌는" 호출 빼기 ──
+        // scrDecorationManager.LateUpdate 는 매 프레임 장식 전부(Arche 28,835개)에 LogicUpdate(disableV15Features) 를 부른다. 평소에도 2ms.
+        // scrVisualDecoration 의 LogicUpdate 를 IL 로 따라가면:
+        //   GetVisible() 이 false 면 UpdatePosition 없음 / disable 이 true 면 UpdateShader 는 EnableMeshRenderer(false) 뿐이고
+        //   meshRendererEnabled 가 이미 false 면 그것도 아무것도 안 함 / hitbox 가 0 이면 UpdateHitboxState 없음.
+        // 이 조건이 모두 맞으면 호출해도 바뀌는 것이 없으므로 부르지 않는다. (scrVisualDecoration 은 LogicUpdate 를 덮어쓰지 않는다)
+        internal static bool LogicSkip = true;
+        internal static long LogicSkips, LogicCalls;
+        private static readonly AccessTools.FieldRef<scrVisualDecoration, bool> meshOnRef = AccessTools.FieldRefAccess<scrVisualDecoration, bool>("meshRendererEnabled");
+        private static Action<scrDecoration, bool> logicUpdate;
+
+        public static void LogicMaybe(scrDecoration d, bool disableShader)
+        {
+            LogicCalls++;
+            if (LogicSkip && Enabled && disableShader && d.hitbox == 0 && d.GetType() == typeof(scrVisualDecoration)
+                && !meshOnRef((scrVisualDecoration)d) && !d.GetVisible())
+            { LogicSkips++; return; }
+            logicUpdate(d, disableShader);
+        }
+
+        public static IEnumerable<CodeInstruction> ManagerLateTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            int n = 0;
+            foreach (var c in instructions)
+            {
+                var mi = c.operand as MethodInfo;
+                if (mi != null && mi.Name == "LogicUpdate" && mi.DeclaringType == typeof(scrDecoration))
+                {
+                    c.opcode = OpCodes.Call;
+                    c.operand = AccessTools.Method(typeof(MoveApply), nameof(LogicMaybe));
+                    n++;
+                }
+                yield return c;
+            }
+            if (n != 1) Main.Entry.Logger.Log("[장식 순회] LogicUpdate 호출 " + n + "곳 (예상 1곳)");
+        }
+
         public static void ClampNow(scrDecoration d)
         {
             if (profNow && p3 == p2) p3 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -212,6 +322,7 @@ namespace StutterFix
 
         public static void UpdateNow(scrDecoration d)
         {
+            if (SkipForLate(d)) return;
             if (depth > 0 && Enabled) { Mark(d); return; }
             update(d);
         }
@@ -243,7 +354,7 @@ namespace StutterFix
             {
                 var d = dirty[i];
                 if (d == null) continue;
-                try { clamp(d); update(d); Flushed++; } catch { }
+                try { clamp(d); if (!SkipForLate(d)) update(d); Flushed++; } catch { }
             }
             if (Edition.Dev) FlushMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             dirty.Clear();
@@ -257,10 +368,12 @@ namespace StutterFix
             return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 마무리에 쓴 시간 {7:F0}ms) | 편집기 피벗 갱신 {4}번을 {5}번으로 | 위치 쓰기 {8}번 중 같은 값이라 건너뜀 {9}번{6}",
                 Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips)
                 + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary()
+                + (LogicCalls > 0 ? string.Format(" | 매 프레임 장식 순회 {0}번 중 바뀌는 게 없어 뺀 것 {1}번", LogicCalls, LogicSkips) : "")
+                + (LateSkips > 0 ? string.Format(" | 보이는 장식 위치 재계산을 LateUpdate 에 맡김 {0}번 (안 보이게 돼서 대신 갱신 {1}번){2}", LateSkips, LateFixups, Edition.Dev ? string.Format(", 검사 {0}개 중 다름 {1}, 게임 목록에 없음 {2}", LateChecked / 32, LateMismatch, LateNotInList) : "") : "")
                 + (MovesIn + MovesOut > 0 ? string.Format(" | 옮긴 장식 중 투명: 효과 시작 안 {0}/{1}, 애니메이션 진행 중 {2}/{3} (그중 히트박스 {4})", HiddenIn, MovesIn, HiddenOut, MovesOut, HiddenHitbox) : "");
         }
 
-        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; }
+        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; devAll = null; LogicSkips = LogicCalls = 0; }
         internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); ResetMoves(); }
     }
 }
