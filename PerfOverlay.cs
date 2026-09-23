@@ -305,7 +305,7 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
+            if (playing && !wasPlaying) { Main.Entry.Logger.Log("[곡 시작] " + ScreenState()); songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
             wasPlaying = playing;
             if (!playing) SongBucket = -1;
             if (playing && ms < 1500f)
@@ -486,6 +486,18 @@ namespace StutterFix
 
         // 곡이 끝나면 그 곡의 평균을 한 줄 남긴다. 끊김이 없는데도 프레임이 낮은 맵을 가려내려면
         // 평균 FPS 와 GPU/CPU 어느 쪽이 큰지가 필요하다(모니터가 꺼져 있으면 GPU/CPU 는 비어 있다).
+        // 화면을 내보내는 쪽 설정 (화면 대기가 판마다 생겼다 없어졌다 해서 남긴다)
+        internal static string ScreenState()
+        {
+            try
+            {
+                var r = Screen.currentResolution;
+                return string.Format("화면: 수직동기 {0}, 목표 FPS {1}, {2}, {3}x{4} {5:F0}Hz, 창 {6}x{7}", QualitySettings.vSyncCount, Application.targetFrameRate,
+                    Screen.fullScreenMode, r.width, r.height, r.refreshRateRatio.value, Screen.width, Screen.height);
+            }
+            catch (System.Exception ex) { return "화면: 읽기 실패 " + ex.Message; }
+        }
+
         internal static string SongSummary()
         {
             var o = Instance;
@@ -497,6 +509,7 @@ namespace StutterFix
             if (o.songWorstPlay > 0) s += string.Format(" | 그 프레임: 게임 효과 {0}개 {1:F1}ms (그중 장식 이동 {2:F1}ms), 나머지 {3:F1}ms", o.wpN, o.wpFx, o.wpMove, o.songWorstPlay - o.wpFx);
             if (o.fxWorstFx > 0) s += string.Format(" | 효과가 가장 무거운 프레임 {0:F0}ms: 게임 효과 {1:F1}ms (그중 장식 이동 {2:F1}ms)", o.fxWorst, o.fxWorstFx, o.fxWorstMove);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
+            s += " | " + ScreenState();
             if (Edition.Dev && IconN > 0)
                 s += string.Format("\n[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
                     GuiRepaintN, GuiRepaintN > 0 ? GuiRepaintMs / GuiRepaintN : 0, GuiOtherN, GuiOtherN > 0 ? GuiOtherMs / GuiOtherN : 0,
