@@ -398,11 +398,12 @@ namespace StutterFix
                 + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary()
                 + (LogicCalls > 0 ? string.Format(" | 매 프레임 장식 순회 {0}번 중 바뀌는 게 없어 뺀 것 {1}번", LogicCalls, LogicSkips) : "")
                 + Dormancy.Summary()
+                + InstantMove.Summary()
                 + (LateSkips > 0 ? string.Format(" | 보이는 장식 위치 재계산을 LateUpdate 에 맡김 {0}번 (안 보이게 돼서 대신 갱신 {1}번){2}", LateSkips, LateFixups, Edition.Dev ? string.Format(", 검사 {0}개 중 다름 {1}, 게임 목록에 없음 {2}", LateChecked / 32, LateMismatch, LateNotInList) : "") : "")
                 + (MovesIn + MovesOut > 0 ? string.Format(" | 옮긴 장식 중 투명: 효과 시작 안 {0}/{1}, 애니메이션 진행 중 {2}/{3} (그중 히트박스 {4})", HiddenIn, MovesIn, HiddenOut, MovesOut, HiddenHitbox) : "");
         }
 
-        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; devAll = null; LogicSkips = LogicCalls = 0; Dormancy.ResetStats(); }
+        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; devAll = null; LogicSkips = LogicCalls = 0; Dormancy.ResetStats(); InstantMove.Reset(); }
         internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); ResetMoves(); }
     }
 }
