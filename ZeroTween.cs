@@ -178,22 +178,25 @@ namespace StutterFix
         public static TweenerCore<float, float, FloatOptions> DoneF(TweenerCore<float, float, FloatOptions> t)
         {
             if (t != null && ReferenceEquals(t, pF) && t.active) { Finish(t, 0); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            var c = Pre(t); var r = t.Done(); Post(c); if (r != null) TweenDriver.Register(r); return r;
         }
         public static TweenerCore<Vector2, Vector2, VectorOptions> DoneV(TweenerCore<Vector2, Vector2, VectorOptions> t)
         {
             if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(t, 1); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            var c = Pre(t); var r = t.Done(); Post(c); if (r != null) TweenDriver.Register(r); return r;
         }
         public static TweenerCore<Color, Color, ColorOptions> DoneC(TweenerCore<Color, Color, ColorOptions> t)
         {
             if (t != null && ReferenceEquals(t, pC) && t.active) { Finish(t, 2); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            var c = Pre(t); var r = t.Done(); Post(c); if (r != null) TweenDriver.Register(r); return r;
         }
         public static Tweener DoneT(Tweener t)
         {
             if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(pV, 1); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            var c = Pre(t); var r = t.Done(); Post(c);
+            var rv = r as TweenerCore<Vector2, Vector2, VectorOptions>;
+            if (rv != null) TweenDriver.Register(rv);
+            return r;
         }
 
         // DOTween 의 Complete 와 같은 순서: 값 넣기 -> OnUpdate -> OnComplete. 대역은 콜백 전에 끈다(콜백 안에서 또 쓸 수 있게).
