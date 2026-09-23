@@ -342,10 +342,14 @@ namespace StutterFix
         {
             try
             {
-                foreach (var ins in PatchProcessor.GetOriginalInstructions(m))
+                // call(0x28) / callvirt(0x6F) 뒤의 토큰을 풀어 부르는 함수를 확인한다
+                var il = m.GetMethodBody().GetILAsByteArray();
+                for (int i = 0; i + 4 < il.Length; i++)
                 {
-                    var mi = ins.operand as MethodInfo;
-                    if (mi != null && mi.Name == name && mi.DeclaringType == typeof(scrDecoration)) return true;
+                    if (il[i] != 0x28 && il[i] != 0x6F) continue;
+                    MethodBase mb = null;
+                    try { mb = m.Module.ResolveMethod(BitConverter.ToInt32(il, i + 1)); } catch { }
+                    if (mb != null && mb.Name == name && mb.DeclaringType == typeof(scrDecoration)) return true;
                 }
             }
             catch { }
