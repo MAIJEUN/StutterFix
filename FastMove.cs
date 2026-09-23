@@ -141,35 +141,47 @@ namespace StutterFix
         // 돌려주는 것은 다시 쓰는 객체다(바로 복사해서 쓸 것).
         internal static ShapeInfo Shape(ffxMoveDecorationsPlus fx)
         {
-            if (durRef(fx) > 0f) return null;
-            if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) return null;
-            if (mtUsed(fx) && (int)mtRef(fx) != 7) return null;
-            if (parUsed(fx) || visUsed(fx) || depthUsed(fx)) return null;
+            if (durRef(fx) > 0f) return Why("길이 있음");
+            if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) return Why("이미지·마스크");
+            if (mtUsed(fx) && (int)mtRef(fx) != 7) return Why("배치 방식");
+            if (parUsed(fx) || visUsed(fx) || depthUsed(fx)) return Why(parUsed(fx) ? "시차 배율" : visUsed(fx) ? "보이기" : "깊이");
             bool move = !fdt(fx);
             var tp = tPos(fx);
             bool px = move && posUsed(fx) && !float.IsNaN(tp.x), py = move && posUsed(fx) && !float.IsNaN(tp.y), pos = px || py;
-            if (pos && (int)mtRef(fx) == 7) return null;
+            if (pos && (int)mtRef(fx) == 7) return Why("상대 이동");
             if (move)
             {
-                var a = tParOff(fx); if (parOffUsed(fx) && (!float.IsNaN(a.x) || !float.IsNaN(a.y))) return null;
-                var b = tPiv(fx); if (pivUsed(fx) && (!float.IsNaN(b.x) || !float.IsNaN(b.y))) return null;
-                if (rotUsed(fx)) return null;
+                var a = tParOff(fx); if (parOffUsed(fx) && (!float.IsNaN(a.x) || !float.IsNaN(a.y))) return Why("시차 오프셋");
+                var b = tPiv(fx); if (pivUsed(fx) && (!float.IsNaN(b.x) || !float.IsNaN(b.y))) return Why("피벗");
+                if (rotUsed(fx)) return Why("회전");
                 if (scaleUsed(fx))
                 {
                     Vector2 sc = !float.IsNaN(tScale(fx)) ? new Vector2(tScale(fx), tScale(fx)) : tScaleV2(fx);
-                    if (!float.IsNaN(sc.x) || !float.IsNaN(sc.y)) return null;
+                    if (!float.IsNaN(sc.x) || !float.IsNaN(sc.y)) return Why("크기");
                 }
             }
             bool col = colUsed(fx), opa = opaUsed(fx);
-            if (!pos && !col && !opa) return null;
+            if (!pos && !col && !opa) return Why("바꾸는 것 없음");
             var tags = tagsRef(fx); var mgr = mgrRef(fx);
-            if (tags == null || tags.Count != 1 || tags[0] == null || (object)mgr == null) return null;
+            if (tags == null || tags.Count != 1 || tags[0] == null || (object)mgr == null) return Why("태그 여러 개");
             var dict = taggedRef(mgr); List<scrDecoration> l;
-            if (dict == null || !dict.TryGetValue(tags[0], out l) || l == null) return null;
+            if (dict == null || !dict.TryGetValue(tags[0], out l) || l == null) return Why("대상 없음");
             shape.Targets = l; shape.Tag = tags[0]; shape.Pos = pos; shape.Px = px; shape.Py = py; shape.Col = col; shape.Opa = opa;
             shape.Tp = tp; shape.Tc = tCol(fx); shape.To = tOpa(fx);
             shape.Keys = (px ? 1 << 1 : 0) | (py ? 1 << 2 : 0) | (col ? 1 << 9 : 0) | (opa ? 1 << 10 : 0);
             return shape;
+        }
+        internal static string LastWhy = "";
+        private static ShapeInfo Why(string w) { LastWhy = w; return null; }
+        // 효과의 대상 수 (태그별 목록 길이 합, 중복 포함)
+        internal static int TargetCount(ffxMoveDecorationsPlus fx)
+        {
+            var tags = tagsRef(fx); var mgr = mgrRef(fx);
+            if (tags == null || (object)mgr == null) return 0;
+            var dict = taggedRef(mgr); if (dict == null) return 0;
+            int n = 0; List<scrDecoration> l;
+            foreach (var t in tags) if (t != null && dict.TryGetValue(t, out l) && l != null) n += l.Count;
+            return n;
         }
         internal static IEqualityComparer<scrDecoration> DecoEq { get { return RefEq.I; } }
         internal static bool IsClean(List<scrDecoration> l, int ver) { int at; return cleanAt.TryGetValue(l, out at) && at == ver; }

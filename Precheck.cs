@@ -48,6 +48,8 @@ namespace StutterFix
         internal static long Created, Ready, Used, UsedDecos, Checks, VerifyN, VerifyDecos, VerifyMismatch;
         internal static long InvTouch, InvEffect, InvList, NotReady, NotNoop, NoBit, Resets;
         internal static string FirstNotNoop = "", VerifyFirst = "";
+        private static readonly Dictionary<string, int> skipWhy = new Dictionary<string, int>();
+        private static int bigSkipped; private static string bigWhy = "";
 
         private static readonly AccessTools.FieldRef<scrVfxPlus, List<ffxPlusBase>> effRef = AccessTools.FieldRefAccess<scrVfxPlus, List<ffxPlusBase>>("effects");
         private static readonly AccessTools.FieldRef<scrVfxPlus, int> idxRef = AccessTools.FieldRefAccess<scrVfxPlus, int>("currentVfxIndex");
@@ -192,6 +194,13 @@ namespace StutterFix
         private static void TryPlan(ffxMoveDecorationsPlus fx)
         {
             var s = FastMove.Shape(fx);
+            if (s == null)
+            {
+                // 대상이 많은 효과를 왜 못 맡았는지 센다 (다음에 무엇을 넓힐지 보려고)
+                int n = FastMove.TargetCount(fx);
+                if (n >= MinTargets) { int c; skipWhy.TryGetValue(FastMove.LastWhy, out c); skipWhy[FastMove.LastWhy] = c + 1; if (n > bigSkipped) { bigSkipped = n; bigWhy = FastMove.LastWhy; } }
+                return;
+            }
             if (s == null) return;
             if (s.Targets.Count < MinTargets) return;
             int b = FreeBit();
@@ -316,6 +325,12 @@ namespace StutterFix
             if (Created == 0 && Resets == 0) return "";
             string s = string.Format(" | 미리 확인: 계획 {0}개, 확인 끝남 {1}개, 건너뛴 효과 {2}개(장식 {3}개), 장식 확인 {4}번 | 못 쓴 것: 확인 뒤 바뀜 {5}번, 원래 코드 효과가 대상을 건드림 {6}번, 목록 바뀜 {7}번, 발동 전에 못 끝냄·취소 {8}번, 그대로가 아님 {9}번 [{10}], 자리 없음 {11}번, 전체 취소 {12}번",
                 Created, Ready, Used, UsedDecos, Checks, InvTouch, InvEffect, InvList, NotReady, NotNoop, FirstNotNoop, NoBit, Resets);
+            if (skipWhy.Count > 0)
+            {
+                s += " | 대상 " + MinTargets + "개 이상인데 못 맡은 효과:";
+                foreach (var kv in skipWhy) s += " " + kv.Key + " " + kv.Value + "개,";
+                s += " 가장 큰 것 장식 " + bigSkipped + "개(" + bigWhy + ")";
+            }
             if (Edition.Dev) s += " (검증: 건너뛴 효과 " + VerifyN + "번을 실제로 돌려 장식 " + VerifyDecos + "개 중 바뀐 것 " + VerifyMismatch + VerifyFirst + ")";
             return s;
         }
@@ -323,7 +338,7 @@ namespace StutterFix
         {
             ResetAll();
             Created = Ready = Used = UsedDecos = Checks = VerifyN = VerifyDecos = VerifyMismatch = 0;
-            InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = 0; FirstNotNoop = ""; VerifyFirst = "";
+            InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = "";
         }
     }
 }
