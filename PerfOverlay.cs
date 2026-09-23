@@ -123,6 +123,11 @@ namespace StutterFix
         // "왜 프레임이 떨어졌나" 는 둘 중 어느 쪽이 큰지를 봐야 알 수 있다.
         private double songGpu, songCpu, songMod;
         private int songTiming;
+        // 곡 평균만으로는 "가벼운 구간에서 몇 FPS 까지 나오나" 를 알 수 없다(같은 설정으로도 곡 평균이 121~149 로 흔들렸다).
+        // 곡을 10초씩 잘라 구간마다 평균을 남긴다.
+        private const int BucketSec = 10, MaxBuckets = 180;
+        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets];
+        private readonly int[] bucketFrames = new int[MaxBuckets];
 
         private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod, IsLoading; public string Cause, Detail, Title, Short; public Color Tone; }
         private readonly List<HitchRec> history = new List<HitchRec>();   // 최근 끊김 (상세 패널 목록)
@@ -263,10 +268,12 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; }
+            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); }
             wasPlaying = playing;
             if (playing && ms < 1500f)
             {
+                int b = (int)(songMs / (BucketSec * 1000.0));
+                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
                 if (lastGpu > 0f || lastCpu > 0f) { songGpu += lastGpu; songCpu += lastCpu; songTiming++; }
                 songMod += ModCost.LastFrameMs;   // 모드가 그 프레임에 쓴 시간(모니터 그리기 포함)
@@ -432,7 +439,17 @@ namespace StutterFix
             if (o.songTiming > 0)
                 s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
-            return s;
+            var sb = new System.Text.StringBuilder("\n[곡] 10초 구간별 FPS (CPU ms):");
+            int best = -1; double bestFps = 0;
+            for (int i = 0; i < MaxBuckets; i++)
+            {
+                if (o.bucketFrames[i] < 10) continue;
+                double fps = 1000.0 * o.bucketFrames[i] / o.bucketMs[i];
+                sb.AppendFormat(" {0}s {1:F0}({2:F1})", i * BucketSec, fps, o.bucketCpu[i] / o.bucketFrames[i]);
+                if (fps > bestFps) { bestFps = fps; best = i; }
+            }
+            if (best >= 0) sb.AppendFormat(" | 가장 높은 구간 {0}s {1:F0} FPS", best * BucketSec, bestFps);
+            return s + sb.ToString();
         }
         private float smooth;
 
