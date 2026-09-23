@@ -482,7 +482,9 @@ namespace StutterFix
             if (Edition.Dev && IconN > 0)
                 s += string.Format("\n[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
                     GuiRepaintN, GuiRepaintN > 0 ? GuiRepaintMs / GuiRepaintN : 0, GuiOtherN, GuiOtherN > 0 ? GuiOtherMs / GuiOtherN : 0,
-                    IconSeg[0] / IconN, IconSeg[1] / IconN, IconSeg[2] / IconN, IconSeg[3] / IconN, IconSeg[4] / IconN);
+                    IconSeg[0] / IconN, IconSeg[1] / IconN, IconSeg[2] / IconN, IconSeg[3] / IconN, IconSeg[4] / IconN)
+                    + (GuiSegN > 0 ? string.Format(" | 그리기 한 번: 준비 {0:F3} / 마우스 {1:F3} / 본체 {2:F3} / 옆 패널 {3:F3} / 알림 {4:F3} ms, 옆 패널 펼친 프레임 {5}/{6}",
+                        GuiSeg[0] / GuiSegN, GuiSeg[1] / GuiSegN, GuiSeg[2] / GuiSegN, GuiSeg[3] / GuiSegN, GuiSeg[4] / GuiSegN, PanelOpenN, GuiSegN) : "");
             var sb = new System.Text.StringBuilder("\n[곡] 10초 구간별 FPS (메인/렌더 스레드/화면 대기 ms):");
             int best = -1; double bestFps = 0;
             for (int i = 0; i < MaxBuckets; i++)
@@ -817,6 +819,7 @@ namespace StutterFix
 
         // (개발자용) OnGUI 는 한 프레임에 여러 번 불린다(배치 계산, 그리기, 입력). 그리기가 아닌 호출의 비용도 따로 잰다.
         internal static double GuiOtherMs, GuiRepaintMs; internal static long GuiOtherN, GuiRepaintN;
+        internal static double[] GuiSeg = new double[5]; internal static long GuiSegN, PanelOpenN;
         private void OnGUI()
         {
             if (!Edition.Dev) { OnGUIInner(); return; }
@@ -853,19 +856,32 @@ namespace StutterFix
                 else if (mode == 2) widget = EdgeRect(MiniWidth(), MiniH, 12);
                 else widget = EdgeRect(PW, PanelHeight(), 12);
 
+                bool rp = Edition.Dev && Event.current.type == EventType.Repaint;
+                long g0 = rp ? Stopwatch.GetTimestamp() : 0;
                 if (Mode != 0) HandleMouse(mode);
+                long g1 = rp ? Stopwatch.GetTimestamp() : 0;
 
                 if (Event.current.type == EventType.Repaint)
                 {
                     Rect side = widget;
+                    long g2 = 0, g3 = 0;
                     if (mode == 1)
                     {
                         DrawIcon(widget);
+                        g2 = rp ? Stopwatch.GetTimestamp() : 0;
                         if (open > 0f) side = DrawPanelBeside(widget);
+                        g3 = rp ? Stopwatch.GetTimestamp() : 0;
                     }
                     else if (mode == 2) DrawMini(widget);
                     else DrawPanel(widget);
+                    if (rp && mode != 1) { g2 = Stopwatch.GetTimestamp(); g3 = g2; }
                     DrawToasts(side);
+                    if (rp)
+                    {
+                        double f = 1000.0 / Stopwatch.Frequency; long g4 = Stopwatch.GetTimestamp();
+                        GuiSeg[0] += (g0 - drawStart) * f; GuiSeg[1] += (g1 - g0) * f; GuiSeg[2] += (g2 - g1) * f; GuiSeg[3] += (g3 - g2) * f; GuiSeg[4] += (g4 - g3) * f; GuiSegN++;
+                        if (open > 0f) PanelOpenN++;
+                    }
                 }
             }
             finally

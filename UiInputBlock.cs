@@ -20,6 +20,8 @@ namespace StutterFix
         private static readonly Dictionary<object, RectTransform> blocks = new Dictionary<object, RectTransform>();
 
         // guiRect: 화면 픽셀 좌표(왼쪽 위가 0,0 인 IMGUI 기준). 빈 사각형이면 치운다.
+        private static readonly Dictionary<object, Rect> lastRects = new Dictionary<object, Rect>();
+
         internal static void Place(object owner, Rect guiRect)
         {
             if (guiRect.width <= 0 || guiRect.height <= 0) { Clear(owner); return; }
@@ -40,9 +42,15 @@ namespace StutterFix
                     blocks[owner] = rt;
                 }
                 if (!rt.gameObject.activeSelf) rt.gameObject.SetActive(true);
-                // uGUI 는 왼쪽 아래가 0,0 이다
-                rt.anchoredPosition = new Vector2(guiRect.x, Screen.height - guiRect.yMax);
-                rt.sizeDelta = new Vector2(guiRect.width, guiRect.height);
+                // uGUI 는 왼쪽 아래가 0,0 이다. 모니터는 OnGUI 마다(한 프레임에 여러 번) 부르는데, 값이 같아도 넣으면 캔버스가 매번 다시 계산된다.
+                // 바뀌었을 때만 넣는다.
+                var pos = new Vector2(guiRect.x, Screen.height - guiRect.yMax);
+                var size = new Vector2(guiRect.width, guiRect.height);
+                Rect last;
+                if (lastRects.TryGetValue(owner, out last) && last.position == pos && last.size == size) return;
+                lastRects[owner] = new Rect(pos, size);
+                rt.anchoredPosition = pos;
+                rt.sizeDelta = size;
             }
             catch { }
         }
@@ -51,6 +59,7 @@ namespace StutterFix
         {
             RectTransform rt;
             if (blocks.TryGetValue(owner, out rt) && rt != null && rt.gameObject.activeSelf) rt.gameObject.SetActive(false);
+            lastRects.Remove(owner);   // 다시 켜질 때 위치를 새로 넣게
         }
 
         internal static void Remove(object owner)
@@ -58,6 +67,7 @@ namespace StutterFix
             RectTransform rt;
             if (!blocks.TryGetValue(owner, out rt)) return;
             blocks.Remove(owner);
+            lastRects.Remove(owner);
             if (rt != null) Object.Destroy(rt.gameObject);
             if (blocks.Count == 0 && root != null) { Object.Destroy(root); root = null; }
         }
