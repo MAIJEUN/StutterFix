@@ -316,7 +316,7 @@ namespace StutterFix
             snapPending = false; bool ign = snapIgnoreSrc; snapIgnoreSrc = false;
             var b = Take(dec); var a = snap;
             SameChecked++;
-            bool same = V2(a.Pp, b.Pp) && V2(a.Po, b.Po) && a.Lz == b.Lz && a.Hid == b.Hid && a.Fro == b.Fro && C4(a.Rc, b.Rc) && C4(a.Col, b.Col) && (ign || C4(a.Src, b.Src))
+            bool same = V2(a.Pp, b.Pp) && V2(a.Po, b.Po) && a.Lz == b.Lz && a.Hid == b.Hid && a.Fro == b.Fro && C4(a.Rc, b.Rc) && C4(a.Col, b.Col) && (ign || (a.Hid && b.Hid) || C4(a.Src, b.Src))
                 && Eq(a.Opa, b.Opa) && Eq(a.Child.x, b.Child.x) && Eq(a.Child.y, b.Child.y) && Eq(a.Child.z, b.Child.z);
             if (same) return;
             if (InvisibleSkip.IsTruthSample(dec)) { SameTruth++; return; }   // 개발자용 정답 표본: 게임 함수가 미루지 않고 바로 반영했다 (개발자용에만 있는 길)
