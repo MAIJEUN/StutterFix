@@ -104,7 +104,6 @@ namespace StutterFix
                 EffectScan.Install(harmony);   // 효과 나누기가 이 패치를 통해 돈다
                 RecolorSplit.Install(harmony);
                 ZeroTween.Install(harmony);
-                TweenDriver.Install(harmony);
                 MoveApply.Install(harmony);
                 Dormancy.Install(harmony);
                 ImagePrefetch.Install(harmony);
@@ -292,7 +291,6 @@ namespace StutterFix
             Try(() => SystemMonitor.Keep = false);
             Try(FastBlend.Uninstall);      // 바꿔 끼운 블렌드 장식 재질을 원래대로
             Try(InvisibleSkip.Uninstall);   // 그리기에서 뺀 투명 장식을 되돌린다
-            Try(TweenDriver.ReleaseAll);   // 멈춰 둔 애니메이션을 DOTween 에 돌려준다
             Try(SettingsWindow.Destroy);
             Try(PerfOverlay.Destroy);
             Try(ParticleTextWatch.Shutdown);
@@ -414,8 +412,6 @@ namespace StutterFix
             RecolorSplit.Enabled = Config.RecolorSplit;
             TweenFix.Enabled = Config.TweenGuard;
             ZeroTween.Enabled = Config.ZeroTween;
-            TweenDriver.Enabled = Config.ZeroTween;
-            if (!TweenDriver.Enabled) TweenDriver.ReleaseAll();
             MoveApply.Enabled = Config.ZeroTween;   // 같은 스위치로 실험 (즉시 이동 최적화)
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
