@@ -21,6 +21,10 @@ namespace StutterFix
         private static string[] names = new string[0];
         private static long[] ticks = new long[0];
         private static long[] lastFrame = new long[0];
+        // 곡 전체와 10초 구간별 누적. 스크립트 함수를 다 합쳐도 가벼운 구간 프레임(6.2ms)의 1.8ms 뿐이라,
+        // 나머지가 엔진의 어느 단계인지 평소 프레임 기준으로 본다.
+        private static long[] songTicks = new long[0];
+        private static long[,] bucketTicks = new long[0, 0];
 
         private static PlayerLoopSystem original;
         private static bool installed;
@@ -70,6 +74,8 @@ namespace StutterFix
                 names = nameList.ToArray();
                 ticks = new long[names.Length];
                 lastFrame = new long[names.Length];
+                songTicks = new long[names.Length];
+                bucketTicks = new long[PerfOverlay.MaxBuckets, names.Length];
                 lastStamp = Stopwatch.GetTimestamp();
                 lastIndex = -1;
                 installed = true;
@@ -110,7 +116,10 @@ namespace StutterFix
             }
             else if (lastIndex >= 0)
             {
-                ticks[lastIndex] += now - lastStamp;
+                long d = now - lastStamp;
+                ticks[lastIndex] += d;
+                int b = PerfOverlay.SongBucket;
+                if (b >= 0) { songTicks[lastIndex] += d; bucketTicks[b, lastIndex] += d; }
             }
 
             lastStamp = now;
@@ -118,6 +127,41 @@ namespace StutterFix
         }
 
         // 직전 프레임에서 가장 오래 걸린 단계들. 끊겼을 때만 부르므로 여기서는 문자열을 만들어도 된다.
+        internal static void ResetSong()
+        {
+            Array.Clear(songTicks, 0, songTicks.Length);
+            Array.Clear(bucketTicks, 0, bucketTicks.Length);
+        }
+
+        internal static void ReportSong()
+        {
+            if (!installed || names.Length == 0) return;
+            int frames = PerfOverlay.SongFrameCount;
+            if (frames < 30) return;
+            Main.Entry.Logger.Log("[엔진 단계] 곡 평균, 프레임당: " + Rank(i => songTicks[i], frames));
+            int best, bestFrames;
+            if (PerfOverlay.BestBucket(out best, out bestFrames))
+                Main.Entry.Logger.Log("[엔진 단계] 가장 가벼운 구간 " + best * 10 + "초, 프레임당: " + Rank(i => bucketTicks[best, i], bestFrames));
+        }
+
+        private static string Rank(Func<int, long> t, int frames)
+        {
+            var idx = new List<int>();
+            long total = 0;
+            for (int i = 0; i < names.Length; i++) { idx.Add(i); total += t(i); }
+            idx.Sort((a, b) => t(b).CompareTo(t(a)));
+            var sb = new System.Text.StringBuilder();
+            sb.Append("합계 ").Append((total * 1000.0 / Stopwatch.Frequency / frames).ToString("F2")).Append("ms | ");
+            for (int n = 0; n < idx.Count && n < 14; n++)
+            {
+                double ms = t(idx[n]) * 1000.0 / Stopwatch.Frequency / frames;
+                if (ms < 0.05) break;
+                if (n > 0) sb.Append(", ");
+                sb.Append(names[idx[n]]).Append(' ').Append(ms.ToString("F2")).Append("ms");
+            }
+            return sb.ToString();
+        }
+
         internal static string TopOfLastFrame(int count)
         {
             if (!installed) return "측정 안 함";
