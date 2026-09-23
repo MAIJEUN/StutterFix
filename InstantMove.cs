@@ -204,67 +204,189 @@ namespace StutterFix
             return true;
         }
 
+        // 이전 애니메이션 끊기. 사전에 이미 우리 "끝난 대역" 이 들어 있으면 끊을 것도, 다시 넣을 것도 없다(결과가 같다).
+        private static bool wasDead;
         private static void Kill(Dictionary<global::TweenType, Tween> d, int key)
         {
             Tween t;
-            if (d.TryGetValue((global::TweenType)key, out t) && t != null) t.Kill(true);
+            wasDead = false;
+            if (!d.TryGetValue((global::TweenType)key, out t)) return;
+            if (ReferenceEquals(t, dead)) { wasDead = true; return; }
+            if (t != null) t.Kill(true);
         }
 
         private static long t0;
         internal static double FrameMs; internal static int FrameN;
         private static bool Done(Dictionary<global::TweenType, Tween> d, int key)
         {
-            d[(global::TweenType)key] = dead; Handled++;
-            if (Edition.Dev) { FrameN++; FrameMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency; }
+            if (!wasDead) d[(global::TweenType)key] = dead;
+            Handled++;
+            if (Edition.Dev)
+            {
+                long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+                FrameN++; FrameMs += dt * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                if (MoveProf.On) MoveProf.Helper(key, dt);
+            }
             return true;
         }
         internal static void ResetFrame() { FrameMs = 0; FrameN = 0; }
         internal static string FrameSummary() { return FrameN == 0 ? "" : string.Format(", 직접 처리 {0}번 {1:F1}ms", FrameN, FrameMs); }
 
+        // ── 값이 그대로면 설정 함수를 부르지 않는다 ──
+        // 1.3.8 개발자용 쪼개기(Arche 가장 무거운 프레임): 장식 1만 4천 개 효과에서 위치X 14,086번 중 14,086번, 위치Y 14,063번,
+        // 색 13,745번이 "이미 같은 값" 이었고 거의 다 투명한 채로 남았다. 그래도 설정 함수가 돌아 19.5ms 를 썼다.
+        // 부르지 않아도 되는 조건 (부르든 안 부르든 게임 상태가 똑같은 경우만):
+        //   위치 : 투명 장식 위치 미루기가 이 장식을 미루는 중이고(이미 목록에 있음) 저장된 값이 같다 -> SetPosition 은 같은 값 저장만 한다
+        //   색/불투명도 : 투명해서 안 그리는 중인 일반 이미지 장식이고, 색·불투명도가 같고, 다시 계산한 그리기 색이 지금과 비트 단위로 같다
+        //          -> ApplyColor 는 같은 색을 다시 넣을 뿐이다 (그리기 끄기 상태, 잠든 장식 상태도 그대로)
+        // 개발자용은 건너뛸 것 16개 중 1개를 일부러 불러, 부르기 전후 상태(필드, 엔진 색, 그리기 끄기, 미루기 목록)가 같은지 대조한다.
+        internal static bool SkipSame = true;
+        internal static long SameSkipped, SameChecked, SameMismatch;
+        internal static string SameFirst = "";
+        private static long sameCounter;
+        private static bool NoopOn { get { return SkipSame && Hitch.Playing; } }
+
+        private static readonly AccessTools.FieldRef<scrDecoration, Color> rcRef = AccessTools.FieldRefAccess<scrDecoration, Color>("rendererColor");
+        private static readonly AccessTools.FieldRef<scrDecoration, bool> stickRef = AccessTools.FieldRefAccess<scrDecoration, bool>("stickToFloor");
+        private static readonly AccessTools.FieldRef<scrDecoration, scrFloor> floorRef = AccessTools.FieldRefAccess<scrDecoration, scrFloor>("parentFloor");
+        private static readonly AccessTools.FieldRef<scrFloor, float> floorOpaRef = AccessTools.FieldRefAccess<scrFloor, float>("opacity");
+        private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> srRef = AccessTools.FieldRefAccess<scrVisualDecoration, SpriteRenderer>("spriteRenderer");
+        private static readonly AccessTools.FieldRef<scrDecoration, Transform> childRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("childTransform");
+
+        private static bool PosNoop(scrDecoration dec, Vector2 p) { return NoopOn && InvisibleSkip.LazyNoop(dec, p); }
+
+        private static bool ColorNoop(scrDecoration dec, Color c, float o)
+        {
+            if (!NoopOn || dec.GetType() != typeof(scrVisualDecoration) || !InvisibleSkip.IsHidden(dec)) return false;
+            var cc = colRef(dec);
+            if (!(Eq(cc.r, c.r) && Eq(cc.g, c.g) && Eq(cc.b, c.b) && Eq(cc.a, c.a) && Eq(opaRef(dec), o))) return false;
+            float f = 1f;
+            if (stickRef(dec)) { var fl = floorRef(dec); if ((object)fl == null) return false; f = floorOpaRef(fl); }
+            float a = c.a * o * f;   // ApplyColor 와 같은 순서: (색 알파 x 불투명도) x 타일 불투명도
+            var rc = rcRef(dec);
+            return Eq(rc.r, c.r) && Eq(rc.g, c.g) && Eq(rc.b, c.b) && Eq(rc.a, a);
+        }
+
+        // true 면 설정 함수를 건너뛴다. 개발자용 표본이면 false 를 돌려 원래대로 부르게 하고, 부른 뒤 SameAfter 에서 대조한다.
+        private struct Snap { public Vector2 Pp, Po; public bool Lz, Hid, Fro; public Color Rc, Col, Src; public float Opa; public Vector3 Child; }
+        private static Snap snap; private static bool snapPending;
+        private static bool Skip(scrDecoration dec)
+        {
+            if (Edition.Dev && (++sameCounter & 15) == 0) { snap = Take(dec); snapPending = true; return false; }
+            SameSkipped++;
+            return true;
+        }
+        private static Snap Take(scrDecoration dec)
+        {
+            var s = new Snap { Pp = pivotPosRef(dec), Po = pivotOffRef(dec), Lz = InvisibleSkip.InLazy(dec), Hid = InvisibleSkip.IsHidden(dec), Rc = rcRef(dec), Col = colRef(dec), Opa = opaRef(dec) };
+            var v = dec as scrVisualDecoration; var r = (object)v == null ? null : srRef(v);
+            if (r != null) { s.Src = r.color; s.Fro = r.forceRenderingOff; }
+            var ch = childRef(dec); if (ch != null) s.Child = ch.localPosition;
+            return s;
+        }
+        private static void SameAfter(scrDecoration dec, string what)
+        {
+            if (!snapPending) return;
+            snapPending = false;
+            var b = Take(dec); var a = snap;
+            SameChecked++;
+            bool same = V2(a.Pp, b.Pp) && V2(a.Po, b.Po) && a.Lz == b.Lz && a.Hid == b.Hid && a.Fro == b.Fro && C4(a.Rc, b.Rc) && C4(a.Col, b.Col) && C4(a.Src, b.Src)
+                && Eq(a.Opa, b.Opa) && Eq(a.Child.x, b.Child.x) && Eq(a.Child.y, b.Child.y) && Eq(a.Child.z, b.Child.z);
+            if (same) return;
+            SameMismatch++;
+            if (SameFirst.Length < 500) SameFirst += string.Format(" [{0}: 미루기 {1}->{2}, 안그림 {3}->{4}, 그리기색 {5}->{6}, 엔진색 {7}->{8}, 안쪽 {9}->{10}]",
+                what, a.Lz, b.Lz, a.Fro, b.Fro, a.Rc.ToString("R"), b.Rc.ToString("R"), a.Src.ToString("R"), b.Src.ToString("R"), a.Child.ToString("F5"), b.Child.ToString("F5"));
+        }
+        private static bool V2(Vector2 a, Vector2 b) { return Eq(a.x, b.x) && Eq(a.y, b.y); }
+        private static bool C4(Color a, Color b) { return Eq(a.r, b.r) && Eq(a.g, b.g) && Eq(a.b, b.b) && Eq(a.a, b.a); }
+        internal static string SameSummary()
+        {
+            if (SameSkipped == 0 && SameChecked == 0) return "";
+            return " | 값이 그대로라 설정 건너뜀 " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + SameFirst + ")" : "");
+        }
+
+        // 개발자용 쪼개기(MoveProf): 설정 함수 시간, 이미 같은 값이었는지, 투명한 채로 남았는지
+        private static bool mHid; private static long mT;
+        private static bool P { get { return Edition.Dev && MoveProf.On; } }
+        private static void M0(scrDecoration dec) { mHid = InvisibleSkip.IsHidden(dec); mT = System.Diagnostics.Stopwatch.GetTimestamp(); }
+        private static void M1(int key, scrDecoration dec, bool same) { MoveProf.Setter(key, System.Diagnostics.Stopwatch.GetTimestamp() - mT, same, mHid && InvisibleSkip.IsHidden(dec)); }
+        private static bool Eq(float a, float b) { return Bits(a) == Bits(b); }
+
         public static bool PosX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startX)
         {
             if (!Use(fx)) { Expect(dec, 1, startX + tPos(fx).x); return false; }
-            Kill(d, 1); setPosX(dec, startX + tPos(fx).x, pivotOffRef(dec)); return Done(d, 1);
+            Kill(d, 1); float v = startX + tPos(fx).x;
+            var p = pivotPosRef(dec); p.x = v;
+            if (PosNoop(dec, p) && Skip(dec)) { if (P) MoveProf.Skipped(1); return Done(d, 1); }
+            if (P) { bool same = Eq(pivotPosRef(dec).x, v); M0(dec); setPosX(dec, v, pivotOffRef(dec)); M1(1, dec, same); }
+            else setPosX(dec, v, pivotOffRef(dec));
+            if (Edition.Dev) SameAfter(dec, "위치X");
+            return Done(d, 1);
         }
         public static bool PosY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startY)
         {
             if (!Use(fx)) { Expect(dec, 2, startY + tPos(fx).y); return false; }
-            Kill(d, 2); setPosY(dec, startY + tPos(fx).y, pivotOffRef(dec)); return Done(d, 2);
+            Kill(d, 2); float v = startY + tPos(fx).y;
+            var p = pivotPosRef(dec); p.y = v;
+            if (PosNoop(dec, p) && Skip(dec)) { if (P) MoveProf.Skipped(2); return Done(d, 2); }
+            if (P) { bool same = Eq(pivotPosRef(dec).y, v); M0(dec); setPosY(dec, v, pivotOffRef(dec)); M1(2, dec, same); }
+            else setPosY(dec, v, pivotOffRef(dec));
+            if (Edition.Dev) SameAfter(dec, "위치Y");
+            return Done(d, 2);
         }
         public static bool ParX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { Expect(dec, 12, tPar(fx).x); return false; }
-            Kill(d, 12); setParX(dec, tPar(fx).x); return Done(d, 12);
+            Kill(d, 12); float v = tPar(fx).x;
+            if (P) { bool same = Eq(parOffRef(dec).x, v); M0(dec); setParX(dec, v); M1(12, dec, same); } else setParX(dec, v);
+            return Done(d, 12);
         }
         public static bool ParY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { Expect(dec, 13, tPar(fx).y); return false; }
-            Kill(d, 13); setParY(dec, tPar(fx).y); return Done(d, 13);
+            Kill(d, 13); float v = tPar(fx).y;
+            if (P) { bool same = Eq(parOffRef(dec).y, v); M0(dec); setParY(dec, v); M1(13, dec, same); } else setParY(dec, v);
+            return Done(d, 13);
         }
         public static bool PivX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { Expect(dec, 3, tPiv(fx).x); return false; }
-            Kill(d, 3); setPivX(dec, tPiv(fx).x); return Done(d, 3);
+            Kill(d, 3); float v = tPiv(fx).x;
+            if (P) { bool same = Eq(pivotOffRef(dec).x, v); M0(dec); setPivX(dec, v); M1(3, dec, same); } else setPivX(dec, v);
+            return Done(d, 3);
         }
         public static bool PivY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { Expect(dec, 4, tPiv(fx).y); return false; }
-            Kill(d, 4); setPivY(dec, tPiv(fx).y); return Done(d, 4);
+            Kill(d, 4); float v = tPiv(fx).y;
+            if (P) { bool same = Eq(pivotOffRef(dec).y, v); M0(dec); setPivY(dec, v); M1(4, dec, same); } else setPivY(dec, v);
+            return Done(d, 4);
         }
         public static bool Rot(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { Expect(dec, 5, tRot(fx)); return false; }
-            Kill(d, 5); setRot(dec, tRot(fx)); return Done(d, 5);
+            Kill(d, 5); float v = tRot(fx);
+            if (P) { bool same = Eq(rotRef(dec), v); M0(dec); setRot(dec, v); M1(5, dec, same); } else setRot(dec, v);
+            return Done(d, 5);
         }
         public static bool Col(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { ExpectC(dec, tCol(fx)); return false; }
-            Kill(d, 9); setCol(dec, tCol(fx)); return Done(d, 9);
+            Kill(d, 9); Color v = tCol(fx);
+            if (ColorNoop(dec, v, opaRef(dec)) && Skip(dec)) { if (P) MoveProf.Skipped(9); return Done(d, 9); }
+            if (P) { var c = colRef(dec); bool same = Eq(c.r, v.r) && Eq(c.g, v.g) && Eq(c.b, v.b) && Eq(c.a, v.a); M0(dec); setCol(dec, v); M1(9, dec, same); }
+            else setCol(dec, v);
+            if (Edition.Dev) SameAfter(dec, "색");
+            return Done(d, 9);
         }
         public static bool Opa(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             if (!Use(fx)) { Expect(dec, 10, tOpa(fx)); return false; }
-            Kill(d, 10); setOpa(dec, tOpa(fx)); return Done(d, 10);
+            Kill(d, 10); float v = tOpa(fx);
+            if (ColorNoop(dec, colRef(dec), v) && Skip(dec)) { if (P) MoveProf.Skipped(10); return Done(d, 10); }
+            if (P) { bool same = Eq(opaRef(dec), v); M0(dec); setOpa(dec, v); M1(10, dec, same); } else setOpa(dec, v);
+            if (Edition.Dev) SameAfter(dec, "불투명도");
+            return Done(d, 10);
         }
 
         // ── 개발자용 대조: 원래 코드로 돈 표본이 끝난 뒤 값이 모드 예측과 같은지 ──
@@ -304,7 +426,10 @@ namespace StutterFix
             }
             pending.Clear();
         }
-        private static int Bits(float f) { return BitConverter.ToInt32(BitConverter.GetBytes(f), 0); }
+        // float 의 비트 (BitConverter.GetBytes 는 부를 때마다 배열을 만들어서 뜨거운 길에서 쓰면 안 된다)
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
+        private struct FU { [System.Runtime.InteropServices.FieldOffset(0)] public float F; [System.Runtime.InteropServices.FieldOffset(0)] public int I; }
+        internal static int Bits(float f) { FU u = default(FU); u.F = f; return u.I; }
         private static void Count(bool same, string what, string actual, string mine)
         {
             Checked++;
@@ -319,8 +444,8 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Handled == 0 && Checked == 0) return "";
-            return " | 즉시 이동 직접 처리 " + Handled + "번" + (Edition.Dev ? " (대조 " + Checked + "번 중 다름 " + Mismatch + First + ")" : "");
+            return " | 즉시 이동 직접 처리 " + Handled + "번" + (Edition.Dev ? " (대조 " + Checked + "번 중 다름 " + Mismatch + First + ")" : "") + SameSummary();
         }
-        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); }
+        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = 0; SameFirst = ""; }
     }
 }

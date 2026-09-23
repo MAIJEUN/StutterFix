@@ -88,6 +88,11 @@ namespace StutterFix
         // 여는 것은 바로, 닫는 것은 사라지는 애니메이션이 끝난 뒤에 한다.
         private void SetOpen(bool open)
         {
+            if (Edition.Dev) Main.Entry.Logger.Log("[설정 창] " + (open ? "열기" : "닫기") + " 요청, 프레임 " + Time.frameCount + ", 지금 열림 " + Open + ", 닫는 중 " + closing + ", 준비됨 " + built + ", 글자 미리 만듦 " + prewarmed);
+            SetOpenCore(open);
+        }
+        private void SetOpenCore(bool open)
+        {
             if (open)
             {
                 if (Open && !closing) return;
@@ -178,13 +183,27 @@ namespace StutterFix
             return Rect.MinMaxRect(Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin), Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
         }
 
+        private static float ScaleNow() { return Mathf.Clamp(Screen.height / 1080f * 1.1f, 0.8f, 2.2f); }
+
+        // 처음 Insert 를 누를 때 창 그림 만들기와 글자 만들기(개발자용 기록 1,205ms)로 멈추고 창도 늦게 떴다.
+        // 그 일을 게임이 켜진 직후(로고·불러오기 화면이라 멈춰도 티가 안 나는 때) 창을 연 적이 없어도 미리 한다.
+        // 글자는 투명하게 그려서 화면에는 아무것도 안 나온다. 나중에 화면 크기가 바뀌면 창을 열 때 그 크기로 다시 만든다.
+        private bool prewarmed;
+        private void PreWarm()
+        {
+            if (prewarmed || Main.Config == null || Hitch.Playing) return;
+            if (!built) { if (Event.current.type == EventType.Layout) Build(); return; }
+            float s = ScaleNow();
+            if (WarmStyles(this, s)) { scale = s; warmedScale = s; prewarmed = true; }
+        }
+
         private void OnGUI()
         {
-            if (!Open) return;
+            if (!Open) { PreWarm(); return; }
             if (!built) Build();
             CaptureKey();
 
-            scale = Mathf.Clamp(Screen.height / 1080f * 1.1f, 0.8f, 2.2f);
+            scale = ScaleNow();
             if (Mathf.Abs(scale - warmedScale) > 0.001f && WarmStyles(this, scale)) warmedScale = scale;
             float sw = Screen.width / scale, sh = Screen.height / scale;
 
@@ -205,12 +224,19 @@ namespace StutterFix
 
                 var dock = DockRect(sw, sh, e);
                 rect = PanelRect(sw, sh, dock, pe);
-                // 아이콘 줄(과 펼친 패널) 자리에 보이지 않는 UI 판을 깔아 뒤의 게임이 클릭을 받지 않게 한다
+                // 창이 떠 있는 동안은 화면 전체에 보이지 않는 UI 판을 깔아 뒤의 게임 UI(에디터 버튼 등)가 클릭을 받지 않게 하고,
+                // 아이콘 줄과 패널 바깥을 누르면 그 클릭은 게임에 넘기지 않고 창만 닫는다.
                 if (closing) UiInputBlock.Clear(this);
                 else
                 {
-                    var blk = panelT > 0f ? Union(dock, rect) : dock;
-                    UiInputBlock.Place(this, new Rect(blk.x * scale, blk.y * scale, blk.width * scale, blk.height * scale));
+                    UiInputBlock.Place(this, new Rect(0, 0, Screen.width, Screen.height));
+                    var ev = Event.current;
+                    if (ev.type == EventType.MouseDown)
+                    {
+                        var mp = ev.mousePosition;
+                        bool inside = dock.Contains(mp) || (panelT > 0f && rect.Contains(mp));
+                        if (!inside) { SetOpen(false); ev.Use(); }
+                    }
                 }
 
                 DrawDock(dock);
@@ -410,12 +436,12 @@ namespace StutterFix
 
             var c = Main.Config;
             int on = (c.GcPause ? 1 : 0) + (c.EffectSplit ? 1 : 0) + (c.RecolorSplit ? 1 : 0) + (c.TweenGuard ? 1 : 0) + (c.SkipSameText ? 1 : 0)
-                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
+                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.SkipSame ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
             string d = BootConfig.Describe();
             bool jobs = d.Contains("Jobified") || d.Contains("Split");
 
             GUILayout.BeginHorizontal();
-            Stat(on + " / 16", T("켜진 기능", "Features on"), true);
+            Stat(on + " / 17", T("켜진 기능", "Features on"), true);
             GUILayout.Space(14);
             Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"), false);
             GUILayout.Space(14);
@@ -525,6 +551,10 @@ namespace StutterFix
             ch |= Option("instant", ref c.InstantDirect, T("즉시 이동 직접 처리", "Direct instant moves"),
                 T("즉시 이동이 한꺼번에 몰리는 순간(효과 몰림) 게임 코드가 속성마다 애니메이션 객체를 만드는 과정 자체를 건너뛰고 최종 값만 넣습니다. Arche 효과 몰림 68 → 36ms.",
                   "When many instant moves land at once, skips the game's per-property animation setup entirely and applies only the final values. Arche effect burst 68 → 36 ms."),
+                T("효과 몰림", "Effect bursts"));
+            ch |= Option("samevalue", ref c.SkipSame, T("그대로인 값 건너뛰기", "Skip unchanged values"),
+                T("즉시 이동이 투명한 장식에 이미 가진 것과 같은 위치·색을 다시 넣을 때는 설정 함수를 부르지 않습니다. 부르든 안 부르든 게임 상태가 똑같은 경우만 건너뜁니다(\"즉시 이동 직접 처리\"가 켜져 있어야 동작).",
+                  "When an instant move writes the same position or color a transparent decoration already has, the setter is not called. Only skipped when the game state would be identical either way (needs \"Direct instant moves\")."),
                 T("효과 몰림", "Effect bursts"));
             ch |= Option("movefinish", ref c.MoveFinish, T("장식 위치 계산 줄이기", "Fewer position updates"),
                 T("장식을 옮길 때 위치 마무리 계산을 한 번으로 묶고, 값이 그대로인 쓰기와 플레이 중 필요 없는 편집기 작업을 건너뜁니다. 보이는 장식의 위치 재계산은 어차피 같은 프레임에 게임이 다시 하므로 그때 한 번만 합니다.",
@@ -968,7 +998,7 @@ namespace StutterFix
         private void ResetDefaults()
         {
             var c = Main.Config;
-            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = true;
+            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.SkipSame = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = true;
             if (!c.LegacyGfxJobs) { c.LegacyGfxJobs = true; BootConfig.Apply(true); }
             Save();
         }

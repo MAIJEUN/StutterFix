@@ -186,6 +186,25 @@ namespace StutterFix
             return false;
         }
 
+        // 즉시 이동 직접 처리(InstantMove)가 부른다: 지금 SetPosition(pos, 지금 오프셋)을 부르면 아무것도 안 바뀌는가.
+        // LazyPrefix 가 미루는 조건과 똑같이 보고, 이미 미뤄 둔 목록에 있고 저장된 값도 같으면, 부르든 안 부르든 결과가 같다
+        // (필드에 같은 값 저장 + 이미 든 목록에 다시 넣기). Arche 효과 몰림의 1만 4천 개 장식 이동이 거의 전부 이 경우였다.
+        internal static bool LazyNoop(scrDecoration d, Vector2 pos)
+        {
+            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing || lazy.Count == 0) return false;
+            if (colorRef(d).a > 0f) return false;
+            var v = d as scrVisualDecoration;
+            if ((object)v == null || d.hitbox != 0) return false;
+            var r = rendererRef(v);
+            if ((object)r == null || !hidden.Contains(r) || isMask(v)) return false;
+            if (parallaxRef(d) == null) return false;
+            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) & 7) == 0) return false;   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
+            if (!lazy.Contains(d)) return false;
+            var cur = pivotPosRef(d);
+            return InstantMove.Bits(cur.x) == InstantMove.Bits(pos.x) && InstantMove.Bits(cur.y) == InstantMove.Bits(pos.y);
+        }
+        internal static bool InLazy(scrDecoration d) { return lazy.Contains(d); }
+
         // 보이게 되는 순간 저장해 둔 위치를 반영한다
         private static void ApplyLazy(scrVisualDecoration v)
         {

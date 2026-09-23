@@ -149,6 +149,7 @@ namespace StutterFix
             ParticleTextWatch.Tick();
             SlowScan.Reset();   // 다음 프레임 몫만 모으도록 매번 비운다
             ZeroTween.ResetFrame();
+            MoveProf.EndFrame();
             InstantMove.ResetFrame();
             EffectScan.ResetFrame();
             ModCost.ResetFrame();
@@ -202,6 +203,7 @@ namespace StutterFix
                     string perf = PerfOverlay.SongSummary();
                     if (perf != null) Main.Entry.Logger.Log("[곡] " + perf);
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary() + EffectBudget.Summary());
+                    { var mp = MoveProf.SongSummary(); if (mp.Length > 0) Main.Entry.Logger.Log(mp); }
                     EffectBudget.ResetLate();
                     if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary());
                 }

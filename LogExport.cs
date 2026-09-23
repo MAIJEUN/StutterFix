@@ -118,7 +118,7 @@ namespace StutterFix
             {
                 sb.AppendLine("메모리 정리 미루기 " + On(c.GcPause) + ", 효과 몰림 나누기 " + On(c.EffectSplit) + ", 타일 색 나누기 " + On(c.RecolorSplit));
                 sb.AppendLine("애니메이션 최적화 " + On(c.TweenGuard) + ", 글자 장식 최적화 " + On(c.SkipSameText) + ", 그래픽 미리 준비 " + On(c.ShaderWarm));
-                sb.AppendLine("즉시 이동 최적화 " + On(c.ZeroTween) + ", 즉시 이동 직접 처리 " + On(c.InstantDirect) + ", 장식 위치 계산 줄이기 " + On(c.MoveFinish)
+                sb.AppendLine("즉시 이동 최적화 " + On(c.ZeroTween) + ", 즉시 이동 직접 처리 " + On(c.InstantDirect) + ", 그대로인 값 건너뛰기 " + On(c.SkipSame) + ", 장식 위치 계산 줄이기 " + On(c.MoveFinish)
                     + ", 장식 순회 줄이기 " + On(c.DormantSkip) + ", 투명한 장식 그리지 않기 " + On(c.SkipInvisible) + ", 투명한 장식 위치 미루기 " + On(c.LazyHidden));
                 sb.AppendLine("블렌드 빠르게 " + On(c.FastBlend) + " (지금 " + FastBlend.Count + "개), 이미지 빠르게 불러오기 " + On(c.ImagePrefetch)
                     + ", 큰 이미지 줄이기 " + (c.ImageMaxSide == ImagePrefetch.Auto ? "자동 (" + ImagePrefetch.AutoNote + ")" : c.ImageMaxSide > 0 ? c.ImageMaxSide + "" : "끔") + ", 정리 건너뛰기 " + On(c.SkipAssetUnload) + ", 멀티스레드 그리기 " + On(c.LegacyGfxJobs));

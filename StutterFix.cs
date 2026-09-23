@@ -105,6 +105,7 @@ namespace StutterFix
                 RecolorSplit.Install(harmony);
                 ZeroTween.Install(harmony);
                 InstantMove.Install(harmony);
+                MoveProf.Install(harmony);
                 MoveApply.Install(harmony);
                 Dormancy.Install(harmony);
                 ImagePrefetch.Install(harmony);
@@ -415,6 +416,7 @@ namespace StutterFix
             ZeroTween.Enabled = Config.ZeroTween;
             ZeroTween.SkipUpdate = Config.ZeroTween;
             InstantMove.Enabled = Config.InstantDirect;
+            InstantMove.SkipSame = Config.SkipSame;
             MoveApply.Enabled = Config.MoveFinish;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
@@ -602,6 +604,7 @@ namespace StutterFix
         public bool SkipInvisible = true;   // 투명도 0 인 이미지 장식은 그리지 않기
         public bool LazyHidden = true;     // 투명한 장식은 위치·회전·크기를 보일 때 반영 (SkipInvisible 필요)
         public bool InstantDirect = true;  // 길이 0 장식 이동을 게임 코드의 애니메이션 만들기 없이 처리
+        public bool SkipSame = true;       // 즉시 이동 값이 이미 그대로면(투명 장식) 설정 함수를 부르지 않음
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
         public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)
