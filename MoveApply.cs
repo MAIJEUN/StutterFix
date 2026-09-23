@@ -292,7 +292,7 @@ namespace StutterFix
         public static void LogicMaybe(scrDecoration d, bool disableShader)
         {
             LogicCalls++;
-            if (LogicSkip && Enabled && Dormancy.IsDormant(d, disableShader))
+            if (LogicSkip && Dormancy.Enabled && Dormancy.IsDormant(d, disableShader))
             { LogicSkips++; Dormancy.Sleep(d); return; }
             logicUpdate(d, disableShader);
         }

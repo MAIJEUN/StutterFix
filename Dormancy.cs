@@ -91,7 +91,7 @@ namespace StutterFix
         public static List<scrDecoration> List(scrDecorationManager mgr)
         {
             var all = allRef(mgr);
-            if (!Enabled || broken || !MoveApply.LogicSkip || !MoveApply.Enabled || all == null || !Hitch.Playing) { ResetState(); return all; }
+            if (!Enabled || broken || !MoveApply.LogicSkip || all == null || !Hitch.Playing) { ResetState(); return all; }
             if (prepared) return awake;
             prepared = true;
             try { Prepare(all); }
@@ -160,7 +160,7 @@ namespace StutterFix
         public static List<scrDecoration> HitboxList(scrDecorationManager mgr)
         {
             var all = allRef(mgr);
-            if (!Enabled || broken || !MoveApply.Enabled || all == null || !Hitch.Playing) return all;
+            if (!Enabled || broken || all == null || !Hitch.Playing) return all;
             if (hbPrepared) return hitboxList;
             hbPrepared = true;
             int ver = versionRef != null ? versionRef(all) : 0;

@@ -135,7 +135,7 @@ namespace StutterFix
                     Main.Entry.Logger.Log("[끊김]    그리기: " + RenderWatch.Info());
                     Main.Entry.Logger.Log("[끊김]    그리기 콜백: " + RenderCallbackScan.Top(5) + " | " + FrameRateScreenWatch.Info());
                     Main.Entry.Logger.Log("[끊김]    파티클/글자: " + ParticleTextWatch.Info());
-                    Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(5) + " | " + EffectScan.FrameSummary() + ZeroTween.FrameSummary() + " | 살아있는 애니메이션 " + ActiveTweens());
+                    Main.Entry.Logger.Log("[끊김]    느린 함수: " + SlowScan.Top(5) + " | " + EffectScan.FrameSummary() + ZeroTween.FrameSummary() + InstantMove.FrameSummary() + " | 살아있는 애니메이션 " + ActiveTweens());
                 }
             }
 
@@ -149,6 +149,7 @@ namespace StutterFix
             ParticleTextWatch.Tick();
             SlowScan.Reset();   // 다음 프레임 몫만 모으도록 매번 비운다
             ZeroTween.ResetFrame();
+            InstantMove.ResetFrame();
             EffectScan.ResetFrame();
             ModCost.ResetFrame();
         }

@@ -197,9 +197,10 @@ namespace StutterFix
         private static bool Use(ffxMoveDecorationsPlus fx)
         {
             lastSampled = false;
-            if (!Enabled || !ZeroTween.Enabled || durRef(fx) > 0f) return false;
+            if (!Enabled || durRef(fx) > 0f) return false;
             if (pending.Count > 0) Verify();
             if (Edition.Dev && (++counter % 64) == 0) { lastSampled = true; return false; }   // 표본: 원래 코드로 돌리고 아래에서 대조
+            if (Edition.Dev) t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             return true;
         }
 
@@ -209,7 +210,16 @@ namespace StutterFix
             if (d.TryGetValue((global::TweenType)key, out t) && t != null) t.Kill(true);
         }
 
-        private static bool Done(Dictionary<global::TweenType, Tween> d, int key) { d[(global::TweenType)key] = dead; Handled++; return true; }
+        private static long t0;
+        internal static double FrameMs; internal static int FrameN;
+        private static bool Done(Dictionary<global::TweenType, Tween> d, int key)
+        {
+            d[(global::TweenType)key] = dead; Handled++;
+            if (Edition.Dev) { FrameN++; FrameMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency; }
+            return true;
+        }
+        internal static void ResetFrame() { FrameMs = 0; FrameN = 0; }
+        internal static string FrameSummary() { return FrameN == 0 ? "" : string.Format(", 직접 처리 {0}번 {1:F1}ms", FrameN, FrameMs); }
 
         public static bool PosX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startX)
         {

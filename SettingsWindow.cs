@@ -286,12 +286,12 @@ namespace StutterFix
 
             var c = Main.Config;
             int on = (c.GcPause ? 1 : 0) + (c.EffectSplit ? 1 : 0) + (c.RecolorSplit ? 1 : 0) + (c.TweenGuard ? 1 : 0) + (c.SkipSameText ? 1 : 0)
-                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
+                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
             string d = BootConfig.Describe();
             bool jobs = d.Contains("Jobified") || d.Contains("Split");
 
             GUILayout.BeginHorizontal();
-            Stat(on + " / 12", T("켜진 기능", "Features on"), true);
+            Stat(on + " / 16", T("켜진 기능", "Features on"), true);
             GUILayout.Space(14);
             Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"), false);
             GUILayout.Space(14);
@@ -394,9 +394,20 @@ namespace StutterFix
             ch |= Option("tween", ref c.TweenGuard, T("애니메이션 처리 최적화", "Animation list guard"),
                 T("효과가 많을 때 게임이 애니메이션 목록을 반복해서 다시 정리하느라 느려지는 문제를 막습니다.",
                   "Prevents the game from repeatedly re-sorting its animation list when many effects are running."), null);
-            ch |= Option("zerotween", ref c.ZeroTween, T("장식 이동 최적화", "Decoration moves"),
-                T("장식을 즉시 옮기는 이벤트를 애니메이션 없이 바로 처리하고, 한 효과 안에서 장식마다 위치 마무리 계산을 한 번만 합니다. 결과는 게임과 똑같습니다(26만 개를 비트 단위로 비교해 확인).",
-                  "Applies instant decoration moves without creating zero-length animations, and recomputes each decoration's position once per effect instead of once per axis. Results are identical to the game's (verified bit-for-bit over 260,000 cases)."),
+            ch |= Option("zerotween", ref c.ZeroTween, T("즉시 이동 최적화", "Instant decoration moves"),
+                T("장식을 즉시(길이 0) 옮기는 이벤트를 애니메이션 없이 바로 처리하고, 곧바로 덮어써질 중간 호출은 건너뜁니다. 결과는 게임과 똑같습니다(26만 개를 비트 단위로 비교해 확인).",
+                  "Applies instant (zero-length) decoration moves without creating animations and skips intermediate calls that are overwritten right away. Identical results (verified bit-for-bit over 260,000 cases)."),
+                T("장식 많은 맵", "Decoration-heavy maps"));
+            ch |= Option("instant", ref c.InstantDirect, T("즉시 이동 직접 처리", "Direct instant moves"),
+                T("즉시 이동이 한꺼번에 몰리는 순간(효과 몰림) 게임 코드가 속성마다 애니메이션 객체를 만드는 과정 자체를 건너뛰고 최종 값만 넣습니다. Arche 효과 몰림 68 → 36ms.",
+                  "When many instant moves land at once, skips the game's per-property animation setup entirely and applies only the final values. Arche effect burst 68 → 36 ms."),
+                T("효과 몰림", "Effect bursts"));
+            ch |= Option("movefinish", ref c.MoveFinish, T("장식 위치 계산 줄이기", "Fewer position updates"),
+                T("장식을 옮길 때 위치 마무리 계산을 한 번으로 묶고, 값이 그대로인 쓰기와 플레이 중 필요 없는 편집기 작업을 건너뜁니다. 보이는 장식의 위치 재계산은 어차피 같은 프레임에 게임이 다시 하므로 그때 한 번만 합니다.",
+                  "Batches position finishing per decoration, skips unchanged writes and editor-only work while playing, and leaves visible decorations' position recompute to the game's own once-per-frame pass."), null);
+            ch |= Option("dormant", ref c.DormantSkip, T("장식 순회 줄이기", "Skip idle decorations"),
+                T("게임은 매 프레임 장식 전부를 훑습니다. 안 보이고 바뀔 일이 없는 장식과, 히트박스가 없는 장식은 그 순회에서 빼 둡니다. 장식이 수만 개인 맵에서 평소 프레임이 크게 오릅니다(Arche 곡 평균 107 → 170fps).",
+                  "The game walks every decoration every frame. Idle invisible decorations and decorations without hitboxes are left out of those walks. Big everyday FPS gain on maps with tens of thousands of decorations (Arche 107 → 170 fps)."),
                 T("장식 많은 맵", "Decoration-heavy maps"));
             ch |= Option("text", ref c.SkipSameText, T("글자 장식 최적화", "Text decoration skip"),
                 T("같은 글자를 매 프레임 다시 쓰는 글자 장식은 건너뜁니다. PACL2 같은 모드를 함께 쓸 때 효과가 큽니다.",
@@ -411,6 +422,9 @@ namespace StutterFix
             ch |= Option("invis", ref c.SkipInvisible, T("투명한 장식 그리지 않기", "Skip invisible decorations"),
                 T("투명도가 0 이라 보이지 않는 이미지 장식을 그리기에서 뺍니다. 다시 보이게 되면 바로 그립니다. 화면은 같고, 나중에 나타날 이미지를 깔아 둔 맵에서 프레임이 오릅니다.",
                   "Leaves fully transparent image decorations out of rendering and draws them again as soon as they become visible. Looks identical; raises FPS on maps that pre-place hidden images."), null);
+            ch |= Option("lazy", ref c.LazyHidden, T("투명한 장식 위치 미루기", "Defer hidden decoration moves"),
+                T("투명해서 안 보이는 장식은 옮겨도 값만 저장했다가, 보이게 되는 순간 한 번 반영합니다. 히트박스·마스크 장식은 제외합니다. \"투명한 장식 그리지 않기\" 가 켜져 있어야 동작합니다.",
+                  "Hidden decorations only store their new position until they become visible, then apply it once. Hitbox and mask decorations are excluded. Requires \"Skip invisible decorations\"."), null);
             if (ch) Save();
         }
 
@@ -830,7 +844,7 @@ namespace StutterFix
         private void ResetDefaults()
         {
             var c = Main.Config;
-            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.ZeroTween = c.ImagePrefetch = c.SkipAssetUnload = true;
+            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = true;
             if (!c.LegacyGfxJobs) { c.LegacyGfxJobs = true; BootConfig.Apply(true); }
             Save();
         }

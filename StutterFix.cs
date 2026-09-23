@@ -413,13 +413,18 @@ namespace StutterFix
             RecolorSplit.Enabled = Config.RecolorSplit;
             TweenFix.Enabled = Config.TweenGuard;
             ZeroTween.Enabled = Config.ZeroTween;
-            MoveApply.Enabled = Config.ZeroTween;   // 같은 스위치로 실험 (즉시 이동 최적화)
+            ZeroTween.SkipUpdate = Config.ZeroTween;
+            InstantMove.Enabled = Config.InstantDirect;
+            MoveApply.Enabled = Config.MoveFinish;
+            MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
             ShaderWarm.Enabled = Config.ShaderWarm;
             FastBlend.Enabled = Config.FastBlend;
             InvisibleSkip.Enabled = Config.SkipInvisible;
+            InvisibleSkip.LazyMove = Config.LazyHidden;
             if (!InvisibleSkip.Enabled) InvisibleSkip.RestoreAll();
+            else if (!InvisibleSkip.LazyMove) InvisibleSkip.ApplyAllLazy();
             ImagePrefetch.MaxSide = Config.ImageMaxSide;
         }
 
@@ -595,6 +600,10 @@ namespace StutterFix
         public bool ShaderWarm = true;
         public bool FastBlend = true;       // 더하기 블렌드 장식을 화면 복사 없이 그리기
         public bool SkipInvisible = true;   // 투명도 0 인 이미지 장식은 그리지 않기
+        public bool LazyHidden = true;     // 투명한 장식은 위치·회전·크기를 보일 때 반영 (SkipInvisible 필요)
+        public bool InstantDirect = true;  // 길이 0 장식 이동을 게임 코드의 애니메이션 만들기 없이 처리
+        public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
+        public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
         public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)
         public int ImageAutoVer = 0;        // 1.2.2 에서 "끔" 이던 설정을 한 번 "자동" 으로 옮겼는지
         public string VramCaps = "";        // 자동: VRAM 부족으로 끊긴 맵과 다음부터 쓸 한도 ("경로 탭 한도" 줄들)
