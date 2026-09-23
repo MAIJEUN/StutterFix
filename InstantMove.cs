@@ -38,6 +38,7 @@ namespace StutterFix
         internal static string First = "";
         private static long counter;
         private static Tween dead;
+        internal static Tween Dead { get { return dead; } }
 
         private static readonly AccessTools.FieldRef<ffxPlusBase, float> durRef = AccessTools.FieldRefAccess<ffxPlusBase, float>("duration");
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, Vector2> tPos = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, Vector2>("targetPos");
@@ -205,12 +206,36 @@ namespace StutterFix
             return true;
         }
 
+        // ── FastMove 가 장식 하나를 처리하는 동안만 쓰는 캐시 ──
+        // 기본 동작 비용(개발자용, 투명 장식 4,000개): 애니메이션 사전 찾기 76ns, 안 그리는 목록 확인 64ns, 미루기 조건 96ns.
+        // 한 장식에 위치X·위치Y·색을 넣으면 같은 확인을 속성마다 되풀이해 이것만 약 0.5us 였다.
+        //   NoKill : 이번 효과가 쓰는 키가 이 장식 사전에 모두 있고 전부 우리 "끝난 대역" 이다 -> 끊을 것도, 다시 넣을 것도 없다
+        //   HidC   : 안 그림 여부 (0 모름, 1 안 그림, 2 그림). 색·불투명도를 실제로 넣으면 다시 본다
+        //   LazyC  : 투명 장식 위치 미루기 조건 (0 모름, 1 됨, 2 안 됨). 위치 X 와 Y 사이에는 조건에 쓰는 값이 바뀌지 않는다
+        internal static bool InLoop, NoKill;
+        internal static int HidC, LazyC;
+        internal static void DecoStart(bool noKill) { NoKill = noKill; HidC = 0; LazyC = 0; }
+        internal static void DecoEnd() { NoKill = false; HidC = 0; LazyC = 0; }
+        private static bool Hidden(scrDecoration dec)
+        {
+            if (!InLoop) return InvisibleSkip.IsHidden(dec);
+            if (HidC == 0) HidC = InvisibleSkip.IsHidden(dec) ? 1 : 2;
+            return HidC == 1;
+        }
+        private static bool LazyCanC(scrDecoration dec)
+        {
+            if (!InLoop) return InvisibleSkip.LazyCan(dec);
+            if (LazyC == 0) LazyC = InvisibleSkip.LazyCan(dec) ? 1 : 2;
+            return LazyC == 1;
+        }
+
         // 이전 애니메이션 끊기. 사전에 이미 우리 "끝난 대역" 이 들어 있으면 끊을 것도, 다시 넣을 것도 없다(결과가 같다).
         private static bool wasDead;
         private static void Kill(Dictionary<global::TweenType, Tween> d, int key)
         {
             Tween t;
             wasDead = false;
+            if (NoKill) { wasDead = true; return; }   // FastMove 가 이 장식의 키들이 전부 끝난 대역인 것을 한 번에 확인했다
             if (!d.TryGetValue((global::TweenType)key, out t)) return;
             if (ReferenceEquals(t, dead)) { wasDead = true; return; }
             if (t != null) t.Kill(true);
@@ -257,7 +282,7 @@ namespace StutterFix
 
         internal static bool ColorNoop(scrDecoration dec, Color c, float o)
         {
-            if (!NoopOn || dec.GetType() != typeof(scrVisualDecoration) || !InvisibleSkip.IsHidden(dec)) return false;
+            if (!NoopOn || dec.GetType() != typeof(scrVisualDecoration) || !Hidden(dec)) return false;
             var cc = colRef(dec);
             if (!(Eq(cc.r, c.r) && Eq(cc.g, c.g) && Eq(cc.b, c.b) && Eq(cc.a, c.a) && Eq(opaRef(dec), o))) return false;
             float f = 1f;
@@ -380,7 +405,7 @@ namespace StutterFix
         private static bool Pos(int key, scrDecoration dec, Dictionary<global::TweenType, Tween> d, Vector2 p)
         {
             var off = pivotOffRef(dec);
-            if (NoopOn && InvisibleSkip.LazyCan(dec))
+            if (NoopOn && LazyCanC(dec))
             {
                 if (!(Edition.Dev && (++sameCounter & 15) == 0))
                 {
@@ -440,6 +465,7 @@ namespace StutterFix
             if (ColorNoop(dec, v, opaRef(dec)) && Skip(dec)) { if (P) MoveProf.Skipped(9); return Done(d, 9); }
             if (P) { var c = colRef(dec); bool same = Eq(c.r, v.r) && Eq(c.g, v.g) && Eq(c.b, v.b) && Eq(c.a, v.a); M0(dec); setCol(dec, v); M1(9, dec, same); }
             else setCol(dec, v);
+            HidC = 0; LazyC = 0;   // 색을 실제로 넣었으면 안 그림 상태가 바뀌었을 수 있다
             if (Edition.Dev) SameAfter(dec, "색");
             return Done(d, 9);
         }
@@ -448,6 +474,7 @@ namespace StutterFix
             Kill(d, 10); float v = tOpa(fx);
             if (ColorNoop(dec, colRef(dec), v) && Skip(dec)) { if (P) MoveProf.Skipped(10); return Done(d, 10); }
             if (P) { bool same = Eq(opaRef(dec), v); M0(dec); setOpa(dec, v); M1(10, dec, same); } else setOpa(dec, v);
+            HidC = 0; LazyC = 0;
             if (Edition.Dev) SameAfter(dec, "불투명도");
             return Done(d, 10);
         }

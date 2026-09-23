@@ -160,39 +160,77 @@ namespace StutterFix
             Vector2 parTarget = tParallax(fx) / 100f;
             var mt = mtRef(fx); bool visV = visible(fx); int depth = tDepth(fx);
 
-            for (int i = 0; i < list.Count; i++)
+            // 이 효과가 장식마다 쓰는 애니메이션 키 (NoKill 확인용)
+            Array.Clear(used, 0, used.Length); usedCount = 0;
+            if (pos) { if (px) Use(1); if (py) Use(2); }
+            if (parOff) { if (pox) Use(12); if (poy) Use(13); }
+            if (piv) { if (pvx) Use(3); if (pvy) Use(4); }
+            if (rot) Use(5);
+            if (scale) { if (sx) Use(7); if (sy) Use(8); }
+            if (col) Use(9);
+            if (opa) Use(10);
+            if (par) Use(11);
+
+            InstantMove.InLoop = true;
+            try
             {
-                var dec = list[i];
-                var d = tweensRef(dec);
-                if (placement) setPlacement(dec, mt);
-                if (pos)
+                for (int i = 0; i < list.Count; i++)
                 {
-                    Vector2 sp = relative ? pivotPosRef(dec) : startPosRef(dec);
-                    if (px) { InstantMove.Begin(); InstantMove.CPosX(fx, dec, d, sp.x); }
-                    if (py) { InstantMove.Begin(); InstantMove.CPosY(fx, dec, d, sp.y); }
+                    var dec = list[i];
+                    var d = tweensRef(dec);
+                    InstantMove.DecoStart(AllDead(d));
+                    if (placement) setPlacement(dec, mt);
+                    if (pos)
+                    {
+                        Vector2 sp = relative ? pivotPosRef(dec) : startPosRef(dec);
+                        if (px) { InstantMove.Begin(); InstantMove.CPosX(fx, dec, d, sp.x); }
+                        if (py) { InstantMove.Begin(); InstantMove.CPosY(fx, dec, d, sp.y); }
+                    }
+                    if (parOff)
+                    {
+                        if (pox) { InstantMove.Begin(); InstantMove.CParX(fx, dec, d); }
+                        if (poy) { InstantMove.Begin(); InstantMove.CParY(fx, dec, d); }
+                    }
+                    if (piv)
+                    {
+                        if (pvx) { InstantMove.Begin(); InstantMove.CPivX(fx, dec, d); }
+                        if (pvy) { InstantMove.Begin(); InstantMove.CPivY(fx, dec, d); }
+                    }
+                    if (rot) { InstantMove.Begin(); InstantMove.CRot(fx, dec, d); }
+                    if (scale)
+                    {
+                        if (sx) { InstantMove.Begin(); InstantMove.CScale(dec, d, 7, sc, k); }
+                        if (sy) { InstantMove.Begin(); InstantMove.CScale(dec, d, 8, sc, k); }
+                    }
+                    if (col) { InstantMove.Begin(); InstantMove.CCol(fx, dec, d); }
+                    if (opa) { InstantMove.Begin(); InstantMove.COpa(fx, dec, d); }
+                    if (par) { InstantMove.Begin(); InstantMove.CParMul(dec, d, parTarget, k); }
+                    InstantMove.DecoEnd();
+                    if (vis) setVisible(dec, visV ? !forceHideRef(dec) : false);
+                    if (dep) setDepth(dec, depth);
                 }
-                if (parOff)
-                {
-                    if (pox) { InstantMove.Begin(); InstantMove.CParX(fx, dec, d); }
-                    if (poy) { InstantMove.Begin(); InstantMove.CParY(fx, dec, d); }
-                }
-                if (piv)
-                {
-                    if (pvx) { InstantMove.Begin(); InstantMove.CPivX(fx, dec, d); }
-                    if (pvy) { InstantMove.Begin(); InstantMove.CPivY(fx, dec, d); }
-                }
-                if (rot) { InstantMove.Begin(); InstantMove.CRot(fx, dec, d); }
-                if (scale)
-                {
-                    if (sx) { InstantMove.Begin(); InstantMove.CScale(dec, d, 7, sc, k); }
-                    if (sy) { InstantMove.Begin(); InstantMove.CScale(dec, d, 8, sc, k); }
-                }
-                if (col) { InstantMove.Begin(); InstantMove.CCol(fx, dec, d); }
-                if (opa) { InstantMove.Begin(); InstantMove.COpa(fx, dec, d); }
-                if (par) { InstantMove.Begin(); InstantMove.CParMul(dec, d, parTarget, k); }
-                if (vis) setVisible(dec, visV ? !forceHideRef(dec) : false);
-                if (dep) setDepth(dec, depth);
             }
+            finally { InstantMove.InLoop = false; InstantMove.DecoEnd(); }
+        }
+
+        private static readonly bool[] used = new bool[32];
+        private static int usedCount;
+        private static void Use(int k) { if (!used[k]) { used[k] = true; usedCount++; } }
+        // 이번 효과가 쓰는 키가 사전에 모두 있고 전부 "끝난 대역" 인가. 사전을 한 번 훑는 게 키마다 찾는 것(76ns)보다 싸다.
+        // 하나라도 없거나 살아 있는(또는 다른) 애니메이션이면 false -> 키마다 원래 순서대로 끊는다(끊기가 값을 넣으므로 순서가 중요).
+        private static bool AllDead(Dictionary<global::TweenType, Tween> d)
+        {
+            if (usedCount == 0 || d == null || d.Count < usedCount) return false;
+            var dead = InstantMove.Dead;
+            int found = 0;
+            foreach (var kv in d)
+            {
+                int key = (int)kv.Key;
+                if (key < 0 || key >= used.Length || !used[key]) continue;
+                if (!ReferenceEquals(kv.Value, dead)) return false;
+                found++;
+            }
+            return found == usedCount;
         }
 
         // ── 개발자용 검증: 루프 결과 뒤에 원래 코드를 한 번 더 돌려 아무것도 안 바뀌는지 ──
