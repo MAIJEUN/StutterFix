@@ -21,6 +21,14 @@ namespace StutterFix
     // 투명도가 곧 보이는 정도인 것으로 확인된 셰이더에만 적용한다.
     public static class InvisibleSkip
     {
+        // 목록 조회를 유니티 객체 비교(가상 호출 두 번) 대신 참조 비교로 한다. 같은 장식이면 같은 C# 객체다.
+        private sealed class RefEq : IEqualityComparer<SpriteRenderer>
+        {
+            internal static readonly RefEq Instance = new RefEq();
+            public bool Equals(SpriteRenderer a, SpriteRenderer b) { return ReferenceEquals(a, b); }
+            public int GetHashCode(SpriteRenderer o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
+        }
+
         internal static bool Enabled = true;
 
         private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> rendererRef =
@@ -28,7 +36,7 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrDecoration, Color> colorRef =
             AccessTools.FieldRefAccess<scrDecoration, Color>("rendererColor");
 
-        private static readonly HashSet<SpriteRenderer> hidden = new HashSet<SpriteRenderer>();
+        private static readonly HashSet<SpriteRenderer> hidden = new HashSet<SpriteRenderer>(RefEq.Instance);
         private static readonly Dictionary<Shader, bool> shaderOk = new Dictionary<Shader, bool>();
         internal static int Count { get { return hidden.Count; } }
         internal static int Peak;
@@ -48,7 +56,7 @@ namespace StutterFix
         // Arche 는 장식 28,835개 중 28,811개가 투명한 채로 깔려 있고, 효과 몰림 프레임에 색·투명도 변경이 수천 개씩 몰린다.
         // 그래서 이 자리는 호출 한 번이 싸야 한다. 대부분은 "투명 -> 투명" 이라 할 일이 없는데, 처음 판에서는 그때도
         // 엔진 값(forceRenderingOff)을 읽었다. 이제는 우리 목록만 보고 끝낸다. 엔진 값은 실제로 바꿀 때만 건드린다.
-        private static readonly HashSet<SpriteRenderer> rejected = new HashSet<SpriteRenderer>();   // 알파를 믿을 수 없는 셰이더
+        private static readonly HashSet<SpriteRenderer> rejected = new HashSet<SpriteRenderer>(RefEq.Instance);   // 알파를 믿을 수 없는 셰이더
         internal static long Calls, Toggles, Ticks;
         internal static double WorstFrameMs;
         private static double frameMs;
@@ -57,37 +65,37 @@ namespace StutterFix
         public static void After(scrVisualDecoration __instance)
         {
             if (!Enabled) return;
-            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            try
+            // 시간 재기 자체가 호출 한 번 비용과 비슷해서(첫 판: 286만 번에 492ms), 64번에 한 번만 재고 64배로 친다.
+            bool sample = (++Calls & 63) == 0;
+            long t0 = sample ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            try { Work(__instance); } catch { }
+            if (!sample) return;
+            // 이 기능이 효과 몰림 프레임을 늘리지 않는지 보려고, 쓴 시간과 가장 많이 쓴 프레임을 (추정해서) 잰다.
+            long d = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 64;
+            Ticks += d;
+            int f = Time.frameCount;
+            if (f != frame) { frame = f; frameMs = 0; }
+            frameMs += d * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (frameMs > WorstFrameMs) WorstFrameMs = frameMs;
+        }
+
+        private static void Work(scrVisualDecoration inst)
+        {
+            var r = rendererRef(inst);
+            if ((object)r == null) return;
+            if (colorRef(inst).a <= 0f)
             {
-                var r = rendererRef(__instance);
-                if ((object)r == null) return;
-                Calls++;
-                if (colorRef(__instance).a <= 0f)
-                {
-                    if (hidden.Contains(r) || rejected.Contains(r)) return;
-                    if (!AlphaMeansVisibility(r)) { rejected.Add(r); return; }
-                    r.forceRenderingOff = true;
-                    hidden.Add(r);
-                    Toggles++;
-                    if (hidden.Count > Peak) Peak = hidden.Count;
-                }
-                else if (hidden.Remove(r))
-                {
-                    r.forceRenderingOff = false;
-                    Toggles++;
-                }
+                if (hidden.Contains(r) || rejected.Contains(r)) return;   // 대부분(98%)이 여기서 끝난다: 투명 -> 투명
+                if (!AlphaMeansVisibility(r)) { rejected.Add(r); return; }
+                r.forceRenderingOff = true;
+                hidden.Add(r);
+                Toggles++;
+                if (hidden.Count > Peak) Peak = hidden.Count;
             }
-            catch { }
-            finally
+            else if (hidden.Remove(r))
             {
-                // 이 기능이 효과 몰림 프레임을 늘리지 않는지 보려고, 쓴 시간과 가장 많이 쓴 프레임을 잰다.
-                long d = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-                Ticks += d;
-                int f = Time.frameCount;
-                if (f != frame) { frame = f; frameMs = 0; }
-                frameMs += d * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-                if (frameMs > WorstFrameMs) WorstFrameMs = frameMs;
+                r.forceRenderingOff = false;
+                Toggles++;
             }
         }
 
@@ -125,7 +133,7 @@ namespace StutterFix
             string s = "지금 안 그리는 투명 장식 " + hidden.Count + "개, 곡 중 최대 " + Peak + "개";
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
             if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
-            s += string.Format(" | 색 바뀜 {0}번 확인, 그리기 켜고 끈 것 {1}번, 쓴 시간 {2:F1}ms, 가장 많이 쓴 프레임 {3:F2}ms",
+            s += string.Format(" | 색 바뀜 {0}번 확인, 그리기 켜고 끈 것 {1}번, 쓴 시간 약 {2:F1}ms, 가장 많이 쓴 프레임 약 {3:F2}ms (64번에 한 번 재서 추정)",
                 Calls, Toggles, Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency, WorstFrameMs);
             return s;
         }
