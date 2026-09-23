@@ -263,7 +263,7 @@ namespace StutterFix
         // 맡을 수 있는지 보고, 맡으면 대상 목록을 만든다. 여기까지는 게임 상태를 바꾸지 않는다.
         private static bool Take(ffxMoveDecorationsPlus fx)
         {
-            if (durRef(fx) > 0f) return No(0);
+            if (durRef(fx) > 0f) { if (Edition.Dev || Main.MeasureBuild) CountAnim(fx); return No(0); }
             if (!ADOBase.customLevel) return No(1);                                        // 공식 맵: 길이 보정(AdjustDurationForHardbake)이 있다
             if ((int)ADOBase.controller.visualQuality == 10) return No(2);                 // 원래 코드의 그래픽 설정 검사는 원래대로
             if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) return No(3);
@@ -337,6 +337,51 @@ namespace StutterFix
             }
             cleanAt[l] = ver;
             return true;
+        }
+        // ── (측정용) 길이 있는 장식 이동 효과가 쓰는 속성 조합 ──
+        // 모드 쪽 애니메이터를 어느 속성부터 맡을지 정하려고, 효과마다 쓰는 속성(애니메이션 키)과 대상 수를 센다.
+        private static readonly Dictionary<int, long[]> animMix = new Dictionary<int, long[]>();   // 키 묶음 -> [효과 수, 대상 장식 수]
+        private static void CountAnim(ffxMoveDecorationsPlus fx)
+        {
+            bool move = !fdt(fx);
+            var tp = tPos(fx); var a = tParOff(fx); var b = tPiv(fx);
+            Vector2 sc = !float.IsNaN(tScale(fx)) ? new Vector2(tScale(fx), tScale(fx)) : tScaleV2(fx);
+            int k = 0;
+            if (move && posUsed(fx)) { if (!float.IsNaN(tp.x)) k |= 1 << 1; if (!float.IsNaN(tp.y)) k |= 1 << 2; }
+            if (move && parOffUsed(fx)) { if (!float.IsNaN(a.x)) k |= 1 << 12; if (!float.IsNaN(a.y)) k |= 1 << 13; }
+            if (move && pivUsed(fx)) { if (!float.IsNaN(b.x)) k |= 1 << 3; if (!float.IsNaN(b.y)) k |= 1 << 4; }
+            if (move && rotUsed(fx)) k |= 1 << 5;
+            if (move && scaleUsed(fx)) { if (!float.IsNaN(sc.x)) k |= 1 << 7; if (!float.IsNaN(sc.y)) k |= 1 << 8; }
+            if (colUsed(fx)) k |= 1 << 9;
+            if (opaUsed(fx)) k |= 1 << 10;
+            if (parUsed(fx)) k |= 1 << 11;
+            if (mtUsed(fx)) k |= 1 << 20;
+            if (visUsed(fx) || depthUsed(fx)) k |= 1 << 21;
+            if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) k |= 1 << 22;
+            if (move && posUsed(fx) && (int)mtRef(fx) == 7) k |= 1 << 23;
+            long[] v;
+            if (!animMix.TryGetValue(k, out v)) { v = new long[2]; animMix[k] = v; }
+            v[0]++; v[1] += TargetCount(fx);
+        }
+        private static string MixName(int k)
+        {
+            var sb = new System.Text.StringBuilder();
+            string[] n = { "", "위치X", "위치Y", "피벗X", "피벗Y", "회전", "", "크기X", "크기Y", "색", "불투명도", "시차배율", "시차X", "시차Y" };
+            for (int i = 1; i < n.Length; i++) if ((k & (1 << i)) != 0 && n[i].Length > 0) sb.Append(sb.Length > 0 ? "+" : "").Append(n[i]);
+            if ((k & (1 << 20)) != 0) sb.Append("+배치");
+            if ((k & (1 << 21)) != 0) sb.Append("+보이기·깊이");
+            if ((k & (1 << 22)) != 0) sb.Append("+이미지·마스크");
+            if ((k & (1 << 23)) != 0) sb.Append("(상대)");
+            return sb.Length > 0 ? sb.ToString() : "없음";
+        }
+        internal static string AnimSummary()
+        {
+            if (animMix.Count == 0) return "";
+            var list = new List<KeyValuePair<int, long[]>>(animMix);
+            list.Sort((x, y) => y.Value[1].CompareTo(x.Value[1]));
+            var sb = new System.Text.StringBuilder(" | 길이 있는 장식 이동 (대상 장식 수 많은 순):");
+            for (int i = 0; i < list.Count && i < 8; i++) sb.AppendFormat(" {0} 효과 {1}개 장식 {2}개,", MixName(list[i].Key), list[i].Value[0], list[i].Value[1]);
+            return sb.ToString().TrimEnd(',');
         }
         private static bool No(int w) { why[w]++; Fallbacks++; return false; }
 
@@ -534,8 +579,9 @@ namespace StutterFix
             if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + ", 보이다 투명해져서 목록만 다른 것 " + Explained + ", 개발자용 정답 표본이라 목록만 다른 것 " + TruthDiff + First + ")";
             else if (First.Length > 0) s += First;
             s += Precheck.Summary();
+            s += AnimSummary();
             return s;
         }
-        internal static void Reset() { Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { animMix.Clear(); Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }
