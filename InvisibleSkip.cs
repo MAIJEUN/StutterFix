@@ -251,6 +251,8 @@ namespace StutterFix
             LazySkips++;
         }
         internal static bool InLazy(scrDecoration d) { return lazy.Contains(d); }
+        // 미리 확인으로 건너뛴 효과가 할 일: 값은 이미 같으니 목록에만 넣는다 (LazyStore 에서 같은 값 쓰기를 뺀 것)
+        internal static void LazyAdd(scrDecoration d) { lazy.Add(d); LazySkips++; }
         // 개발자용 정답 표본(8개 중 1개). Mono 의 객체 해시는 아래 자리 비트가 고르지 않아(& 7 로 고르면 절반 가까이가 뽑혔다) 섞어서 위 비트를 쓴다.
         private static bool TruthSample(scrDecoration d) { return ((uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) * 2654435761u) >> 29 == 0; }
         // SetPosition 은 시차 부품이 없으면 첫 줄에서 아무것도 안 하고 끝난다(IL 확인). 그런 장식은 부를 필요가 없다.

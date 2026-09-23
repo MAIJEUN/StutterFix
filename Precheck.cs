@@ -39,13 +39,14 @@ namespace StutterFix
             public bool Valid = true, Ready, Pos, Px, Py, Col, Opa; public int Checked;
             public Vector2 Tp; public Color Tc; public float To; public bool Clean; public int Keys;
             public HashSet<scrDecoration> Seen;
+            public List<scrDecoration> AddLazy;   // 효과가 "보일 때 반영" 목록에 넣을 장식 (값은 이미 같다). 건너뛸 때 이것만 한다
         }
         private static readonly Plan[] plans = new Plan[MaxPlans];
         private static readonly List<Plan> cleaning = new List<Plan>();   // 끝난 계획: 붙인 표시를 떼는 중 (그동안 비트를 다시 쓰지 않음)
         private static int cleanMask;
         private static int scanIdx, lastCur = -1;
 
-        internal static long Created, Ready, Used, UsedDecos, Checks, VerifyN, VerifyDecos, VerifyMismatch;
+        internal static long Created, Ready, Used, UsedDecos, UsedLazyAdds, Checks, VerifyN, VerifyDecos, VerifyMismatch;
         internal static long InvTouch, InvEffect, InvList, NotReady, NotNoop, NoBit, Resets;
         internal static string FirstNotNoop = "", VerifyFirst = "";
         private static readonly Dictionary<string, int> skipWhy = new Dictionary<string, int>();
@@ -222,6 +223,7 @@ namespace StutterFix
                 string why = NoopNow(p, d);
                 if (why != null) { NotNoopWhy(p, why); return; }
                 if (!InvisibleSkip.AddWatch(d, bit)) { NotNoopWhy(p, "안 그리는 목록에 없음"); return; }
+                if (needLazy) { if (p.AddLazy == null) p.AddLazy = new List<scrDecoration>(); p.AddLazy.Add(d); }
                 p.Checked++; Checks++;
                 if ((++n & 15) == 0 && Over()) return;
             }
@@ -237,8 +239,10 @@ namespace StutterFix
         }
 
         // 이 장식에 대해 효과가 아무것도 안 바꾸는가. 바꾸면 그 이유를 돌려준다.
+        private static bool needLazy;
         private static string NoopNow(Plan p, scrDecoration d)
         {
+            needLazy = false;
             if (d.GetType() != typeof(scrVisualDecoration)) return "일반 이미지 장식 아님";
             if (stickRef(d)) return "타일에 붙은 장식";
             if (!FastMove.NoLiveMask(tweensRef(d), p.Keys)) return "애니메이션이 살아 있음";
@@ -247,7 +251,7 @@ namespace StutterFix
                 if (!InvisibleSkip.NoParallax(d))
                 {
                     if (!InvisibleSkip.LazyCan(d)) return "위치를 미룰 수 없는 장식";
-                    if (!InvisibleSkip.InLazy(d)) return "위치가 미루기 목록에 없음";
+                    needLazy = !InvisibleSkip.InLazy(d);   // 원래 코드는 같은 값을 저장하고 목록에 넣는다 -> 건너뛸 때 목록 추가만 하면 같다
                     var pp = pivotPosRef(d); var sp = startPosRef(d);
                     if (p.Px && InstantMove.Bits(pp.x) != InstantMove.Bits(sp.x + p.Tp.x)) return "위치가 다름";
                     if (p.Py && InstantMove.Bits(pp.y) != InstantMove.Bits(sp.y + p.Tp.y)) return "위치가 다름";
@@ -275,7 +279,8 @@ namespace StutterFix
                     && s.Tc == p.Tc && InstantMove.Bits(s.To) == InstantMove.Bits(p.To);
             }
             if (!ok) { if (!p.Ready || !p.Valid) NotReady++; Free(p); return false; }
-            Used++; UsedDecos += p.Targets.Count;
+            if (p.AddLazy != null) foreach (var d in p.AddLazy) InvisibleSkip.LazyAdd(d);
+            Used++; UsedDecos += p.Targets.Count; if (p.AddLazy != null) UsedLazyAdds += p.AddLazy.Count;
             Free(p);
             return true;
         }
@@ -324,8 +329,8 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Created == 0 && Resets == 0) return "";
-            string s = string.Format(" | 미리 확인: 계획 {0}개, 확인 끝남 {1}개, 건너뛴 효과 {2}개(장식 {3}개), 장식 확인 {4}번 | 못 쓴 것: 확인 뒤 바뀜 {5}번, 원래 코드 효과가 대상을 건드림 {6}번, 목록 바뀜 {7}번, 발동 전에 못 끝냄·취소 {8}번, 그대로가 아님 {9}번 [{10}], 자리 없음 {11}번, 전체 취소 {12}번",
-                Created, Ready, Used, UsedDecos, Checks, InvTouch, InvEffect, InvList, NotReady, NotNoop, FirstNotNoop, NoBit, Resets);
+            string s = string.Format(" | 미리 확인: 계획 {0}개, 확인 끝남 {1}개, 건너뛴 효과 {2}개(장식 {3}개, 그중 목록 추가만 한 것 {13}개), 장식 확인 {4}번 | 못 쓴 것: 확인 뒤 바뀜 {5}번, 원래 코드 효과가 대상을 건드림 {6}번, 목록 바뀜 {7}번, 발동 전에 못 끝냄·취소 {8}번, 그대로가 아님 {9}번 [{10}], 자리 없음 {11}번, 전체 취소 {12}번",
+                Created, Ready, Used, UsedDecos, Checks, InvTouch, InvEffect, InvList, NotReady, NotNoop, FirstNotNoop, NoBit, Resets, UsedLazyAdds);
             if (skipWhy.Count > 0)
             {
                 s += " | 대상 " + MinTargets + "개 이상인데 못 맡은 효과:";
@@ -338,7 +343,7 @@ namespace StutterFix
         internal static void ResetStats()
         {
             ResetAll();
-            Created = Ready = Used = UsedDecos = Checks = VerifyN = VerifyDecos = VerifyMismatch = 0;
+            Created = Ready = Used = UsedDecos = UsedLazyAdds = Checks = VerifyN = VerifyDecos = VerifyMismatch = 0;
             InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = ""; logged = 0;
         }
     }
