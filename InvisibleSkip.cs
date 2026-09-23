@@ -184,7 +184,7 @@ namespace StutterFix
             var r = rendererRef(v);
             if ((object)r == null || !hidden.Contains(r) || isMask(v)) return true;
             if (parallaxRef(__instance) == null) return true;   // 원래 함수가 이때는 아무것도 안 한다
-            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(__instance) & 7) == 0) { verify.Add(__instance); return true; }
+            if (Edition.Dev && TruthSample(__instance)) { verify.Add(__instance); return true; }
             pivotPosRef(__instance) = pivotPos;
             pivotOffRef(__instance) = pivotOffset;
             lazy.Add(__instance);
@@ -206,7 +206,7 @@ namespace StutterFix
             if ((object)r == null || !hidden.Contains(r)) return No(4);
             if (isMask(v)) return No(5);
             if (parallaxRef(d) == null) return No(6);
-            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) & 7) == 0) return No(7);   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
+            if (Edition.Dev && TruthSample(d)) return No(7);   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
             return true;
         }
         // 개발자용: 빠른 길을 못 탄 이유별 수 (꺼짐/재생 아님, 보임, 이미지 장식 아님, 히트박스, 안 그리는 목록에 없음, 마스크, 시차 없음, 정답 표본)
@@ -226,6 +226,8 @@ namespace StutterFix
             LazySkips++;
         }
         internal static bool InLazy(scrDecoration d) { return lazy.Contains(d); }
+        // 개발자용 정답 표본(8개 중 1개). Mono 의 객체 해시는 아래 자리 비트가 고르지 않아(& 7 로 고르면 절반 가까이가 뽑혔다) 섞어서 위 비트를 쓴다.
+        private static bool TruthSample(scrDecoration d) { return ((uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) * 2654435761u) >> 29 == 0; }
         // SetPosition 은 시차 부품이 없으면 첫 줄에서 아무것도 안 하고 끝난다(IL 확인). 그런 장식은 부를 필요가 없다.
         internal static bool NoParallax(scrDecoration d) { return parallaxRef(d) == null; }
 
