@@ -510,7 +510,8 @@ namespace StutterFix
             if (!E(a.Opa, b.Opa)) return "불투명도 " + a.Opa.ToString("R") + " -> " + b.Opa.ToString("R");
             if (!E(a.Col, b.Col)) return "색 " + a.Col.ToString("R") + " -> " + b.Col.ToString("R");
             if (!E(a.Rc, b.Rc)) return "그리기 색 " + a.Rc.ToString("R") + " -> " + b.Rc.ToString("R");
-            if (!E(a.Src, b.Src)) return "엔진 색 " + a.Src.ToString("R") + " -> " + b.Src.ToString("R");
+            // 안 그리는 장식의 엔진 색은 보이지 않고, 다시 보이는 순간 게임이 새로 넣는다 (투명한 채 색만 저장하는 길)
+            if (!(a.Hid && b.Hid) && !E(a.Src, b.Src)) return "엔진 색 " + a.Src.ToString("R") + " -> " + b.Src.ToString("R");
             if (!Near(a.Scale, b.Scale)) return "크기 " + a.Scale.ToString("R") + " -> " + b.Scale.ToString("R");
             if (!Near(a.Mul, b.Mul)) return "시차 배율 " + a.Mul.ToString("R") + " -> " + b.Mul.ToString("R");
             if (a.En != b.En) return "보이기 " + a.En + " -> " + b.En;

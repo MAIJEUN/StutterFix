@@ -313,10 +313,10 @@ namespace StutterFix
         private static void SameAfter(scrDecoration dec, string what)
         {
             if (!snapPending) return;
-            snapPending = false;
+            snapPending = false; bool ign = snapIgnoreSrc; snapIgnoreSrc = false;
             var b = Take(dec); var a = snap;
             SameChecked++;
-            bool same = V2(a.Pp, b.Pp) && V2(a.Po, b.Po) && a.Lz == b.Lz && a.Hid == b.Hid && a.Fro == b.Fro && C4(a.Rc, b.Rc) && C4(a.Col, b.Col) && C4(a.Src, b.Src)
+            bool same = V2(a.Pp, b.Pp) && V2(a.Po, b.Po) && a.Lz == b.Lz && a.Hid == b.Hid && a.Fro == b.Fro && C4(a.Rc, b.Rc) && C4(a.Col, b.Col) && (ign || C4(a.Src, b.Src))
                 && Eq(a.Opa, b.Opa) && Eq(a.Child.x, b.Child.x) && Eq(a.Child.y, b.Child.y) && Eq(a.Child.z, b.Child.z);
             if (same) return;
             if (InvisibleSkip.IsTruthSample(dec)) { SameTruth++; return; }   // 개발자용 정답 표본: 게임 함수가 미루지 않고 바로 반영했다 (개발자용에만 있는 길)
@@ -328,8 +328,8 @@ namespace StutterFix
         private static bool C4(Color a, Color b) { return Eq(a.r, b.r) && Eq(a.g, b.g) && Eq(a.b, b.b) && Eq(a.a, b.a); }
         internal static string SameSummary()
         {
-            if (SameSkipped == 0 && SameChecked == 0) return "";
-            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + ", 개발자용 정답 표본 " + SameTruth + SameFirst + ")" + InvisibleSkip.LazyNoSummary() : "");
+            if (SameSkipped == 0 && SameChecked == 0 && HidColor == 0) return "";
+            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번, 투명한 채 색만 저장 " + HidColor + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + ", 개발자용 정답 표본 " + SameTruth + SameFirst + ")" + InvisibleSkip.LazyNoSummary() : "");
         }
 
         // 개발자용 쪼개기(MoveProf): 설정 함수 시간, 이미 같은 값이었는지, 투명한 채로 남았는지
@@ -465,6 +465,8 @@ namespace StutterFix
         {
             Kill(d, 9); Color v = tCol(fx);
             if (ColorNoop(dec, v, opaRef(dec)) && Skip(dec)) { if (P) MoveProf.Skipped(9); return Done(d, 9); }
+            Color rc;
+            if (HiddenStay(dec, v, opaRef(dec), out rc) && HidSet(dec, v, opaRef(dec), rc, 9)) return Done(d, 9);
             if (P) { var c = colRef(dec); bool same = Eq(c.r, v.r) && Eq(c.g, v.g) && Eq(c.b, v.b) && Eq(c.a, v.a); M0(dec); setCol(dec, v); M1(9, dec, same); }
             else setCol(dec, v);
             HidC = 0; LazyC = 0;   // 색을 실제로 넣었으면 안 그림 상태가 바뀌었을 수 있다
@@ -475,10 +477,41 @@ namespace StutterFix
         {
             Kill(d, 10); float v = tOpa(fx);
             if (ColorNoop(dec, colRef(dec), v) && Skip(dec)) { if (P) MoveProf.Skipped(10); return Done(d, 10); }
+            Color rc;
+            if (HiddenStay(dec, colRef(dec), v, out rc) && HidSet(dec, colRef(dec), v, rc, 10)) return Done(d, 10);
             if (P) { bool same = Eq(opaRef(dec), v); M0(dec); setOpa(dec, v); M1(10, dec, same); } else setOpa(dec, v);
             HidC = 0; LazyC = 0;
             if (Edition.Dev) SameAfter(dec, "불투명도");
             return Done(d, 10);
+        }
+
+        // ── 투명한 채로 남는 색·불투명도 변경 ──
+        // 투명해서 안 그리는 장식에 새 색을 넣어도 다시 계산한 그리기 색의 알파가 0 이면 여전히 투명하다. 원래 경로(ApplyColor)는
+        // 그래도 엔진에 색을 넣고(안 그리는 스프라이트라 보이지 않음) 잠든 장식을 깨워 다음 프레임에 한 번 더 훑는다(보이지 않으니 잠든 조건은 그대로).
+        // 그래서 값(색, 불투명도, 그리기 색)만 저장한다. 엔진 색은 그 장식이 다시 보이는 순간 게임이 ApplyColor 에서 새로 넣는다.
+        // 조건: 일반 이미지 장식, 안 그리는 중, 새 그리기 색 알파 <= 0 (InvisibleSkip 이 안 그리는 조건과 같음).
+        // 개발자용: 16번에 1번 원래 경로를 부르고 엔진 색을 뺀 상태(값, 그리기 색, 안 그림, 미루기 목록, 위치)가 같은지 대조한다.
+        internal static long HidColor;
+        private static bool snapIgnoreSrc;
+        private static bool HiddenStay(scrDecoration dec, Color c, float o, out Color rc)
+        {
+            rc = default(Color);
+            if (!NoopOn || dec.GetType() != typeof(scrVisualDecoration) || !Hidden(dec)) return false;
+            float f = 1f;
+            if (stickRef(dec)) { var fl = floorRef(dec); if ((object)fl == null) return false; f = floorOpaRef(fl); }
+            float a = c.a * o * f;   // ApplyColor 와 같은 순서
+            if (!(a <= 0f)) return false;
+            rc = new Color(c.r, c.g, c.b, a);
+            return true;
+        }
+        private static bool HidSet(scrDecoration dec, Color c, float o, Color rc, int key)
+        {
+            if (Edition.Dev && !NoSample && (++sameCounter & 15) == 0) { snap = Take(dec); snap.Col = c; snap.Opa = o; snap.Rc = rc; snapPending = true; snapIgnoreSrc = true; return false; }
+            colRef(dec) = c; opaRef(dec) = o; rcRef(dec) = rc;
+            if (Precheck.Active != 0) InvisibleSkip.TouchDeco(dec, "투명한 채 색 바뀜");
+            HidColor++;
+            if (P) MoveProf.Skipped(key);
+            return true;
         }
         // 크기(7 = X 축, 8 = Y 축)와 시차 배율(11). 게임 코드는 OnComplete 없이 DOTween 으로 값을 넣는다.
         // 길이 0 이면 "즉시 이동 최적화"(ZeroTween)가 하는 계산과 똑같이 한다: 시작값 = 지금 값, 끝값에 이징 끝점을 곱한 변화량을 더함.
@@ -558,6 +591,6 @@ namespace StutterFix
             if (Handled == 0 && Checked == 0) return "";
             return " | 즉시 이동 직접 처리 " + Handled + "번" + (Edition.Dev ? " (대조 " + Checked + "번 중 다름 " + Mismatch + First + ")" : "") + SameSummary();
         }
-        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = SameTruth = 0; SameFirst = ""; Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length); }
+        internal static void Reset() { Handled = Checked = Mismatch = 0; First = ""; pending.Clear(); SameSkipped = SameChecked = SameMismatch = SameTruth = HidColor = 0; SameFirst = ""; Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length); }
     }
 }
