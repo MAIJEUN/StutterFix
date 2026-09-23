@@ -971,13 +971,16 @@ namespace StutterFix
             // 작은 그래프 (최근 24프레임)
             var g = new Rect(inner.x + 9, r.yMax - 14, inner.width - 18, 9);
             float bw = g.width / 24f;
+            bool batch = BarsBegin();
             for (int i = 0; i < 24; i++)
             {
                 float v = graph[(graphHead - 24 + i + GraphN) % GraphN];
                 if (v <= 0) continue;
                 float bh = Mathf.Max(1f, g.height * Mathf.Clamp01(v / 50f));
-                Fill(new Rect(g.x + i * bw, g.yMax - bh, Mathf.Max(1f, bw - 0.8f), bh), BarColor(v, 0.5f), 0);
+                var br = new Rect(g.x + i * bw, g.yMax - bh, Mathf.Max(1f, bw - 0.8f), bh);
+                if (batch) Bar(br, BarColor(v, 0.5f)); else Fill(br, BarColor(v, 0.5f), 0);
             }
+            if (batch) BarsEnd();
 
             // 펼칠 수 있다는 표시 (안쪽 가장자리의 짧은 선)
             float lx = right ? inner.x + 3 : inner.xMax - 5;
@@ -1106,14 +1109,63 @@ namespace StutterFix
             float refY = g.yMax - pad - (g.height - pad * 2) * Mathf.Clamp01(16.7f / 50f);
             Fill(new Rect(g.x + pad, refY, g.width - pad * 2, 1), new Color(1, 1, 1, 0.08f), 0);
             float bw = (g.width - pad * 2) / n;
+            bool batch = BarsBegin();
             for (int i = 0; i < n; i++)
             {
                 float v = graph[(graphHead - n + i + GraphN * 2) % GraphN];
                 if (v <= 0) continue;
                 float bh = Mathf.Max(1.5f, (g.height - pad * 2) * Mathf.Clamp01(v / 50f));
-                Fill(new Rect(g.x + pad + i * bw, g.yMax - pad - bh, Mathf.Max(1f, bw - 0.6f), bh), BarColor(v, 0.55f), 0);
+                var br = new Rect(g.x + pad + i * bw, g.yMax - pad - bh, Mathf.Max(1f, bw - 0.6f), bh);
+                if (batch) Bar(br, BarColor(v, 0.55f)); else Fill(br, BarColor(v, 0.55f), 0);
             }
+            if (batch) BarsEnd();
         }
+
+        // ── 막대 한 번에 그리기 ──
+        // 모니터는 IMGUI 라 그리는 요소 하나하나가 매 프레임 따로 그리기 호출이 된다. 요소를 세어 보니 그래프 막대가 대부분이었다
+        // (아이콘 약 35번 중 24번, 상세 150번 넘게 중 90번). 켜 두면 메인·렌더 스레드에 각각 프레임당 0.6ms 가 붙었다
+        // (Arche 가벼운 구간 모니터 끔 341fps / 켬 278fps). 막대는 모서리가 없는 단색 사각형이라, GL 로 한 번에 그린다.
+        // 좌표는 IMGUI 와 같게: GUI.matrix 를 곱하고, GL 은 아래가 원점이라 세로를 뒤집는다. 색 알파에는 GUI.color 를 곱한다(나타나기 효과).
+        // 이 빌드에 색 셰이더가 없으면 예전처럼 하나씩 그린다.
+        private static Material barMat;
+        private static bool barMatTried;
+        private Matrix4x4 barM;
+
+        private bool BarsBegin()
+        {
+            if (!barMatTried)
+            {
+                barMatTried = true;
+                var sh = Shader.Find("Hidden/Internal-Colored");
+                if (sh != null)
+                {
+                    barMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+                    barMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    barMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    barMat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                    barMat.SetInt("_ZWrite", 0);
+                    barMat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+                }
+            }
+            if (barMat == null) return false;
+            barM = GUI.matrix;
+            barMat.SetPass(0);
+            GL.PushMatrix();
+            GL.LoadPixelMatrix();
+            GL.Begin(GL.QUADS);
+            return true;
+        }
+
+        private void Bar(Rect r, Color c)
+        {
+            c.a *= GUI.color.a;
+            GL.Color(c);
+            float H = Screen.height;
+            Vector3 a = barM.MultiplyPoint3x4(new Vector3(r.xMin, r.yMin, 0)), b = barM.MultiplyPoint3x4(new Vector3(r.xMax, r.yMax, 0));
+            GL.Vertex3(a.x, H - a.y, 0); GL.Vertex3(b.x, H - a.y, 0); GL.Vertex3(b.x, H - b.y, 0); GL.Vertex3(a.x, H - b.y, 0);
+        }
+
+        private static void BarsEnd() { GL.End(); GL.PopMatrix(); }
 
         private static Color BarColor(float ms, float normalAlpha) { return ms >= 50 ? Bad : ms >= 25 ? Warn : new Color(1, 1, 1, normalAlpha); }
 
