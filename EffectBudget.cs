@@ -66,11 +66,64 @@ namespace StutterFix
             }
 
             if (depth > 0) return true;        // 이미 시작한 효과의 내부 호출
-            if (usedMs < BudgetMs) return true;
+            // 앞에 밀린 것이 남아 있으면 순서를 지키려고 새 효과도 그 뒤에 선다(아래 예측 때문에 예산이 남아도 밀린 것이 있을 수 있다)
+            if (queue.Count == 0)
+            {
+                double est = Estimate(instance);
+                // 이번 프레임의 첫 효과는 무거워도 돌린다(효과 하나를 쪼개면 장식이 늦게 움직여서 예전에 되돌렸다).
+                // 이미 뭔가 돌았으면, 이 효과까지 돌리면 예산을 넘을 것 같을 때 다음 프레임 맨 앞으로 미룬다.
+                if (usedMs < BudgetMs && (usedMs <= 0.0 || usedMs + est <= BudgetMs)) { curCount = lastCount; return true; }
+                if (usedMs < BudgetMs) DeferredByEstimate++;
+            }
 
             queue.Add(new Pending { Instance = instance, Method = method, Args = args });
             DeferredTotal++;
             return false;
+        }
+
+        // ── 장식 이동 효과의 비용 예측 ──
+        // Arche 효과 몰림: 장식 이동 효과 하나가 장식 수천 개를 옮기면 그것만 30ms(개발자용) 였다. 예전 규칙("이번 프레임에 10ms
+        // 안 썼으면 시작")은 9ms 쓴 뒤에도 30ms 짜리를 시작해서, 한 프레임이 "무거운 효과들의 합" 이 됐다.
+        // 비용은 옮길 장식 수에 거의 비례한다. 대상 장식 수는 taggedDecorations[태그] 목록 길이의 합이라 사전 조회 몇 번으로 센다
+        // (같은 장식이 여러 태그에 있으면 조금 많게 센다 - 넉넉한 쪽이라 괜찮다). 장식 하나당 비용은 실행할 때마다 재서 학습한다.
+        internal static long DeferredByEstimate;
+        internal static string Summary() { return DeferredByEstimate > 0 ? string.Format(" | 효과 나누기: 무거울 것 같아 다음 프레임으로 미룬 효과 {0}개 (장식 하나당 {1:F2}us 로 학습)", DeferredByEstimate, PerDecoMs * 1000) : ""; }
+        internal static double PerDecoMs = 0.0015;   // 처음 값. 실행하며 맞춰 간다
+        private static int lastCount, curCount;
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, List<string>> tagsRef =
+            AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, List<string>>("targetTags");
+        private static readonly AccessTools.FieldRef<scrDecorationManager, Dictionary<string, List<scrDecoration>>> taggedRef =
+            AccessTools.FieldRefAccess<scrDecorationManager, Dictionary<string, List<scrDecoration>>>("taggedDecorations");
+
+        private static double Estimate(object instance)
+        {
+            lastCount = 0;
+            var fx = instance as ffxMoveDecorationsPlus;
+            if ((object)fx == null) return 0.0;
+            try
+            {
+                var tags = tagsRef(fx);
+                var dm = scrDecorationManager.instance;
+                if (tags == null || (object)dm == null) return 0.0;
+                var map = taggedRef(dm);
+                if (map == null) return 0.0;
+                int n = 0;
+                for (int i = 0; i < tags.Count; i++)
+                {
+                    List<scrDecoration> list;
+                    if (tags[i] != null && map.TryGetValue(tags[i], out list) && list != null) n += list.Count;
+                }
+                lastCount = n;
+                return n * PerDecoMs;
+            }
+            catch { return 0.0; }
+        }
+
+        private static void Learn(int count, double ms)
+        {
+            if (count < 50) return;   // 장식이 적으면 고정 비용이 커서 하나당 비용이 튄다
+            double per = ms / count;
+            PerDecoMs = PerDecoMs * 0.7 + per * 0.3;
         }
 
         // 기본 클래스와 상속 클래스의 StartEffect 가 겹쳐 불리므로, 바깥 호출에서만 한 번 기록한다.
@@ -83,7 +136,7 @@ namespace StutterFix
             depth--;
             if (depth > 0) return;
             depth = 0;
-            if (!replaying) usedMs += ms;   // 밀린 것을 처리할 때는 Drain 쪽에서 따로 센다
+            if (!replaying) { usedMs += ms; if (curCount > 0) { Learn(curCount, ms); curCount = 0; } }   // 밀린 것을 처리할 때는 Drain 쪽에서 따로 센다
         }
 
         // 밀린 것을 먼저 처리한다. 새 효과보다 앞서 실행해야 순서가 뒤집히지 않는다.
@@ -103,6 +156,10 @@ namespace StutterFix
                 while (done < queue.Count && usedMs < BudgetMs)
                 {
                     var p = queue[done];
+                    // 이번 프레임에 이미 뭔가 돌았고 이것까지 돌리면 넘칠 것 같으면 다음 프레임 맨 앞으로 남긴다
+                    double est = Estimate(p.Instance);
+                    int cnt = lastCount;
+                    if (usedMs > 0.0 && usedMs + est > BudgetMs) break;
                     done++;
 
                     // 이미 사라진 효과에 그대로 부르면 예외가 난다. 예외 하나 만드는 비용이
@@ -116,6 +173,7 @@ namespace StutterFix
                     double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
 
                     usedMs += ms;
+                    Learn(cnt, ms);
                     if (ms > worst) { worst = ms; worstName = p.Instance.GetType().Name; }
                 }
             }
