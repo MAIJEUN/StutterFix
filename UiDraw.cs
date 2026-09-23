@@ -164,6 +164,7 @@ namespace StutterFix
                     o.transform.SetParent(s.rt, false);
                     var t = (RectTransform)o.transform;
                     TopLeft(t); t.sizeDelta = Vector2.zero;
+                    o.AddComponent<Canvas>();   // 막대는 매 프레임 바뀌므로 따로 묶어서, 바뀌어도 글자·판은 다시 묶지 않게 한다
                     s.bars = o.AddComponent<UiBars>();
                     s.bars.raycastTarget = false;
                 }
@@ -318,15 +319,19 @@ namespace StutterFix
         internal void Begin() { rects.Clear(); cols.Clear(); }
         internal void Add(Rect r, Color c) { rects.Add(r); cols.Add(c); }
 
-        // 지난번과 같으면 다시 만들지 않는다
+        // 지난번과 같으면 다시 만들지 않는다. 그래프는 매 프레임 한 칸씩 밀리므로 초당 30번까지만 다시 만든다(눈으로는 구별이 안 된다).
+        private float lastBuild = -1f;
         internal void Commit()
         {
+            float now = Time.unscaledTime;
+            if (lastBuild >= 0f && now - lastBuild < 1f / 30f && rects.Count == prevRects.Count) return;
             bool same = rects.Count == prevRects.Count;
             for (int i = 0; same && i < rects.Count; i++)
                 if (rects[i] != prevRects[i] || !cols[i].Equals(prevCols[i])) same = false;
             if (same) return;
             prevRects.Clear(); prevRects.AddRange(rects);
             prevCols.Clear(); prevCols.AddRange(cols);
+            lastBuild = now;
             SetVerticesDirty();
         }
 
