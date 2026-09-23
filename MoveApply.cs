@@ -150,7 +150,26 @@ namespace StutterFix
         private static bool profNow;
         private static long p0, p1, p2, p3;
 
-        public static void ProfStart() { profNow = Edition.Dev && (++profCounter % 64) == 0; if (profNow) { p0 = System.Diagnostics.Stopwatch.GetTimestamp(); p1 = p2 = p3 = p0; } }
+        // 개발자용: 옮긴 장식이 투명(그리기에서 뺀 것)인지 센다. 효과 시작 안(depth>0)과 밖(애니메이션 진행 중)을 나눈다.
+        // 투명한 장식의 움직임을 화면에 늦게 반영해도 되는지(보일 때 한 번에) 가늠하려는 것이다.
+        internal static long MovesIn, MovesOut, HiddenIn, HiddenOut, HiddenHitbox;
+
+        public static void ProfStart(scrDecoration __instance)
+        {
+            if (Edition.Dev && __instance != null)
+            {
+                bool inEffect = depth > 0;
+                if (inEffect) MovesIn++; else MovesOut++;
+                if (InvisibleSkip.IsHidden(__instance))
+                {
+                    if (inEffect) HiddenIn++; else HiddenOut++;
+                    if (__instance.hitbox != 0) HiddenHitbox++;
+                }
+            }
+            ProfStartTimer();
+        }
+
+        private static void ProfStartTimer() { profNow = Edition.Dev && (++profCounter % 64) == 0; if (profNow) { p0 = System.Diagnostics.Stopwatch.GetTimestamp(); p1 = p2 = p3 = p0; } }
 
         public static Exception ProfEnd(Exception __exception)
         {
@@ -237,9 +256,11 @@ namespace StutterFix
             if (Calls == 0) return "미룬 것 없음";
             return string.Format("위치 마무리 {0}번을 {1}번으로 줄임 ({2:F0}% 절약, 마무리에 쓴 시간 {7:F0}ms) | 편집기 피벗 갱신 {4}번을 {5}번으로 | 위치 쓰기 {8}번 중 같은 값이라 건너뜀 {9}번{6}",
                 Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips)
-                + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary();
+                + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary()
+                + (MovesIn + MovesOut > 0 ? string.Format(" | 옮긴 장식 중 투명: 효과 시작 안 {0}/{1}, 애니메이션 진행 중 {2}/{3} (그중 히트박스 {4})", HiddenIn, MovesIn, HiddenOut, MovesOut, HiddenHitbox) : "");
         }
 
-        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); }
+        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; }
+        internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); ResetMoves(); }
     }
 }

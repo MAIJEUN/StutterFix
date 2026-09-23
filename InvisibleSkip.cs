@@ -138,6 +138,14 @@ namespace StutterFix
             return s;
         }
 
+        internal static bool IsHidden(scrDecoration d)
+        {
+            var v = d as scrVisualDecoration;
+            if ((object)v == null) return false;
+            var r = rendererRef(v);
+            return (object)r != null && hidden.Contains(r);
+        }
+
         internal static void ResetPeak()
         {
             hidden.RemoveWhere(r => r == null); rejected.RemoveWhere(r => r == null);
