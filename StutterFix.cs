@@ -108,6 +108,7 @@ namespace StutterFix
                 MoveProf.Install(harmony);
                 FastMove.Install(harmony);
                 Precheck.Install(harmony);
+                FrameParts.Install(harmony);
                 MoveApply.Install(harmony);
                 Dormancy.Install(harmony);
                 ImagePrefetch.Install(harmony);

@@ -223,6 +223,7 @@ namespace StutterFix
         internal static void ResetFrame()
         {
             LastFrameEffectMs = FrameEffectMs; LastFrameMoveMs = FrameMoveMs; LastFrameN = FrameN;
+            FrameParts.ResetFrame();
             FrameMoveMs = 0; FrameN = 0;
             FrameEffectMs = 0;
             StartedThisFrame = 0;
