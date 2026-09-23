@@ -101,6 +101,8 @@ namespace StutterFix
         private void FinishClose()
         {
             Open = false;
+            panelOpen = false;
+            panelT = 0f;
             capturing = -1;
             Hotkey.Capturing = false;
             closing = false;
@@ -114,7 +116,8 @@ namespace StutterFix
             if (Main.Config == null) return;
             if (Hotkey.Down(Main.Config.WindowKey, Main.Config.WindowMods)) SetOpen(!Open || closing);
             if (!Open) return;
-            if (!closing && !Hotkey.Capturing && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
+            // Esc: 패널이 펼쳐져 있으면 패널만 접고, 한 번 더 누르면 아이콘 줄까지 닫는다
+            if (!closing && !Hotkey.Capturing && Input.GetKeyDown(KeyCode.Escape)) { if (panelOpen) panelOpen = false; else SetOpen(false); }
             Cursor.visible = true;   // 곡 중에는 게임이 커서를 숨긴다
 
             float dt = Time.unscaledDeltaTime;
@@ -125,6 +128,7 @@ namespace StutterFix
             }
             else show = Mathf.MoveTowards(show, 1f, dt / 0.26f);
             pageT = Mathf.MoveTowards(pageT, 1f, dt / 0.24f);
+            panelT = Mathf.MoveTowards(panelT, panelOpen && !closing ? 1f : 0f, dt / (panelOpen ? 0.22f : 0.14f));
         }
 
         // 메뉴를 바꿀 때: 본문을 처음부터 다시 들여보내고, 스크롤은 맨 위로
@@ -142,51 +146,135 @@ namespace StutterFix
         private void OnDisable() { UiInputBlock.Clear(this); }
         private void OnDestroy() { UiInputBlock.Remove(this); }
 
+        // ── Insert 로 여는 창: 오른쪽 끝의 아이콘 줄 + 아이콘을 누르면 옆에 펼쳐지는 기능 패널 ──
+        // 예전에는 화면 가운데에 큰 창(900x590)이 떠서 게임 화면을 가렸다. 이제 처음에는 오른쪽 끝에 반투명(75%) 아이콘만
+        // 나오고, 아이콘을 누르면 그 기능 패널이 아이콘 줄 왼쪽에 펼쳐진다. 같은 아이콘을 다시 누르면 접힌다.
+        // 패널 안의 내용(스위치, 설명, 버튼)은 예전 페이지 코드를 그대로 쓴다.
+        private const float DockW = 60f, IconS = 44f, IconGap = 6f, PanelW = 720f;
+        private bool panelOpen;
+        private float panelT;       // 패널이 펼쳐진 정도(0~1)
+        private Texture2D[] icons;
+        private GUIStyle sTip;
+
+        private string[] PageNames()
+        {
+            return new[] { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("모니터", "Monitor"), T("정보", "About") };
+        }
+
+        private Rect DockRect(float sw, float sh, float e)
+        {
+            float h = 6 * IconS + 5 * IconGap + 20;
+            return new Rect(sw - DockW - 12 + (1 - e) * (DockW + 24), (sh - h) / 2f, DockW, h);   // 오른쪽 밖에서 미끄러져 들어온다
+        }
+
+        private Rect PanelRect(float sw, float sh, Rect dock, float pe)
+        {
+            float h = Mathf.Min(H, sh - 24);
+            return new Rect(dock.x - 12 - PanelW + (1 - pe) * 24f, (sh - h) / 2f, PanelW, h);
+        }
+
+        private static Rect Union(Rect a, Rect b)
+        {
+            return Rect.MinMaxRect(Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin), Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
+        }
+
         private void OnGUI()
         {
             if (!Open) return;
             if (!built) Build();
             CaptureKey();
 
-            // 배율을 먼저 정하고 나서 가운데를 잡는다(예전에는 배율 1로 계산해 구석에 떴다)
             scale = Mathf.Clamp(Screen.height / 1080f * 1.1f, 0.8f, 2.2f);
             if (Mathf.Abs(scale - warmedScale) > 0.001f && WarmStyles(this, scale)) warmedScale = scale;
             float sw = Screen.width / scale, sh = Screen.height / scale;
-            if (needCenter) { rect = new Rect((sw - W) / 2f, (sh - H) / 2f, W, H); needCenter = false; }
-            rect.x = Mathf.Clamp(rect.x, 0, Mathf.Max(0, sw - rect.width));
-            rect.y = Mathf.Clamp(rect.y, 0, Mathf.Max(0, sh - rect.height));
 
             var oldMatrix = GUI.matrix;
             var oldColor = GUI.color;
             try
             {
-                // 열 때: 살짝 작고 아래에 있던 창이 커지며 올라온다. 닫을 때는 그 반대로 빠르게.
                 float e = closing ? show * show : EaseOut(show);
-                if (Event.current.type == EventType.Repaint)
+                float pe = EaseOut(panelT);
+                if (Event.current.type == EventType.Repaint && pe > 0f)
                 {
-                    GUI.color = new Color(0, 0, 0, 0.35f * e);   // 뒤 게임 화면을 살짝 가린다
+                    GUI.color = new Color(0, 0, 0, 0.25f * e * pe);   // 패널이 열려 있을 때만 뒤 게임 화면을 살짝 가린다
                     GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), tWhite);
                 }
-                windowAlpha = e;
+                GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
                 GUI.color = new Color(1, 1, 1, e);
-                float k = Mathf.Lerp(0.965f, 1f, e);
-                Vector3 c = new Vector3(rect.center.x, rect.center.y, 0);
-                GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f))
-                           * Matrix4x4.Translate(c + new Vector3(0, (1 - e) * 14f, 0))
-                           * Matrix4x4.Scale(new Vector3(k, k, 1f))
-                           * Matrix4x4.Translate(-c);
-                // 창이 있는 자리에 보이지 않는 UI 판을 깔아 뒤의 게임이 클릭을 받지 않게 한다
+                windowAlpha = e;
+
+                var dock = DockRect(sw, sh, e);
+                rect = PanelRect(sw, sh, dock, pe);
+                // 아이콘 줄(과 펼친 패널) 자리에 보이지 않는 UI 판을 깔아 뒤의 게임이 클릭을 받지 않게 한다
                 if (closing) UiInputBlock.Clear(this);
-                else UiInputBlock.Place(this, new Rect(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale));
-                if (Event.current.type == EventType.Repaint)
-                    sShadow.Draw(new Rect(rect.x - 34, rect.y - 22, rect.width + 68, rect.height + 70), false, false, false, false);
-                rect = GUI.Window(0x5F1A, rect, DrawWindow, GUIContent.none, sWindow);
+                else
+                {
+                    var blk = panelT > 0f ? Union(dock, rect) : dock;
+                    UiInputBlock.Place(this, new Rect(blk.x * scale, blk.y * scale, blk.width * scale, blk.height * scale));
+                }
+
+                DrawDock(dock);
+
+                if (panelT > 0f)
+                {
+                    windowAlpha = e * pe;
+                    GUI.color = new Color(1, 1, 1, windowAlpha);
+                    if (Event.current.type == EventType.Repaint)
+                        sShadow.Draw(new Rect(rect.x - 34, rect.y - 22, rect.width + 68, rect.height + 70), false, false, false, false);
+                    GUI.Window(0x5F1A, rect, DrawWindow, GUIContent.none, sWindow);
+                }
             }
             finally
             {
                 GUI.color = oldColor;
                 GUI.matrix = oldMatrix;
             }
+        }
+
+        // 오른쪽 아이콘 줄: 75% 불투명한 어두운 판 위에 기능 아이콘 6개. 누르면 그 기능 패널을 펼치거나 접는다.
+        private void DrawDock(Rect d)
+        {
+            Fill(d, new Color(0.06f, 0.065f, 0.08f, 0.75f), 16);
+            var names = PageNames();
+            var m = Event.current.mousePosition;
+            int hover = -1;
+            float y = d.y + 10;
+            for (int i = 0; i < names.Length; i++)
+            {
+                var r = new Rect(d.x + (d.width - IconS) / 2f, y, IconS, IconS);
+                bool on = panelOpen && page == i;
+                bool hov = r.Contains(m);
+                if (hov) hover = i;
+                if (on) Fill(r, new Color(1, 1, 1, 0.20f), 12);
+                else if (hov) Fill(r, new Color(1, 1, 1, 0.09f), 12);
+                if (Event.current.type == EventType.Repaint && icons != null)
+                {
+                    var c = GUI.color;
+                    GUI.color = new Color(1, 1, 1, c.a * (on || hov ? 1f : 0.72f));
+                    GUI.DrawTexture(new Rect(r.x + 10, r.y + 10, IconS - 20, IconS - 20), icons[i]);
+                    GUI.color = c;
+                }
+                if (GUI.Button(r, GUIContent.none, GUIStyle.none)) TogglePanel(i);
+                y += IconS + IconGap;
+            }
+
+            // 이름표: 마우스를 올린 아이콘 왼쪽에 (패널이 펼쳐져 있으면 패널 제목이 대신한다)
+            if (hover >= 0 && panelT <= 0f)
+            {
+                float iy = d.y + 10 + hover * (IconS + IconGap);
+                var gc = new GUIContent(names[hover]);
+                float w = sTip.CalcSize(gc).x + 22;
+                var tr = new Rect(d.x - 10 - w, iy + IconS / 2f - 14, w, 28);
+                Fill(tr, new Color(0.06f, 0.065f, 0.08f, 0.9f), 9);
+                GUI.Label(tr, gc, sTip);
+            }
+        }
+
+        private void TogglePanel(int i)
+        {
+            if (panelOpen && page == i) { panelOpen = false; return; }
+            if (page != i) GoTo(i);
+            panelOpen = true;
         }
 
         // 창 내용은 OnGUI 가 끝난 뒤 따로 그려지므로, 스킨 바꿔 끼우기를 여기서 한다.
@@ -209,50 +297,30 @@ namespace StutterFix
 
         private void DrawContents()
         {
-            // ── 제목줄
-            GUI.DrawTexture(new Rect(28, 22, 24, 24), tMark);
-            GUI.Label(new Rect(62, 14, 300, 24), "Stutter Fix", sTitle);
-            GUI.Label(new Rect(62, 37, 400, 18), T("끊김 줄이기", "Stutter reduction") + "  ·  v" + Main.Entry.Info.Version, sSub);
+            float pw = rect.width, ph = rect.height;
+            // ── 제목줄: 로고, 이름, 지금 보고 있는 기능
+            GUI.DrawTexture(new Rect(24, 22, 24, 24), tMark);
+            GUI.Label(new Rect(58, 14, 300, 24), "Stutter Fix", sTitle);
+            GUI.Label(new Rect(58, 37, 400, 18), PageNames()[Mathf.Clamp(page, 0, 5)] + "  ·  v" + Main.Entry.Info.Version, sSub);
 
             // 언어: 글자 탭 + 선택된 쪽 아래 짧은 검정 선
-            float tx = W - 222;
+            float tx = pw - 222;
             var ko = new Rect(tx, 20, 70, 28);
             var en = new Rect(tx + 74, 20, 76, 28);
             if (GUI.Button(ko, "한국어", English ? sTab : sTabOn)) SetLanguage("ko");
             if (GUI.Button(en, "English", English ? sTabOn : sTab)) SetLanguage("en");
-            // 밑줄은 고른 쪽으로 미끄러진다
             float tabTarget = (English ? en : ko).center.x;
             if (tabX < 0) tabX = tabTarget;
             if (Event.current.type == EventType.Repaint) tabX = Approach(tabX, tabTarget, 16f);
             Fill(new Rect(tabX - 9, ko.yMax + 1, 18, 2), Ink, 1);
-            if (GUI.Button(new Rect(W - 56, 18, 34, 32), "×", sClose)) SetOpen(false);
+            if (GUI.Button(new Rect(pw - 56, 18, 34, 32), "×", sClose)) panelOpen = false;   // 패널만 접는다 (아이콘 줄은 남는다)
 
-            // ── 왼쪽 메뉴: 흰 카드 하나가 고른 항목으로 미끄러져 간다
-            string[] pages = { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("모니터", "Monitor"), T("정보", "About") };
-            float navTarget = HeaderH + 14 + page * 44;
-            if (navY < 0) navY = navTarget;
-            if (Event.current.type == EventType.Repaint)
-            {
-                navY = Approach(navY, navTarget, 18f);
-                sNavOn.Draw(new Rect(18, navY, SideW - 30, 38), false, false, false, false);
-            }
-            for (int i = 0; i < pages.Length; i++)
-            {
-                var r = new Rect(18, HeaderH + 14 + i * 44, SideW - 30, 38);
-                bool near = Mathf.Abs(navY - r.y) < 19f;   // 선택 카드가 지나가는 동안 글자도 진해진다
-                if (GUI.Button(r, pages[i], near ? sNavText : sNav)) GoTo(i);
-            }
-            GUI.Label(new Rect(30, H - 56, SideW - 30, 18), "naro & Claude", sSmall);
-            GUI.Label(new Rect(30, H - 38, SideW - 30, 18), English ? (Edition.Dev ? "developer build" : "player build") : Edition.Name, sSmall);
-
-            // ── 본문
-            // 카드 그림자는 카드 바깥으로 그려지는데 영역 밖은 잘린다. 예전에는 카드가 영역 왼쪽 끝에 붙어 있어
-            // 왼쪽 테두리와 그림자가 잘려 보였다. 영역을 넓히고 안쪽에 여백(Gutter)을 둔다.
+            // ── 본문 (페이지를 바꾸면 옆에서 살짝 밀려 들어온다)
             const float Gutter = 12f;
             float pe = EaseOut(pageT);
-            var body = new Rect(SideW + 2 + (1 - pe) * 16f, HeaderH + 4, W - SideW - 18, H - HeaderH - 16);
+            var body = new Rect(6 + (1 - pe) * 16f, HeaderH + 4, pw - 12, ph - HeaderH - 16);
             var oldC = GUI.color;
-            GUI.color = new Color(oldC.r, oldC.g, oldC.b, oldC.a * pe);   // 페이지를 바꾸면 옆에서 살짝 밀려 들어온다
+            GUI.color = new Color(oldC.r, oldC.g, oldC.b, oldC.a * pe);
             GUILayout.BeginArea(body);
             scroll = GUILayout.BeginScrollView(scroll, false, false, GUIStyle.none, sScroll, GUIStyle.none);
             GUILayout.BeginHorizontal();
@@ -274,8 +342,64 @@ namespace StutterFix
             GUILayout.EndScrollView();
             GUILayout.EndArea();
             GUI.color = oldC;
+        }
 
-            GUI.DragWindow(new Rect(0, 0, tx - 10, HeaderH));
+        // ── 아이콘 그림: 이미지 파일 없이 모양을 계산해 만든다 (가장자리는 4x4 표본으로 부드럽게) ──
+        private static Texture2D MakeIcon(Func<float, float, bool> inside)
+        {
+            const int N = 64, S = 4;
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear, hideFlags = HideFlags.HideAndDontSave };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    int hit = 0;
+                    for (int sy = 0; sy < S; sy++)
+                        for (int sx = 0; sx < S; sx++)
+                            if (inside((x + (sx + 0.5f) / S) / N, (y + (sy + 0.5f) / S) / N)) hit++;
+                    // 텍스처는 아래가 0 이라 세로를 뒤집어 넣는다(모양은 위가 0 으로 정의)
+                    px[(N - 1 - y) * N + x] = new Color32(255, 255, 255, (byte)(255 * hit / (S * S)));
+                }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        private static bool InBox(float x, float y, float x0, float y0, float x1, float y1) { return x >= x0 && x <= x1 && y >= y0 && y <= y1; }
+        private static bool InCircle(float x, float y, float cx, float cy, float r) { return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r; }
+        private static bool InTri(float x, float y, float ax, float ay, float bx, float by, float cx, float cy)
+        {
+            float d1 = (x - bx) * (ay - by) - (ax - bx) * (y - by);
+            float d2 = (x - cx) * (by - cy) - (bx - cx) * (y - cy);
+            float d3 = (x - ax) * (cy - ay) - (cx - ax) * (y - ay);
+            bool neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+            return !(neg && pos);
+        }
+
+        private static Texture2D[] MakeIcons()
+        {
+            return new[]
+            {
+                // 홈: 지붕 + 몸통 (문 자리는 비움)
+                MakeIcon((x, y) => InTri(x, y, 0.5f, 0.10f, 0.06f, 0.50f, 0.94f, 0.50f)
+                                || (InBox(x, y, 0.20f, 0.46f, 0.80f, 0.90f) && !InBox(x, y, 0.42f, 0.63f, 0.58f, 0.90f))),
+                // 플레이: 재생 삼각형
+                MakeIcon((x, y) => InTri(x, y, 0.26f, 0.12f, 0.26f, 0.88f, 0.88f, 0.50f)),
+                // 맵 불러오기: 아래 화살표 + 받침
+                MakeIcon((x, y) => InBox(x, y, 0.43f, 0.08f, 0.57f, 0.50f) || InTri(x, y, 0.22f, 0.44f, 0.78f, 0.44f, 0.50f, 0.72f)
+                                || InBox(x, y, 0.10f, 0.80f, 0.90f, 0.92f) || InBox(x, y, 0.10f, 0.60f, 0.22f, 0.92f) || InBox(x, y, 0.78f, 0.60f, 0.90f, 0.92f)),
+                // 그래픽: 그림 틀 + 산 + 해
+                MakeIcon((x, y) => (InBox(x, y, 0.06f, 0.16f, 0.94f, 0.84f) && !InBox(x, y, 0.16f, 0.26f, 0.84f, 0.74f))
+                                || InTri(x, y, 0.16f, 0.74f, 0.44f, 0.40f, 0.72f, 0.74f) || InCircle(x, y, 0.68f, 0.40f, 0.08f)),
+                // 모니터: 막대그래프
+                MakeIcon((x, y) => InBox(x, y, 0.12f, 0.56f, 0.30f, 0.90f) || InBox(x, y, 0.41f, 0.34f, 0.59f, 0.90f) || InBox(x, y, 0.70f, 0.12f, 0.88f, 0.90f)),
+                // 정보: 동그라미 안에 i
+                MakeIcon((x, y) =>
+                {
+                    float d = (x - 0.5f) * (x - 0.5f) + (y - 0.5f) * (y - 0.5f);
+                    return (d <= 0.46f * 0.46f && d >= 0.36f * 0.36f) || InCircle(x, y, 0.5f, 0.31f, 0.065f) || InBox(x, y, 0.445f, 0.43f, 0.555f, 0.73f);
+                }),
+            };
         }
 
         // ── 페이지 ─────────────────────────────────────────────────────
@@ -915,6 +1039,7 @@ namespace StutterFix
 
             tWhite = Texture2D.whiteTexture;
             tMark = Mark(48);
+            icons = MakeIcons();
 
             sWindow = Styled(Card(Page, Hex(0xFFFFFF, 0.6f), 20, 1, 0, 0f), 22);
             sWindow.padding = new RectOffset(0, 0, 0, 0);
@@ -931,6 +1056,7 @@ namespace StutterFix
             sCardDark.padding = new RectOffset(20, 20, 16, 17);
 
             sTitle = Label(17, Ink, FontStyle.Bold);
+            sTip = Label(12, Color.white, FontStyle.Bold); sTip.alignment = TextAnchor.MiddleCenter;   // 아이콘 이름표
             sSub = Label(12, Text3, FontStyle.Normal);
             sH1 = Label(25, Ink, FontStyle.Bold);
             sLead = Label(13, Text2, FontStyle.Normal); sLead.wordWrap = true;

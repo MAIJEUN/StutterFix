@@ -52,7 +52,7 @@ namespace StutterFix
             canvas = go.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = sortingOrder;
-            canvas.pixelPerfect = false;
+            canvas.pixelPerfect = true;   // 요소를 픽셀 경계에 맞춘다. 소수점 위치에 그리면 글자가 번져 보였다
             var r = new GameObject("Root", typeof(RectTransform));
             r.transform.SetParent(go.transform, false);
             root = (RectTransform)r.transform;
