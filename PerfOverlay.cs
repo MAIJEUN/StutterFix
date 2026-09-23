@@ -125,7 +125,21 @@ namespace StutterFix
         private int songTiming;
         // 곡 평균만으로는 "가벼운 구간에서 몇 FPS 까지 나오나" 를 알 수 없다(같은 설정으로도 곡 평균이 121~149 로 흔들렸다).
         // 곡을 10초씩 잘라 구간마다 평균을 남긴다.
-        private const int BucketSec = 10, MaxBuckets = 180;
+        internal const int BucketSec = 10, MaxBuckets = 180;
+        internal static int SongBucket = -1;   // 지금 프레임이 곡의 몇 번째 10초 구간인지 (곡 밖이면 -1). 개발자용 함수별 비용이 쓴다.
+        internal static int SongFrameCount { get { return Instance != null ? Instance.songFrames : 0; } }
+        internal static bool BestBucket(out int idx, out int frames)
+        {
+            idx = -1; frames = 0; double bestFps = 0;
+            var o = Instance; if (o == null) return false;
+            for (int i = 0; i < MaxBuckets; i++)
+            {
+                if (o.bucketFrames[i] < 100) continue;
+                double fps = o.bucketFrames[i] / o.bucketMs[i];
+                if (fps > bestFps) { bestFps = fps; idx = i; frames = o.bucketFrames[i]; }
+            }
+            return idx >= 0;
+        }
         private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets], bucketRender = new double[MaxBuckets], bucketWait = new double[MaxBuckets];
         private readonly int[] bucketFrames = new int[MaxBuckets];
 
@@ -279,9 +293,11 @@ namespace StutterFix
             bool playing = Hitch.Playing;
             if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
             wasPlaying = playing;
+            if (!playing) SongBucket = -1;
             if (playing && ms < 1500f)
             {
                 int b = (int)(songMs / (BucketSec * 1000.0));
+                SongBucket = b < MaxBuckets ? b : -1;
                 if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
                 if (lastGpu > 0f || lastCpu > 0f) { songGpu += lastGpu; songCpu += lastCpu; songTiming++; }

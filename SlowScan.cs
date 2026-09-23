@@ -23,6 +23,10 @@ namespace StutterFix
             public string Name;
             public long Ticks;
             public int Calls;
+            // 곡 전체와 10초 구간별 누적. 끊긴 프레임이 아니라 평소 프레임에 매번 드는 비용을 보려고 둔다.
+            public long SongTicks;
+            public long SongCalls;
+            public long[] Bucket;
         }
 
         private static readonly Dictionary<MethodBase, Slot> slots = new Dictionary<MethodBase, Slot>();
@@ -62,7 +66,7 @@ namespace StutterFix
                             if (m == null || m.IsAbstract || m.ContainsGenericParameters) continue;
                             if (slots.ContainsKey(m)) continue;
 
-                            var slot = new Slot { Name = m.DeclaringType.Name + "." + name };
+                            var slot = new Slot { Name = m.DeclaringType.Name + "." + name, Bucket = new long[PerfOverlay.MaxBuckets] };
                             slots[m] = slot;
                             all.Add(slot);
 
@@ -116,7 +120,7 @@ namespace StutterFix
                         if (slots.ContainsKey(m)) continue;
                         try
                         {
-                            var slot = new Slot { Name = target[0] + "." + m.Name };
+                            var slot = new Slot { Name = target[0] + "." + m.Name, Bucket = new long[PerfOverlay.MaxBuckets] };
                             slots[m] = slot;
                             all.Add(slot);
                             harmony.Patch(m,
@@ -145,8 +149,11 @@ namespace StutterFix
         {
             Slot s;
             if (!slots.TryGetValue(__originalMethod, out s)) return;
-            s.Ticks += Stopwatch.GetTimestamp() - __state;
+            long d = Stopwatch.GetTimestamp() - __state;
+            s.Ticks += d;
             s.Calls++;
+            int b = PerfOverlay.SongBucket;
+            if (b >= 0) { s.SongTicks += d; s.SongCalls++; s.Bucket[b] += d; }
         }
 
         // 지난 프레임(정확히는 지난 측정 이후) 가장 오래 걸린 함수들.
@@ -178,6 +185,40 @@ namespace StutterFix
         internal static void Reset()
         {
             for (int i = 0; i < all.Count; i++) { all[i].Ticks = 0; all[i].Calls = 0; }
+        }
+
+        internal static void ResetSong()
+        {
+            for (int i = 0; i < all.Count; i++) { all[i].SongTicks = 0; all[i].SongCalls = 0; System.Array.Clear(all[i].Bucket, 0, all[i].Bucket.Length); }
+        }
+
+        // 곡이 끝나면 "평소 프레임 하나에 어느 함수가 얼마나 드나" 를 남긴다. 곡 전체 평균과, 가장 가벼운 10초 구간.
+        // 감싼 함수끼리 서로를 부르면(DOTween 갱신 안의 TweenManager 등) 시간이 겹쳐 잡힌다. 순위를 보는 용도다.
+        internal static void ReportSong()
+        {
+            if (!Installed || all.Count == 0) return;
+            int frames = PerfOverlay.SongFrameCount;
+            if (frames < 30) return;
+            Main.Entry.Logger.Log("[프레임 비용] 곡 평균, 프레임당: " + Rank(s => s.SongTicks, frames, s => s.SongCalls, 15));
+            int best, bestFrames;
+            if (PerfOverlay.BestBucket(out best, out bestFrames))
+                Main.Entry.Logger.Log("[프레임 비용] 가장 가벼운 구간 " + best * 10 + "초, 프레임당: " + Rank(s => s.Bucket[best], bestFrames, null, 12));
+        }
+
+        private static string Rank(Func<Slot, long> ticks, int frames, Func<Slot, long> calls, int count)
+        {
+            var list = new List<Slot>(all);
+            list.Sort((a, b) => ticks(b).CompareTo(ticks(a)));
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < list.Count && i < count; i++)
+            {
+                double ms = ticks(list[i]) * 1000.0 / Stopwatch.Frequency / frames;
+                if (ms < 0.02) break;
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(list[i].Name).Append(' ').Append(ms.ToString("F2")).Append("ms");
+                if (calls != null) sb.Append(" (").Append((calls(list[i]) / (double)frames).ToString("F1")).Append("회)");
+            }
+            return sb.Length > 0 ? sb.ToString() : "없음";
         }
 
         // 패치는 Main 이 ID로 한꺼번에 푼다. 여기서는 "이미 감쌌음" 기록만 지워 다시 켤 때 새로 감싸게 한다.
