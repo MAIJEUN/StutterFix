@@ -122,7 +122,7 @@ namespace StutterFix
         // 곡 하나의 평균을 로그로 남기려고 GPU/CPU 시간도 함께 더해 둔다.
         // "왜 프레임이 떨어졌나" 는 둘 중 어느 쪽이 큰지를 봐야 알 수 있다.
         private double songGpu, songCpu, songMod;
-        private float songWorstPlay, wpFx, wpMove; private int wpN;
+        private float songWorstPlay, wpFx, wpMove, songStartT, fxWorst, fxWorstFx, fxWorstMove; private int wpN;
         private int songTiming;
         // 곡 평균만으로는 "가벼운 구간에서 몇 FPS 까지 나오나" 를 알 수 없다(같은 설정으로도 곡 평균이 121~149 로 흔들렸다).
         // 곡을 10초씩 잘라 구간마다 평균을 남긴다.
@@ -305,7 +305,7 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
+            if (playing && !wasPlaying) { songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
             wasPlaying = playing;
             if (!playing) SongBucket = -1;
             if (playing && ms < 1500f)
@@ -314,6 +314,13 @@ namespace StutterFix
                 SongBucket = b < MaxBuckets ? b : -1;
                 if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
+                // 효과가 가장 무거운 프레임 (GPU 가 튄 프레임 같은 것에 가려지지 않게 따로 남긴다)
+                if (!InStartWindow)
+                {
+                    bool lastF = EffectScan.LastFrameEffectMs >= EffectScan.FrameEffectMs;
+                    float fxNow = (float)(lastF ? EffectScan.LastFrameEffectMs : EffectScan.FrameEffectMs);
+                    if (fxNow > fxWorstFx) { fxWorstFx = fxNow; fxWorst = ms; fxWorstMove = (float)(lastF ? EffectScan.LastFrameMoveMs : EffectScan.FrameMoveMs); }
+                }
                 if (!InStartWindow && ms > songWorstPlay)   // 곡 시작 멈춤에 가려지지 않게 따로
                 {
                     songWorstPlay = ms;
@@ -362,6 +369,7 @@ namespace StutterFix
                 Fx = (float)Math.Max(EffectScan.LastFrameEffectMs, EffectScan.FrameEffectMs),
                 Mod = (float)(modNow ? ModCost.FrameMs : ModCost.LastFrameMs),
                 ModWhat = modNow ? ModCost.Top : ModCost.LastTop,
+                Shown = InvisibleSkip.ShownRecent, SongT = playing ? Time.unscaledTime - songStartT : -1f,
             });
         }
 
@@ -369,7 +377,7 @@ namespace StutterFix
         // 유니티는 한 프레임의 GPU/CPU 시간을 2~4 프레임 늦게 준다. 끊긴 그 순간에 판단하면 앞의 멀쩡한
         // 프레임 값을 보고 "게임은 한가했다(게임 바깥)" 로 잘못 말했다(다른 모드가 로딩하며 멈춘 것도 그렇게 떴다).
         // 끊김을 잡아 두고, 그 뒤 5 프레임 동안 들어온 값 중 가장 큰 것으로 정한다.
-        private class Pending { public float Ms, Time, Fx, Mod, Gpu, Cpu; public int Gc, Frame; public string ModWhat; }
+        private class Pending { public float Ms, Time, Fx, Mod, Gpu, Cpu, SongT; public int Gc, Frame, Shown; public string ModWhat; }
         private readonly List<Pending> pending = new List<Pending>();
         private float lastGpu, lastCpu;
 
@@ -487,6 +495,7 @@ namespace StutterFix
             if (o.songTiming > 0)
                 s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
             if (o.songWorstPlay > 0) s += string.Format(" | 그 프레임: 게임 효과 {0}개 {1:F1}ms (그중 장식 이동 {2:F1}ms), 나머지 {3:F1}ms", o.wpN, o.wpFx, o.wpMove, o.songWorstPlay - o.wpFx);
+            if (o.fxWorstFx > 0) s += string.Format(" | 효과가 가장 무거운 프레임 {0:F0}ms: 게임 효과 {1:F1}ms (그중 장식 이동 {2:F1}ms)", o.fxWorst, o.fxWorstFx, o.fxWorstMove);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
             if (Edition.Dev && IconN > 0)
                 s += string.Format("\n[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
@@ -603,8 +612,8 @@ namespace StutterFix
             // (문제 보고용 로그 파일로 원인을 볼 수 있게).
             bool logIt = Edition.Dev || (ms >= 40f && ++playerLogLines <= 300);
             if (logIt)
-                Main.Entry.Logger.Log(string.Format("[모니터] {0:F0}ms -> {1} / gpu {2:F1} cpu {3:F1} (수집 {4}번) 효과 {5:F1} 모드 {6:F1}({7}) gc {8}",
-                    ms, h.Cause, gpu, cpuMain, timingSamples, fx, mod, modWhat, gcDelta));
+                Main.Entry.Logger.Log(string.Format("[모니터] {0:F0}ms -> {1} / gpu {2:F1} cpu {3:F1} (수집 {4}번) 효과 {5:F1} 모드 {6:F1}({7}) gc {8}" + (p.SongT >= 0 ? " | 곡 {9:F1}초, 다시 보이게 된 장식 {10}개" : ""),
+                    ms, h.Cause, gpu, cpuMain, timingSamples, fx, mod, modWhat, gcDelta, p.SongT, p.Shown));
             if (logIt && gpu > ms * 0.7f)
                 Main.Entry.Logger.Log("[모니터]   직전 필터 변화 (6프레임): " + FilterTrace.Recent(p.Frame, 6)
                     + string.Format(" | VRAM 전체 {0:F0}/{1}MB, 게임 전용 {2:F0}MB, 게임 공유(시스템 RAM) {3:F0}MB",

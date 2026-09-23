@@ -93,13 +93,18 @@ namespace StutterFix
                 Toggles++;
                 if (hidden.Count > Peak) Peak = hidden.Count;
             }
-            else if (hidden.Remove(r))
+            else if (hidden.Remove(r) && CountShown())
             {
                 r.forceRenderingOff = false;
                 Toggles++;
                 if (verify.Count > 0 && verify.Remove(inst)) Verify(inst); else ApplyLazy(inst);
             }
         }
+
+        // 프레임마다 다시 보이게 된(그리기에 다시 들어간) 장식 수. GPU 가 튄 프레임에 "오래 안 그리던 이미지가 한꺼번에 나왔나" 를 보려고 센다.
+        private static int shown, lastShown, shownFrame = -1;
+        private static bool CountShown() { int f = Time.frameCount; if (f != shownFrame) { lastShown = f == shownFrame + 1 ? shown : 0; shown = 0; shownFrame = f; } shown++; return true; }
+        internal static int ShownRecent { get { int f = Time.frameCount; if (f == shownFrame) return Math.Max(shown, lastShown); if (f == shownFrame + 1) return shown; return 0; } }
 
         private static bool AlphaMeansVisibility(SpriteRenderer r)
         {
