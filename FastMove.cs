@@ -175,7 +175,8 @@ namespace StutterFix
         internal static void RunOn(ffxMoveDecorationsPlus fx, List<scrDecoration> decs)
         {
             var saved = src; src = decs;
-            try { Run(fx); } finally { src = saved; }
+            bool ns = InstantMove.NoSample; InstantMove.NoSample = true;   // 개발자용 표본 대조(원래 함수 부르기)는 이 경로에서 끈다 - 검증 재실행과 같은 길로
+            try { Run(fx); } finally { src = saved; InstantMove.NoSample = ns; }
         }
         internal static string LastWhy = "";
         private static ShapeInfo Why(string w) { LastWhy = w; return null; }
@@ -241,6 +242,7 @@ namespace StutterFix
             {
                 string diff = Diff(a[i], Snap(decs[i]));
                 if (diff == null) continue;
+                if (diff.StartsWith("미루기 목록") && InvisibleSkip.IsTruthSample(decs[i])) { TruthDiff++; continue; }   // 개발자용 정답 표본: 게임 함수가 미루지 않고 바로 반영한 장식
                 bad++;
                 if (first.Length < 300) first += " [" + decs[i].name + ": " + diff + "]";
             }
@@ -436,7 +438,7 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> srRef = AccessTools.FieldRefAccess<scrVisualDecoration, SpriteRenderer>("spriteRenderer");
         private static readonly List<S> before = new List<S>();
         private static readonly List<bool> hidBefore = new List<bool>();
-        internal static long Explained;
+        internal static long Explained, TruthDiff;   // TruthDiff: 개발자용 정답 표본이라 목록만 다른 것
 
         private static S Snap(scrDecoration dec)
         {
@@ -474,6 +476,7 @@ namespace StutterFix
                 // 첫 실행 때 보였으니 루프가 원래 코드와 같은 일을 한 것이다(값은 같고 목록만 다름). 따로 센다.
                 if (diff != null && !a.Lz && b.Lz && a.Hid && i < hidBefore.Count && !hidBefore[i] && diff.StartsWith("미루기 목록")) { Explained++; continue; }
                 if (diff == null) continue;
+                if (diff.StartsWith("미루기 목록") && InvisibleSkip.IsTruthSample(decs[i])) { TruthDiff++; continue; }   // 개발자용 정답 표본: 게임 함수가 미루지 않고 바로 반영한 장식
                 Mismatch++;
                 if (First.Length < 700) First += " [" + decs[i].name + ": " + diff + "]";
             }
@@ -516,11 +519,11 @@ namespace StutterFix
             if (Effects == 0 && Fallbacks == 0) return "";
             string s = string.Format(" | 장식 이동 루프: 효과 {0}개(장식 {1}개), 원래 코드로 넘긴 효과 {2}개 [길이 있음 {3}, 공식 맵 {4}, 그래픽 설정 {5}, 이미지·마스크 {6}, 대상 없음 {7}, null {8}]",
                 Effects, DecoCount, Fallbacks, why[0], why[1], why[2], why[3], why[4], why[5]);
-            if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + ", 보이다 투명해져서 목록만 다른 것 " + Explained + First + ")";
+            if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + ", 보이다 투명해져서 목록만 다른 것 " + Explained + ", 개발자용 정답 표본이라 목록만 다른 것 " + TruthDiff + First + ")";
             else if (First.Length > 0) s += First;
             s += Precheck.Summary();
             return s;
         }
-        internal static void Reset() { Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }
