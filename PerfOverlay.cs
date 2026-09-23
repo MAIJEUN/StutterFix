@@ -480,8 +480,7 @@ namespace StutterFix
                 s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
             if (Edition.Dev && IconN > 0)
-                s += string.Format("
-[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
+                s += string.Format("\n[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
                     GuiRepaintN, GuiRepaintN > 0 ? GuiRepaintMs / GuiRepaintN : 0, GuiOtherN, GuiOtherN > 0 ? GuiOtherMs / GuiOtherN : 0,
                     IconSeg[0] / IconN, IconSeg[1] / IconN, IconSeg[2] / IconN, IconSeg[3] / IconN, IconSeg[4] / IconN);
             var sb = new System.Text.StringBuilder("\n[곡] 10초 구간별 FPS (메인/렌더 스레드/화면 대기 ms):");
