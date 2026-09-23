@@ -71,6 +71,8 @@ namespace StutterFix
                     else if (p.Length == 4 && p[2].ParameterType == typeof(Vector2)) rep = AccessTools.Method(typeof(ZeroTween), nameof(ToV));
                     else if (p.Length == 4 && p[2].ParameterType == typeof(Color)) rep = AccessTools.Method(typeof(ZeroTween), nameof(ToC));
                 }
+                else if (Edition.Dev && mi.DeclaringType == typeof(TweenExtensions) && mi.Name == "Kill" && !mi.IsGenericMethod && mi.GetParameters().Length == 2)
+                    rep = AccessTools.Method(typeof(ZeroTween), nameof(KillT));
                 else if (mi.DeclaringType == typeof(TweenExtensions) && mi.Name == "Done" && mi.IsGenericMethod)
                 {
                     var t = mi.GetGenericArguments()[0];
@@ -149,29 +151,51 @@ namespace StutterFix
             return SampleEvery <= 0 || counter % SampleEvery != 0;
         }
 
+        private static long TS() { return System.Diagnostics.Stopwatch.GetTimestamp(); }
+        private static void AddTo(long a) { FrameTo++; FrameToMs += (TS() - a) * TickMs; }
+        private static void AddDone(long a) { FrameDone++; FrameDoneMs += (TS() - a) * TickMs; }
+
         public static TweenerCore<float, float, FloatOptions> ToF(DOGetter<float> g, DOSetter<float> s, float end, float dur)
         {
-            if (!UseFast(dur)) return Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
-            var p = Proxy(ref pF);
-            p.plugOptions = default(FloatOptions);
-            gF = g; sF = s; eF = end;
-            return p;
+            long a = Edition.Dev ? TS() : 0;
+            TweenerCore<float, float, FloatOptions> r;
+            if (!UseFast(dur)) r = Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
+            else
+            {
+                r = Proxy(ref pF);
+                r.plugOptions = default(FloatOptions);
+                gF = g; sF = s; eF = end;
+            }
+            if (Edition.Dev) AddTo(a);
+            return r;
         }
         public static TweenerCore<Vector2, Vector2, VectorOptions> ToV(DOGetter<Vector2> g, DOSetter<Vector2> s, Vector2 end, float dur)
         {
-            if (!UseFast(dur)) return Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
-            var p = Proxy(ref pV);
-            p.plugOptions = default(VectorOptions);
-            gV = g; sV = s; eV = end;
-            return p;
+            long a = Edition.Dev ? TS() : 0;
+            TweenerCore<Vector2, Vector2, VectorOptions> r;
+            if (!UseFast(dur)) r = Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
+            else
+            {
+                r = Proxy(ref pV);
+                r.plugOptions = default(VectorOptions);
+                gV = g; sV = s; eV = end;
+            }
+            if (Edition.Dev) AddTo(a);
+            return r;
         }
         public static TweenerCore<Color, Color, ColorOptions> ToC(DOGetter<Color> g, DOSetter<Color> s, Color end, float dur)
         {
-            if (!UseFast(dur)) return Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
-            var p = Proxy(ref pC);
-            p.plugOptions = default(ColorOptions);
-            gC = g; sC = s; eC = end;
-            return p;
+            long a = Edition.Dev ? TS() : 0;
+            TweenerCore<Color, Color, ColorOptions> r;
+            if (!UseFast(dur)) r = Remember(DOTween.To(g, s, end, dur), dur, () => g(), end);
+            else
+            {
+                r = Proxy(ref pC);
+                r.plugOptions = default(ColorOptions);
+                gC = g; sC = s; eC = end;
+            }
+            if (Edition.Dev) AddTo(a);
+            return r;
         }
 
         // ── (개발자용) 효과 몰림 프레임 쪼개기: 이 프레임에 즉시 이동 경로의 각 단계에 쓴 시간 ──
@@ -198,23 +222,43 @@ namespace StutterFix
         // ── Done ─────────────────────────────────────────────────────
         public static TweenerCore<float, float, FloatOptions> DoneF(TweenerCore<float, float, FloatOptions> t)
         {
-            if (t != null && ReferenceEquals(t, pF) && t.active) { Finish(t, 0); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            long a = Edition.Dev ? TS() : 0;
+            try
+            {
+                if (t != null && ReferenceEquals(t, pF) && t.active) { Finish(t, 0); return t; }
+                var c = Pre(t); var r = t.Done(); Post(c); return r;
+            }
+            finally { if (Edition.Dev) AddDone(a); }
         }
         public static TweenerCore<Vector2, Vector2, VectorOptions> DoneV(TweenerCore<Vector2, Vector2, VectorOptions> t)
         {
-            if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(t, 1); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            long a = Edition.Dev ? TS() : 0;
+            try
+            {
+                if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(t, 1); return t; }
+                var c = Pre(t); var r = t.Done(); Post(c); return r;
+            }
+            finally { if (Edition.Dev) AddDone(a); }
         }
         public static TweenerCore<Color, Color, ColorOptions> DoneC(TweenerCore<Color, Color, ColorOptions> t)
         {
-            if (t != null && ReferenceEquals(t, pC) && t.active) { Finish(t, 2); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            long a = Edition.Dev ? TS() : 0;
+            try
+            {
+                if (t != null && ReferenceEquals(t, pC) && t.active) { Finish(t, 2); return t; }
+                var c = Pre(t); var r = t.Done(); Post(c); return r;
+            }
+            finally { if (Edition.Dev) AddDone(a); }
         }
         public static Tweener DoneT(Tweener t)
         {
-            if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(pV, 1); return t; }
-            var c = Pre(t); var r = t.Done(); Post(c); return r;
+            long a = Edition.Dev ? TS() : 0;
+            try
+            {
+                if (t != null && ReferenceEquals(t, pV) && t.active) { Finish(pV, 1); return t; }
+                var c = Pre(t); var r = t.Done(); Post(c); return r;
+            }
+            finally { if (Edition.Dev) AddDone(a); }
         }
 
         // DOTween 의 Complete 와 같은 순서: 값 넣기 -> OnUpdate -> OnComplete. 대역은 콜백 전에 끈다(콜백 안에서 또 쓸 수 있게).
