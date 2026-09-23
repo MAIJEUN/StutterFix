@@ -97,7 +97,7 @@ namespace StutterFix
             {
                 r.forceRenderingOff = false;
                 Toggles++;
-                ApplyLazy(inst);
+                if (verify.Count > 0 && verify.Remove(inst)) Verify(inst); else ApplyLazy(inst);
             }
         }
 
@@ -137,6 +137,7 @@ namespace StutterFix
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
             if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
             if (LazySkips > 0) s += " | 투명한 장식 위치 반영 미룸 " + LazySkips + "번, 보일 때 반영 " + LazyApplied + "번";
+            if (Verified > 0) s += " | 검증 " + Verified + "개: 안쪽 오프셋 다름 " + ChildDiff + ", 바깥 위치 다름 " + PivotPosDiff + ", 크기 다름 " + PivotScaleDiff + ", 회전 다름 " + PivotRotDiff + FirstDiff;
             s += string.Format(" | 색 바뀜 {0}번 확인, 그리기 켜고 끈 것 {1}번, 쓴 시간 약 {2:F1}ms, 가장 많이 쓴 프레임 약 {3:F2}ms (64번에 한 번 재서 추정)",
                 Calls, Toggles, Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency, WorstFrameMs);
             return s;
@@ -177,6 +178,7 @@ namespace StutterFix
             var r = rendererRef(v);
             if ((object)r == null || !hidden.Contains(r) || isMask(v)) return true;
             if (parallaxRef(__instance) == null) return true;   // 원래 함수가 이때는 아무것도 안 한다
+            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(__instance) & 7) == 0) { verify.Add(__instance); return true; }
             pivotPosRef(__instance) = pivotPos;
             pivotOffRef(__instance) = pivotOffset;
             lazy.Add(__instance);
@@ -210,6 +212,40 @@ namespace StutterFix
             finally { applyingAll = false; }
         }
 
+        // ── 개발자용: 미뤘다 반영한 위치가 원래 방식과 같은지 자동 확인 ──
+        // 투명 장식 8개 중 1개는 미루지 않고 원래대로 계속 움직인다(정답). 그 장식이 보이게 되는 순간
+        // 지금 엔진 값(정답)을 읽어 두고, 미뤘을 때처럼 저장된 값으로 SetPosition 을 한 번 불러 다시 읽는다.
+        // 둘이 다르면 미루기가 화면을 바꾼다는 뜻이다. 안쪽 오프셋(childTransform)과 바깥(pivotTrans)을 따로 센다.
+        // 바깥은 보이는 동안 매 프레임 게임이 다시 계산하므로 차이가 나도 그 프레임에 바로 맞춰진다.
+        private static readonly HashSet<scrDecoration> verify = new HashSet<scrDecoration>();
+        private static readonly AccessTools.FieldRef<scrDecoration, Transform> childRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("childTransform");
+        private static readonly AccessTools.FieldRef<scrDecoration, Transform> pivotRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("pivotTrans");
+        internal static long Verified, ChildDiff, PivotPosDiff, PivotRotDiff, PivotScaleDiff;
+        internal static string FirstDiff = "";
+
+        private static void Verify(scrVisualDecoration v)
+        {
+            try
+            {
+                var c = childRef(v); var p = pivotRef(v);
+                if (c == null || p == null) return;
+                Vector3 c1 = c.localPosition, p1 = p.localPosition, s1 = p.localScale; Quaternion r1 = p.rotation;
+                applyingAll = true;
+                try { setPosition(v, pivotPosRef(v), pivotOffRef(v)); } finally { applyingAll = false; }
+                Vector3 c2 = c.localPosition, p2 = p.localPosition, s2 = p.localScale; Quaternion r2 = p.rotation;
+                Verified++;
+                bool cd = (c1 - c2).sqrMagnitude > 1e-8f, pd = (p1 - p2).sqrMagnitude > 1e-8f, sd = (s1 - s2).sqrMagnitude > 1e-8f, rd = Quaternion.Angle(r1, r2) > 0.01f;
+                if (cd) ChildDiff++;
+                if (pd) PivotPosDiff++;
+                if (sd) PivotScaleDiff++;
+                if (rd) PivotRotDiff++;
+                if ((cd || pd || sd || rd) && FirstDiff.Length < 600)
+                    FirstDiff += string.Format(" [{0}: 안쪽 {1}->{2}, 바깥 {3}->{4}, 크기 {5}->{6}, 회전차 {7:F2}도]",
+                        v.name, c1.ToString("F4"), c2.ToString("F4"), p1.ToString("F4"), p2.ToString("F4"), s1.ToString("F4"), s2.ToString("F4"), Quaternion.Angle(r1, r2));
+            }
+            catch { }
+        }
+
         internal static bool IsHidden(scrDecoration d)
         {
             var v = d as scrVisualDecoration;
@@ -223,6 +259,7 @@ namespace StutterFix
             hidden.RemoveWhere(r => r == null); rejected.RemoveWhere(r => r == null);
             Peak = hidden.Count; Compares = ComparesDiffer = 0;
             Calls = Toggles = Ticks = 0; WorstFrameMs = 0; LazySkips = LazyApplied = 0;
+            Verified = ChildDiff = PivotPosDiff = PivotRotDiff = PivotScaleDiff = 0; FirstDiff = ""; verify.RemoveWhere(d => d == null);
             lazy.RemoveWhere(d => d == null);
         }
 
