@@ -978,7 +978,7 @@ namespace StutterFix
                 if (v <= 0) continue;
                 float bh = Mathf.Max(1f, g.height * Mathf.Clamp01(v / 50f));
                 var br = new Rect(g.x + i * bw, g.yMax - bh, Mathf.Max(1f, bw - 0.8f), bh);
-                if (batch) Bar(br, BarColor(v, 0.5f)); else Fill(br, BarColor(v, 0.5f), 0);
+                if (batch) GlBar(br, BarColor(v, 0.5f)); else Fill(br, BarColor(v, 0.5f), 0);
             }
             if (batch) BarsEnd();
 
@@ -1116,7 +1116,7 @@ namespace StutterFix
                 if (v <= 0) continue;
                 float bh = Mathf.Max(1.5f, (g.height - pad * 2) * Mathf.Clamp01(v / 50f));
                 var br = new Rect(g.x + pad + i * bw, g.yMax - pad - bh, Mathf.Max(1f, bw - 0.6f), bh);
-                if (batch) Bar(br, BarColor(v, 0.55f)); else Fill(br, BarColor(v, 0.55f), 0);
+                if (batch) GlBar(br, BarColor(v, 0.55f)); else Fill(br, BarColor(v, 0.55f), 0);
             }
             if (batch) BarsEnd();
         }
@@ -1156,7 +1156,7 @@ namespace StutterFix
             return true;
         }
 
-        private void Bar(Rect r, Color c)
+        private void GlBar(Rect r, Color c)
         {
             c.a *= GUI.color.a;
             GL.Color(c);
