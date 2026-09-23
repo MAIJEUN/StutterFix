@@ -36,6 +36,7 @@ namespace StutterFix
         internal static long Created, Completed, Killed, Dropped, Frames, VerifyN, VerifySteps, VerifyMismatch, Errors;
         internal static int Peak;
         internal static double UpdateMs;
+        internal static readonly long[] MismatchByKey = new long[16];
         internal static string First = "";
 
         internal sealed class Rec
@@ -181,7 +182,8 @@ namespace StutterFix
             float e = ZeroTween.Eval(r.E, pos, r.Dur, r.Over, r.Period);
             switch (r.Key)
             {
-                case 9: r.CLast = r.CStart + r.CChange * e; break;
+                // DOTween ColorPlugin 과 같은 모양: 성분마다 "시작 += 변화 x 이징" (색 연산자로 하면 곱을 한 번 더 반올림해 끝자리가 달랐다)
+                case 9: { var c = r.CStart; c.r += r.CChange.r * e; c.g += r.CChange.g * e; c.b += r.CChange.b * e; c.a += r.CChange.a * e; r.CLast = c; break; }
                 case 7: { var v = scaleRef(r.D); v.x = r.VStart.x + r.VChange.x * e; r.VLast = v; setScale(r.D, v); break; }
                 case 8: { var v = scaleRef(r.D); v.y = r.VStart.y + r.VChange.y * e; r.VLast = v; setScale(r.D, v); break; }
                 default: r.FLast = r.FStart + r.FChange * e; break;
@@ -295,7 +297,7 @@ namespace StutterFix
                     else if (r.Key == 8) { if (B(r.VLast.y) != B(r.SV.y)) diff = "크기Y " + r.VLast.y.ToString("R") + " / " + r.SV.y.ToString("R"); }
                     else if (B(r.FLast) != B(r.SF)) diff = "키 " + r.Key + " " + r.FLast.ToString("R") + " / " + r.SF.ToString("R");
                     if (diff == null && (!r.Running) != r.SDone) diff = "끝난 프레임이 다름 (모드 " + (!r.Running) + ", DOTween " + r.SDone + ")";
-                    if (diff != null) { VerifyMismatch++; if (First.Length < 600) First += " [" + diff + ", 위치 " + r.Pos.ToString("R") + "/" + r.Dur.ToString("R") + "]"; }
+                    if (diff != null) { VerifyMismatch++; MismatchByKey[r.Key]++; if (First.Length < 600) First += " [" + diff + ", 위치 " + r.Pos.ToString("R") + "/" + r.Dur.ToString("R") + "]"; }
                 }
                 r.Stepped = false; r.SStepped = false;
                 if (!r.Running) { VerifyN++; if (r.Shadow.active) r.Shadow.Kill(false); r.Shadow = null; }
@@ -330,10 +332,10 @@ namespace StutterFix
             if (Created == 0) return "";
             string s = string.Format(" | 장식 애니메이션 직접 처리: 만든 것 {0}개(동시 최대 {1}개), 끝까지 감 {2}, 끊겨서 완료 {3}, 버림 {4}, 갱신에 쓴 시간 {5:F0}ms ({6}프레임){7}",
                 Created, Peak, Completed, Killed, Dropped, UpdateMs, Frames, Errors > 0 ? ", 예외 " + Errors : "");
-            if (Edition.Dev) s += " (검증: 진짜 DOTween 과 나란히 " + VerifyN + "개, 프레임 " + VerifySteps + "번 중 다름 " + VerifyMismatch + First + ")";
+            if (Edition.Dev) s += " (검증: 진짜 DOTween 과 나란히 " + VerifyN + "개, 프레임 " + VerifySteps + "번 중 다름 " + VerifyMismatch + " [위치X " + MismatchByKey[1] + ", 위치Y " + MismatchByKey[2] + ", 회전 " + MismatchByKey[5] + ", 크기X " + MismatchByKey[7] + ", 크기Y " + MismatchByKey[8] + ", 색 " + MismatchByKey[9] + ", 불투명도 " + MismatchByKey[10] + "]" + First + ")";
             else if (First.Length > 0) s += First;
             return s;
         }
-        internal static void ResetStats() { Created = Completed = Killed = Dropped = Frames = VerifyN = VerifySteps = VerifyMismatch = Errors = 0; Peak = 0; UpdateMs = 0; First = ""; }
+        internal static void ResetStats() { Array.Clear(MismatchByKey, 0, 16); Created = Completed = Killed = Dropped = Frames = VerifyN = VerifySteps = VerifyMismatch = Errors = 0; Peak = 0; UpdateMs = 0; First = ""; }
     }
 }
