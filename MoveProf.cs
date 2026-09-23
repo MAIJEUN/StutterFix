@@ -137,6 +137,7 @@ namespace StutterFix
         internal static void EndFrame()
         {
             if (!Enabled) return;
+            BenchTick();
             double total = cur.Total * TickMs;
             if (total >= 15.0)
             {
@@ -167,10 +168,71 @@ namespace StutterFix
 
         internal static string SongSummary()
         {
+            benchDone = false; benchWait = 0;
             if (!Enabled || worstMs <= 0) return "";
             string s = "[장식 이동 쪼개기] 곡에서 가장 무거운 프레임: " + worst;
             worst = ""; worstMs = 0; logged = 0;
             return s;
+        }
+
+        // ── 기본 동작 하나하나의 실제 비용 (곡마다 한 번, 곡 시작 3초 뒤) ──
+        // 플레이어용 효과 몰림에서 장식 1만 4천 개 효과가 장식 하나에 약 1us 였다. 투명 -> 투명, 같은 값이라 바뀌는 게 거의 없는데
+        // 어디에 드는지 알려고, 그 길에서 쓰는 조회·검사를 투명한 장식들에 대고 각각 여러 번 돌려 한 번당 ns 를 잰다.
+        // 게임 상태를 바꾸는 것(목록에 넣기, 설정 함수)은 재지 않는다. 계측 없는 순수 비용이라 플레이어용과 같다.
+        private static bool benchDone; private static float benchWait;
+        private static readonly AccessTools.FieldRef<scrDecorationManager, List<scrDecoration>> allRef = AccessTools.FieldRefAccess<scrDecorationManager, List<scrDecoration>>("allDecorations");
+        private static readonly AccessTools.FieldRef<scrDecoration, Dictionary<global::TweenType, DG.Tweening.Tween>> tweensRef = AccessTools.FieldRefAccess<scrDecoration, Dictionary<global::TweenType, DG.Tweening.Tween>>("eventTweens");
+        private static readonly AccessTools.FieldRef<scrDecoration, scrParallax> parRef = AccessTools.FieldRefAccess<scrDecoration, scrParallax>("parallax");
+        private static readonly AccessTools.FieldRef<scrDecoration, Color> colRef = AccessTools.FieldRefAccess<scrDecoration, Color>("color");
+        private static readonly AccessTools.FieldRef<scrDecoration, float> opaRef = AccessTools.FieldRefAccess<scrDecoration, float>("opacity");
+
+        internal static void BenchTick()
+        {
+            if (!Enabled || benchDone || !Hitch.Playing) return;
+            benchWait += Time.unscaledDeltaTime;
+            if (benchWait < 3f) return;
+            benchDone = true;
+            try { Bench(); } catch (Exception ex) { Main.Entry.Logger.Log("[기본 동작 비용] 실패: " + ex.Message); }
+        }
+
+        private static void Bench()
+        {
+            var mgr = scrDecorationManager.instance;
+            if (mgr == null) return;
+            var all = allRef(mgr);
+            if (all == null) return;
+            var decs = new List<scrDecoration>();
+            foreach (var d in all) if ((object)d != null && InvisibleSkip.IsHidden(d) && tweensRef(d) != null) { decs.Add(d); if (decs.Count >= 4000) break; }
+            if (decs.Count < 100) return;
+            PerfOverlay.MarkLoading("측정");
+            const int R = 5;
+            int n = decs.Count * R;
+            var sb = new System.Text.StringBuilder();
+            long t; int sink = 0;
+            DG.Tweening.Tween tw;
+            var seen = new HashSet<scrDecoration>();
+
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) { }
+            double loop = (TS() - t) * TickMs * 1e6 / n;
+            sb.AppendFormat("빈 반복 {0:F0}", loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (tweensRef(d).TryGetValue((global::TweenType)1, out tw)) sink++;
+            sb.AppendFormat(", 애니메이션 사전 찾기 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (InvisibleSkip.IsHidden(d)) sink++;
+            sb.AppendFormat(", 안 그리는 목록 확인 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (InvisibleSkip.InLazy(d)) sink++;
+            sb.AppendFormat(", 미루기 목록 확인 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (parRef(d) == null) sink++;
+            sb.AppendFormat(", 유니티 null 검사 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (d.GetType() == typeof(scrVisualDecoration)) sink++;
+            sb.AppendFormat(", 형 검사 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (InvisibleSkip.LazyCan(d)) sink++;
+            sb.AppendFormat(", 미루기 조건 전체 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) foreach (var d in decs) if (InstantMove.ColorNoop(d, colRef(d), opaRef(d))) sink++;
+            sb.AppendFormat(", 같은 색 조건 전체 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            t = TS(); for (int r = 0; r < R; r++) { seen.Clear(); foreach (var d in decs) if (seen.Add(d)) sink++; }
+            sb.AppendFormat(", 중복 거르기(기본 비교) {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length);
+            Main.Entry.Logger.Log("[기본 동작 비용] 투명 장식 " + decs.Count + "개 x " + R + "번, 한 번당 ns: " + sb + " (sink " + sink + ")");
         }
     }
 }

@@ -255,7 +255,7 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrDecoration, Transform> childRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("childTransform");
 
 
-        private static bool ColorNoop(scrDecoration dec, Color c, float o)
+        internal static bool ColorNoop(scrDecoration dec, Color c, float o)
         {
             if (!NoopOn || dec.GetType() != typeof(scrVisualDecoration) || !InvisibleSkip.IsHidden(dec)) return false;
             var cc = colRef(dec);
