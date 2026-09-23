@@ -132,32 +132,6 @@ namespace StutterFix
                     }
                 }
 
-                // 무거운 구간(보이는 장식 수천 개가 동시에 움직임)에서 애니메이션 한 번 갱신이 어디에 쓰이는지 보려고,
-                // 장식 이동 효과가 만든 콜백(람다)과 장식 쪽 함수들을 감싼다. DOTween 갱신 시간에서 이것들을 빼면 DOTween 자체 비용이다.
-                var extra = new List<MethodInfo>();
-                foreach (var nt in typeof(ffxMoveDecorationsPlus).GetNestedTypes(AccessTools.all))
-                    foreach (var m in nt.GetMethods(AccessTools.all))
-                        if (m.DeclaringType == nt && m.Name.Contains("<StartEffect>b__") && !m.IsAbstract && !m.ContainsGenericParameters) extra.Add(m);
-                foreach (var n in new[] { "SetPosition", "SetScale", "SetRotation", "SetOpacity", "SetColor" })
-                {
-                    var m = AccessTools.Method(typeof(scrDecoration), n);
-                    if (m != null) extra.Add(m);
-                }
-                var ac = AccessTools.Method(typeof(scrVisualDecoration), "ApplyColor");
-                if (ac != null) extra.Add(ac);
-                foreach (var m in extra)
-                {
-                    if (slots.ContainsKey(m)) continue;
-                    try
-                    {
-                        string nm = m.DeclaringType.Name.StartsWith("<>c") ? "이동콜백" + m.Name.Substring(m.Name.IndexOf("b__")) + "(" + m.DeclaringType.Name.Replace("<>c__DisplayClass", "") + ")" : m.DeclaringType.Name + "." + m.Name;
-                        var slot = new Slot { Name = nm, Bucket = new long[PerfOverlay.MaxBuckets] };
-                        slots[m] = slot; all.Add(slot);
-                        harmony.Patch(m, prefix: new HarmonyMethod(typeof(SlowScan), nameof(Pre)), postfix: new HarmonyMethod(typeof(SlowScan), nameof(Post)));
-                        count++;
-                    }
-                    catch { }
-                }
                 Main.Entry.Logger.Log($"[느린함수] {count}개 감쌈 ({watch.ElapsedMilliseconds}ms)");
             }
             catch (Exception ex)
@@ -231,7 +205,7 @@ namespace StutterFix
                 Main.Entry.Logger.Log("[프레임 비용] 가장 가벼운 구간 " + best * 10 + "초, 프레임당: " + Rank(s => s.Bucket[best], bestFrames, null, 12));
             int worst, worstFrames;
             if (PerfOverlay.WorstBucket(out worst, out worstFrames))
-                Main.Entry.Logger.Log("[프레임 비용] 가장 무거운 구간 " + worst * 10 + "초, 프레임당: " + Rank(s => s.Bucket[worst], worstFrames, null, 25));
+                Main.Entry.Logger.Log("[프레임 비용] 가장 무거운 구간 " + worst * 10 + "초, 프레임당: " + Rank(s => s.Bucket[worst], worstFrames, null, 12));
         }
 
         private static string Rank(Func<Slot, long> ticks, int frames, Func<Slot, long> calls, int count)

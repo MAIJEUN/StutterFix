@@ -62,12 +62,6 @@ namespace StutterFix
                 if (Edition.Dev) h.Patch(set, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ProfStart)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(ProfEnd)));
                 h.Patch(start, prefix: new HarmonyMethod(typeof(MoveApply), nameof(Enter)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(Exit)));
                 var mgrLate = AccessTools.Method(typeof(scrDecorationManager), "LateUpdate");
-                var mScale = AccessTools.Method(typeof(scrDecoration), "SetScale", new[] { typeof(Vector2) });
-                var mRot = AccessTools.Method(typeof(scrDecoration), "SetRotation", new[] { typeof(float) });
-                if (mScale != null && mScale.GetParameters()[0].Name == "scale") h.Patch(mScale, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ScalePrefix)));
-                else Main.Entry.Logger.Log("[장식 마무리] SetScale 모양이 달라 크기는 건너뛰지 않음");
-                if (mRot != null && mRot.GetParameters()[0].Name == "angle") h.Patch(mRot, prefix: new HarmonyMethod(typeof(MoveApply), nameof(RotationPrefix)));
-                else Main.Entry.Logger.Log("[장식 마무리] SetRotation 모양이 달라 회전은 건너뛰지 않음");
                 var mLogic = AccessTools.Method(typeof(scrDecoration), "LogicUpdate");
                 if (mLogic != null) logicUpdate = (Action<scrDecoration, bool>)Delegate.CreateDelegate(typeof(Action<scrDecoration, bool>), mLogic);
                 if (mgrLate != null) h.Patch(mgrLate, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerLatePrefix)), postfix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerLatePostfix)),
@@ -246,32 +240,6 @@ namespace StutterFix
             return true;
         }
 
-        // 회전·크기도 같다: UpdatePosition 은 끝에서 SetRotation(rotAngle), SetScale(scaleVec) 을 다시 부른다.
-        // 그래서 보이는 장식의 회전·크기 애니메이션이 Update 단계에서 하던 엔진 쓰기는 같은 프레임 LateUpdate 에서 덮어써진다.
-        // 값(rotAngle, scaleVec)만 저장하고 엔진 쓰기는 LateUpdate 에 맡긴다. 일반 이미지 장식(scrVisualDecoration)만.
-        // (scrObjectDecoration 은 SetScale 을 덮어써서 따로 하는 일이 있어 제외)
-        internal static long LateScaleSkips, LateRotSkips;
-        private static readonly AccessTools.FieldRef<scrDecoration, Vector2> scaleVecRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("scaleVec");
-        private static readonly AccessTools.FieldRef<scrDecoration, float> rotAngleRef = AccessTools.FieldRefAccess<scrDecoration, float>("rotAngle");
-
-        public static bool ScalePrefix(scrDecoration __instance, Vector2 scale)
-        {
-            if ((object)__instance == null || __instance.GetType() != typeof(scrVisualDecoration)) return true;
-            if (!SkipForLate(__instance) && !InvisibleSkip.TryLazy(__instance)) return true;
-            scaleVecRef(__instance) = scale;
-            LateScaleSkips++;
-            return false;
-        }
-
-        public static bool RotationPrefix(scrDecoration __instance, float angle)
-        {
-            if ((object)__instance == null || __instance.GetType() != typeof(scrVisualDecoration)) return true;
-            if (!SkipForLate(__instance) && !InvisibleSkip.TryLazy(__instance)) return true;
-            rotAngleRef(__instance) = angle;
-            LateRotSkips++;
-            return false;
-        }
-
         public static void ManagerLatePrefix() { managerLateFrame = UnityEngine.Time.frameCount; Dormancy.NewFrame(); }
 
         private static HashSet<scrDecoration> devAll;
@@ -409,11 +377,11 @@ namespace StutterFix
                 + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary()
                 + (LogicCalls > 0 ? string.Format(" | 매 프레임 장식 순회 {0}번 중 바뀌는 게 없어 뺀 것 {1}번", LogicCalls, LogicSkips) : "")
                 + Dormancy.Summary()
-                + (LateSkips > 0 ? string.Format(" | 보이는 장식 위치 재계산을 LateUpdate 에 맡김 {0}번 (그중 크기 {3}, 회전 {4}, 안 보이게 돼서 대신 갱신 {1}번){2}", LateSkips, LateFixups, Edition.Dev ? string.Format(", 검사 {0}개 중 다름 {1}, 게임 목록에 없음 {2}", LateChecked / 32, LateMismatch, LateNotInList) : "", LateScaleSkips, LateRotSkips) : "")
+                + (LateSkips > 0 ? string.Format(" | 보이는 장식 위치 재계산을 LateUpdate 에 맡김 {0}번 (안 보이게 돼서 대신 갱신 {1}번){2}", LateSkips, LateFixups, Edition.Dev ? string.Format(", 검사 {0}개 중 다름 {1}, 게임 목록에 없음 {2}", LateChecked / 32, LateMismatch, LateNotInList) : "") : "")
                 + (MovesIn + MovesOut > 0 ? string.Format(" | 옮긴 장식 중 투명: 효과 시작 안 {0}/{1}, 애니메이션 진행 중 {2}/{3} (그중 히트박스 {4})", HiddenIn, MovesIn, HiddenOut, MovesOut, HiddenHitbox) : "");
         }
 
-        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; LateScaleSkips = LateRotSkips = 0; devAll = null; LogicSkips = LogicCalls = 0; Dormancy.ResetStats(); }
+        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; devAll = null; LogicSkips = LogicCalls = 0; Dormancy.ResetStats(); }
         internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); ResetMoves(); }
     }
 }

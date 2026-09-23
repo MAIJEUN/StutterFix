@@ -136,7 +136,6 @@ namespace StutterFix
             string s = "지금 안 그리는 투명 장식 " + hidden.Count + "개, 곡 중 최대 " + Peak + "개";
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
             if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
-            if (LazyScaleRot > 0) s += " | 투명한 장식 회전·크기 반영 미룸 " + LazyScaleRot + "번";
             if (LazySkips > 0) s += " | 투명한 장식 위치 반영 미룸 " + LazySkips + "번, 보일 때 반영 " + LazyApplied + "번";
             if (Verified > 0) s += " | 검증 " + Verified + "개: 안쪽 오프셋 다름 " + ChildDiff + ", 바깥 위치 다름 " + PivotPosDiff + ", 크기 다름 " + PivotScaleDiff + ", 회전 다름 " + PivotRotDiff + FirstDiff;
             s += string.Format(" | 색 바뀜 {0}번 확인, 그리기 켜고 끈 것 {1}번, 쓴 시간 약 {2:F1}ms, 가장 많이 쓴 프레임 약 {3:F2}ms (64번에 한 번 재서 추정)",
@@ -185,24 +184,6 @@ namespace StutterFix
             lazy.Add(__instance);
             LazySkips++;
             return false;
-        }
-
-        // SetScale/SetRotation 도 투명한 장식이면 값만 저장한다(MoveApply 가 부른다). 보이게 되는 순간 ApplyLazy 의
-        // SetPosition -> UpdatePosition 이 끝에서 SetRotation(rotAngle), SetScale(scaleVec) 을 다시 부르므로 함께 반영된다.
-        internal static long LazyScaleRot;
-        internal static bool TryLazy(scrDecoration d)
-        {
-            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return false;
-            if (colorRef(d).a > 0f) return false;
-            var v = d as scrVisualDecoration;
-            if ((object)v == null || d.hitbox != 0) return false;
-            var r = rendererRef(v);
-            if ((object)r == null || !hidden.Contains(r) || isMask(v)) return false;
-            if (parallaxRef(d) == null) return false;
-            if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) & 7) == 0) return false;   // 검증용 표본은 원래대로
-            lazy.Add(d);
-            LazyScaleRot++;
-            return true;
         }
 
         // 보이게 되는 순간 저장해 둔 위치를 반영한다
@@ -277,7 +258,7 @@ namespace StutterFix
         {
             hidden.RemoveWhere(r => r == null); rejected.RemoveWhere(r => r == null);
             Peak = hidden.Count; Compares = ComparesDiffer = 0;
-            Calls = Toggles = Ticks = 0; WorstFrameMs = 0; LazySkips = LazyApplied = 0; LazyScaleRot = 0;
+            Calls = Toggles = Ticks = 0; WorstFrameMs = 0; LazySkips = LazyApplied = 0;
             Verified = ChildDiff = PivotPosDiff = PivotRotDiff = PivotScaleDiff = 0; FirstDiff = ""; verify.RemoveWhere(d => d == null);
             lazy.RemoveWhere(d => d == null);
         }
