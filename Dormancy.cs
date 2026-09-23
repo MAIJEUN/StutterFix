@@ -152,7 +152,7 @@ namespace StutterFix
         private static List<scrDecoration> hbSource;
         private static int hbVersion = -1, hbCount = -1;
         private static bool hbDirty = true, hbPrepared;
-        internal static long HitboxRebuilds, HitboxFrames;
+        internal static long HitboxRebuilds, HitboxFrames, HitboxAudits, HitboxMissed;
         internal static int HitboxCount, HitboxAll;
 
         internal static void HitboxNewFrame() { hbPrepared = false; }
@@ -176,6 +176,13 @@ namespace StutterFix
                 HitboxRebuilds++;
             }
             HitboxFrames++; HitboxCount = hitboxList.Count; HitboxAll = all.Count;
+            if (Edition.Dev && Time.frameCount % 30 == 0)
+            {
+                int n = 0;
+                for (int i = 0; i < all.Count; i++) { var d = all[i]; if ((object)d == null || d.hitbox != 0) n++; }
+                HitboxAudits++;
+                if (n != hitboxList.Count) HitboxMissed++;
+            }
             return hitboxList;
         }
 
@@ -202,11 +209,11 @@ namespace StutterFix
         internal static string Summary()
         {
             if (AwakeFrames == 0 && HitboxFrames == 0) return "";
-            string hb = HitboxFrames > 0 ? string.Format(" | 히트박스 순회: 전체 {0}개 중 히트박스 있는 {1}개만 (목록 새로 만듦 {2}번)", HitboxAll, HitboxCount, HitboxRebuilds) : "";
+            string hb = HitboxFrames > 0 ? string.Format(" | 히트박스 순회: 전체 {0}개 중 히트박스 있는 {1}개만 (목록 새로 만듦 {2}번{3})", HitboxAll, HitboxCount, HitboxRebuilds, Edition.Dev ? ", 안전망 검사 " + HitboxAudits + "번에 어긋남 " + HitboxMissed : "") : "";
             return hb + string.Format(" | 매 프레임 순회: 전체 {0}개 중 평균 {1:F0}개만 훑음 (잠재움 {2}번, 깨움 {3}번, 목록 새로 만듦 {4}번, 안전망 검사 {5}번에 놓친 깨움 {6}개)",
                 AllCount, (double)AwakeTotal / AwakeFrames, Slept, Wakes, Rebuilds, Audits, Missed);
         }
 
-        internal static void ResetStats() { Rebuilds = Slept = Wakes = Missed = Audits = AwakeFrames = AwakeTotal = 0; HitboxRebuilds = HitboxFrames = 0; }
+        internal static void ResetStats() { Rebuilds = Slept = Wakes = Missed = Audits = AwakeFrames = AwakeTotal = 0; HitboxRebuilds = HitboxFrames = HitboxAudits = HitboxMissed = 0; }
     }
 }
