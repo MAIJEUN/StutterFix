@@ -48,6 +48,7 @@ namespace StutterFix
             {
                 var m = AccessTools.Method(typeof(scrVisualDecoration), "ApplyColor");
                 h.Patch(m, postfix: new HarmonyMethod(typeof(InvisibleSkip), nameof(After)));
+                InstallLazy(h);
                 Main.Entry.Logger.Log("[투명 장식] 설치");
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[투명 장식] 설치 실패: " + ex.Message); }
@@ -96,6 +97,7 @@ namespace StutterFix
             {
                 r.forceRenderingOff = false;
                 Toggles++;
+                ApplyLazy(inst);
             }
         }
 
@@ -118,6 +120,7 @@ namespace StutterFix
         // 끄거나 모드를 내릴 때, 그리고 맵을 새로 열 때 원래대로 돌려놓는다.
         internal static void RestoreAll()
         {
+            ApplyAllLazy();
             foreach (var r in hidden)
                 if (r != null) r.forceRenderingOff = false;
             hidden.Clear();
@@ -133,9 +136,70 @@ namespace StutterFix
             string s = "지금 안 그리는 투명 장식 " + hidden.Count + "개, 곡 중 최대 " + Peak + "개";
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
             if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
+            if (LazySkips > 0) s += " | 투명한 장식 위치 반영 미룸 " + LazySkips + "번, 보일 때 반영 " + LazyApplied + "번";
             s += string.Format(" | 색 바뀜 {0}번 확인, 그리기 켜고 끈 것 {1}번, 쓴 시간 약 {2:F1}ms, 가장 많이 쓴 프레임 약 {3:F2}ms (64번에 한 번 재서 추정)",
                 Calls, Toggles, Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency, WorstFrameMs);
             return s;
+        }
+
+        // ── 투명한 장식은 위치를 보일 때 반영한다 ──
+        // Arche 측정: 효과가 시작되는 순간(효과 몰림 프레임) 옮기는 장식의 95%(219,156개 중 207,480개)가 투명했다.
+        // 위치 한 번 반영은 값 저장 + 엔진 변환 여러 번(위치, 시차, 회전, 크기)인데, 안 보이는 장식이라 쓸모가 없다.
+        // 게임도 투명한 장식은 매 프레임의 위치 갱신(LogicUpdate -> UpdatePosition)을 건너뛴다.
+        // 그래서 투명한 장식의 SetPosition 은 값(pivotPosVec, pivotOffsetVec)만 저장하고, 보이게 되는 순간(ApplyColor 에서
+        // 그리기 목록에서 빠질 때) 저장된 값으로 SetPosition 을 한 번 불러 원래대로 반영한다.
+        // 제외: 히트박스 장식(투명해도 충돌 판정에 위치가 필요), 마스크 장식(투명해도 다른 장식을 가림).
+        internal static bool LazyMove = true;
+        internal static long LazySkips, LazyApplied;
+        private static readonly HashSet<scrDecoration> lazy = new HashSet<scrDecoration>();
+        private static readonly AccessTools.FieldRef<scrDecoration, Vector2> pivotPosRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("pivotPosVec");
+        private static readonly AccessTools.FieldRef<scrDecoration, Vector2> pivotOffRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("pivotOffsetVec");
+        private static readonly AccessTools.FieldRef<scrDecoration, scrParallax> parallaxRef = AccessTools.FieldRefAccess<scrDecoration, scrParallax>("parallax");
+        private static Func<scrVisualDecoration, bool> isMask;
+        private static Action<scrDecoration, Vector2, Vector2> setPosition;
+
+        private static void InstallLazy(Harmony h)
+        {
+            var set = AccessTools.Method(typeof(scrDecoration), "SetPosition", new[] { typeof(Vector2), typeof(Vector2) });
+            isMask = AccessTools.MethodDelegate<Func<scrVisualDecoration, bool>>(AccessTools.Method(typeof(scrVisualDecoration), "isMask"));
+            setPosition = AccessTools.MethodDelegate<Action<scrDecoration, Vector2, Vector2>>(set);
+            h.Patch(set, prefix: new HarmonyMethod(typeof(InvisibleSkip), nameof(LazyPrefix)) { priority = Priority.First });
+            Main.Entry.Logger.Log("[투명 장식] 위치 늦게 반영 설치");
+        }
+
+        public static bool LazyPrefix(scrDecoration __instance, Vector2 pivotPos, Vector2 pivotOffset)
+        {
+            if (!LazyMove || !Enabled || !Hitch.Playing) return true;   // 편집기에서는 선택 테두리가 이 위치를 쓴다
+            // 보이는 장식은 필드 하나만 읽고 바로 원래대로 간다 (SetPosition 은 곡 하나에 500만 번 넘게 불린다)
+            if (colorRef(__instance).a > 0f) return true;
+            var v = __instance as scrVisualDecoration;
+            if ((object)v == null || __instance.hitbox != 0) return true;
+            var r = rendererRef(v);
+            if ((object)r == null || !hidden.Contains(r) || isMask(v)) return true;
+            if (parallaxRef(__instance) == null) return true;   // 원래 함수가 이때는 아무것도 안 한다
+            pivotPosRef(__instance) = pivotPos;
+            pivotOffRef(__instance) = pivotOffset;
+            lazy.Add(__instance);
+            LazySkips++;
+            return false;
+        }
+
+        // 보이게 되는 순간 저장해 둔 위치를 반영한다
+        private static void ApplyLazy(scrVisualDecoration v)
+        {
+            if (lazy.Count == 0 || !lazy.Remove(v)) return;
+            if (v == null) return;
+            LazyApplied++;
+            setPosition(v, pivotPosRef(v), pivotOffRef(v));
+        }
+
+        internal static void ApplyAllLazy()
+        {
+            if (lazy.Count == 0) return;
+            var list = new List<scrDecoration>(lazy);
+            lazy.Clear();
+            foreach (var d in list)
+                if (d != null) { LazyApplied++; setPosition(d, pivotPosRef(d), pivotOffRef(d)); }
         }
 
         internal static bool IsHidden(scrDecoration d)
@@ -150,7 +214,8 @@ namespace StutterFix
         {
             hidden.RemoveWhere(r => r == null); rejected.RemoveWhere(r => r == null);
             Peak = hidden.Count; Compares = ComparesDiffer = 0;
-            Calls = Toggles = Ticks = 0; WorstFrameMs = 0;
+            Calls = Toggles = Ticks = 0; WorstFrameMs = 0; LazySkips = LazyApplied = 0;
+            lazy.RemoveWhere(d => d == null);
         }
 
         // ── 개발자용: 정말 화면이 같은지 픽셀로 확인 ──
