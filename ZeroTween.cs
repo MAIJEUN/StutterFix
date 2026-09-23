@@ -334,8 +334,12 @@ namespace StutterFix
                 // 게임이 바뀌어 번호가 달라졌을 수 있으니, 둘 다 기대한 장식 함수를 부르는지 IL 에서 다시 확인한다
                 if (!Calls(u, fn[i]) || !Calls(c, fn[i])) continue;
                 pairs[u] = c;
+                // 판별은 클로저 타입으로 한다(아래 IsPair). OnUpdate 쪽 클로저 클래스에 void() 람다가 이것 하나뿐인지 확인한다.
+                int voids = 0;
+                foreach (var m in u.DeclaringType.GetMethods(AccessTools.all)) if (m.DeclaringType == u.DeclaringType && m.ReturnType == typeof(void) && m.GetParameters().Length == 0 && !m.IsConstructor) voids++;
+                if (voids == 1) { updTypes.Add(u.DeclaringType); cmpTypes.Add(c.DeclaringType); }
             }
-            Main.Entry.Logger.Log("[즉시 이동] OnUpdate 건너뛸 짝 " + pairs.Count + "개 (예상 9개)");
+            Main.Entry.Logger.Log("[즉시 이동] OnUpdate 건너뛸 짝 " + pairs.Count + "개, 타입으로 판별 가능 " + updTypes.Count + "개 (예상 9개)");
         }
 
         private static bool Calls(MethodInfo m, string name)
@@ -356,10 +360,19 @@ namespace StutterFix
             return false;
         }
 
+        // 델리게이트의 Method 는 Mono 에서 델리게이트마다 처음 읽을 때 리플렉션으로 새로 만든다. 즉시 이동마다 콜백이 새로 생겨서
+        // 짝 확인에 매번 리플렉션이 두 번 들어갔고, 아낀 만큼 다시 써서 플레이어용 효과 몰림이 68 -> 75ms 로 나빠졌다.
+        // 그래서 콜백이 붙은 클로저 객체의 타입으로 판별한다(객체 헤더만 읽음). OnUpdate 쪽 클로저 클래스마다 콜백이 하나뿐이라
+        // 타입이 곧 어느 속성인지다(BuildPairs 에서 확인).
+        private static readonly List<Type> updTypes = new List<Type>(), cmpTypes = new List<Type>();
         private static bool IsPair(TweenCallback u, TweenCallback c)
         {
-            MethodInfo want;
-            return pairs.Count > 0 && pairs.TryGetValue(u.Method, out want) && ReferenceEquals(want, c.Method);
+            object ut = u.Target, ct = c.Target;
+            if (ut == null || ct == null) return false;
+            var t = ut.GetType();
+            for (int i = 0; i < updTypes.Count; i++)
+                if (ReferenceEquals(t, updTypes[i])) return ReferenceEquals(ct.GetType(), cmpTypes[i]);
+            return false;
         }
 
         // 개발자용 대조: 지금(건너뛴 뒤) 상태 -> 원래 순서로 다시 적용 -> 상태 비교
