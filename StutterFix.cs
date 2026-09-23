@@ -105,6 +105,7 @@ namespace StutterFix
                 RecolorSplit.Install(harmony);
                 ZeroTween.Install(harmony);
                 MoveApply.Install(harmony);
+                Dormancy.Install(harmony);
                 ImagePrefetch.Install(harmony);
                 FastBlend.Install(harmony);
                 InvisibleSkip.Install(harmony);

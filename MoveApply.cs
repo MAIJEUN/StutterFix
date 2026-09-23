@@ -240,7 +240,7 @@ namespace StutterFix
             return true;
         }
 
-        public static void ManagerLatePrefix() { managerLateFrame = UnityEngine.Time.frameCount; }
+        public static void ManagerLatePrefix() { managerLateFrame = UnityEngine.Time.frameCount; Dormancy.NewFrame(); }
 
         private static HashSet<scrDecoration> devAll;
         private static readonly AccessTools.FieldRef<scrDecorationManager, List<scrDecoration>> allRef =
@@ -290,15 +290,15 @@ namespace StutterFix
         public static void LogicMaybe(scrDecoration d, bool disableShader)
         {
             LogicCalls++;
-            if (LogicSkip && Enabled && disableShader && d.hitbox == 0 && d.GetType() == typeof(scrVisualDecoration)
-                && !meshOnRef((scrVisualDecoration)d) && !d.GetVisible())
-            { LogicSkips++; return; }
+            if (LogicSkip && Enabled && Dormancy.IsDormant(d, disableShader))
+            { LogicSkips++; Dormancy.Sleep(d); return; }
             logicUpdate(d, disableShader);
         }
 
         public static IEnumerable<CodeInstruction> ManagerLateTranspiler(IEnumerable<CodeInstruction> instructions)
         {
             int n = 0;
+            int lists = 0;
             foreach (var c in instructions)
             {
                 var mi = c.operand as MethodInfo;
@@ -308,9 +308,16 @@ namespace StutterFix
                     c.operand = AccessTools.Method(typeof(MoveApply), nameof(LogicMaybe));
                     n++;
                 }
+                var fi = c.operand as FieldInfo;
+                if (c.opcode == OpCodes.Ldfld && fi != null && fi.Name == "allDecorations" && fi.DeclaringType == typeof(scrDecorationManager))
+                {
+                    c.opcode = OpCodes.Call;
+                    c.operand = AccessTools.Method(typeof(Dormancy), nameof(Dormancy.List));
+                    lists++;
+                }
                 yield return c;
             }
-            if (n != 1) Main.Entry.Logger.Log("[장식 순회] LogicUpdate 호출 " + n + "곳 (예상 1곳)");
+            if (n != 1 || lists != 2) Main.Entry.Logger.Log("[장식 순회] LogicUpdate 호출 " + n + "곳, 목록 읽기 " + lists + "곳 (예상 1곳, 2곳)");
         }
 
         public static void ClampNow(scrDecoration d)
@@ -369,11 +376,12 @@ namespace StutterFix
                 Calls, Flushed, 100.0 * (Calls - Flushed) / Calls, FrameUnique, PivotCalls, PivotDone, Patched ? "" : " (적용 안 됨)", FlushMs, PosWrites + PosSkips, PosSkips)
                 + " | 재생 중 편집기 검사 건너뜀 " + EditorSkips + "번" + ProfSummary()
                 + (LogicCalls > 0 ? string.Format(" | 매 프레임 장식 순회 {0}번 중 바뀌는 게 없어 뺀 것 {1}번", LogicCalls, LogicSkips) : "")
+                + Dormancy.Summary()
                 + (LateSkips > 0 ? string.Format(" | 보이는 장식 위치 재계산을 LateUpdate 에 맡김 {0}번 (안 보이게 돼서 대신 갱신 {1}번){2}", LateSkips, LateFixups, Edition.Dev ? string.Format(", 검사 {0}개 중 다름 {1}, 게임 목록에 없음 {2}", LateChecked / 32, LateMismatch, LateNotInList) : "") : "")
                 + (MovesIn + MovesOut > 0 ? string.Format(" | 옮긴 장식 중 투명: 효과 시작 안 {0}/{1}, 애니메이션 진행 중 {2}/{3} (그중 히트박스 {4})", HiddenIn, MovesIn, HiddenOut, MovesOut, HiddenHitbox) : "");
         }
 
-        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; devAll = null; LogicSkips = LogicCalls = 0; }
+        internal static void ResetMoves() { MovesIn = MovesOut = HiddenIn = HiddenOut = HiddenHitbox = 0; LateSkips = LateFixups = LateNotInList = LateChecked = LateMismatch = 0; devAll = null; LogicSkips = LogicCalls = 0; Dormancy.ResetStats(); }
         internal static void Reset() { Calls = Flushed = PivotCalls = PivotDone = FrameUnique = 0; FlushMs = 0; PosWrites = PosSkips = 0; ProfN = 0; ProfScale = ProfWrite = ProfEditor = ProfRest = 0; EditorSkips = 0; frameSet.Clear(); ResetMoves(); }
     }
 }
