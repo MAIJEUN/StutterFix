@@ -133,7 +133,7 @@ namespace StutterFix
         }
 
         // ── 미리 확인이 쓰는 것 ──
-        internal sealed class ShapeInfo { public List<scrDecoration> Targets; public string Tag; public bool Pos, Px, Py, Col, Opa; public Vector2 Tp; public Color Tc; public float To; public int Keys; }
+        internal sealed class ShapeInfo { public List<scrDecoration> Targets; public readonly List<List<scrDecoration>> Sources = new List<List<scrDecoration>>(); public string Tag; public bool Pos, Px, Py, Col, Opa; public Vector2 Tp; public Color Tc; public float To; public int Keys; }
         private static readonly ShapeInfo shape = new ShapeInfo();
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, Color> tCol = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, Color>("targetColor");
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, float> tOpa = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, float>("targetOpacity");
@@ -163,10 +163,20 @@ namespace StutterFix
             bool col = colUsed(fx), opa = opaUsed(fx);
             if (!pos && !col && !opa) return Why("바꾸는 것 없음");
             var tags = tagsRef(fx); var mgr = mgrRef(fx);
-            if (tags == null || tags.Count != 1 || tags[0] == null || (object)mgr == null) return Why("태그 여러 개");
+            if (tags == null || tags.Count == 0 || (object)mgr == null) return Why("대상 없음");
             var dict = taggedRef(mgr); List<scrDecoration> l;
-            if (dict == null || !dict.TryGetValue(tags[0], out l) || l == null) return Why("대상 없음");
-            shape.Targets = l; shape.Tag = tags[0]; shape.Pos = pos; shape.Px = px; shape.Py = py; shape.Col = col; shape.Opa = opa;
+            if (dict == null) return Why("대상 없음");
+            // 태그 순서대로 있는 목록만 (원래 코드: Where(있는 태그) -> SelectMany -> Distinct). 여러 개면 합친 목록은 미리 확인이 만든다.
+            shape.Sources.Clear();
+            for (int i = 0; i < tags.Count; i++)
+            {
+                if (tags[i] == null) return Why("태그에 null");
+                if (!dict.TryGetValue(tags[i], out l)) continue;
+                if (l == null) return Why("대상 없음");
+                shape.Sources.Add(l);
+            }
+            if (shape.Sources.Count == 0) return Why("대상 없음");
+            shape.Targets = shape.Sources.Count == 1 ? shape.Sources[0] : null; shape.Tag = tags[0]; shape.Pos = pos; shape.Px = px; shape.Py = py; shape.Col = col; shape.Opa = opa;
             shape.Tp = tp; shape.Tc = tCol(fx); shape.To = tOpa(fx);
             shape.Keys = (px ? 1 << 1 : 0) | (py ? 1 << 2 : 0) | (col ? 1 << 9 : 0) | (opa ? 1 << 10 : 0);
             return shape;

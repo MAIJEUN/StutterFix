@@ -36,6 +36,7 @@ namespace StutterFix
         private sealed class Plan
         {
             public ffxMoveDecorationsPlus Fx; public int Bit; public List<scrDecoration> Targets; public int Ver; public string Tag;
+            public List<scrDecoration>[] Src; public int[] SrcVer;   // 태그별 게임 목록과 확인 시작 때 버전 (발동 때 그대로여야 함)
             public bool Valid = true, Ready, Pos, Px, Py, Col, Opa; public int Checked;
             public Vector2 Tp; public Color Tc; public float To; public bool Clean; public int Keys;
             public HashSet<scrDecoration> Seen;
@@ -210,18 +211,44 @@ namespace StutterFix
                 if (n >= MinTargets) { int c; skipWhy.TryGetValue(FastMove.LastWhy, out c); skipWhy[FastMove.LastWhy] = c + 1; if (n > bigSkipped) { bigSkipped = n; bigWhy = FastMove.LastWhy; } }
                 return;
             }
-            if (s == null) return;
-            if (s.Targets.Count < MinTargets) return;
+            int total = 0; foreach (var sl in s.Sources) total += sl.Count;
+            if (total < MinTargets) return;
             int b = FreeBit();
             if (b < 0) { NoBit++; return; }
-            var p = new Plan { Fx = fx, Bit = b, Targets = s.Targets, Ver = versionRef(s.Targets), Tag = s.Tag, Pos = s.Pos, Px = s.Px, Py = s.Py, Col = s.Col, Opa = s.Opa,
-                Tp = s.Tp, Tc = s.Tc, To = s.To, Keys = s.Keys, Clean = FastMove.IsClean(s.Targets, versionRef(s.Targets)) };
+            // 태그가 여러 개면 원래 코드처럼 태그 순서대로 이어 붙이고 처음 나온 것만 (Distinct) - 목록은 여기서 한 번 만든다
+            List<scrDecoration> targets = s.Targets; bool clean;
+            if (targets != null) clean = FastMove.IsClean(targets, versionRef(targets));
+            else
+            {
+                targets = new List<scrDecoration>(total); var seen = new HashSet<scrDecoration>(FastMove.DecoEq);
+                foreach (var sl in s.Sources) for (int j = 0; j < sl.Count; j++) { var d = sl[j]; if ((object)d == null) return; if (seen.Add(d)) targets.Add(d); }
+                if (targets.Count < MinTargets) return;
+                clean = true;
+            }
+            var src = s.Sources.ToArray(); var srcVer = new int[src.Length];
+            for (int i = 0; i < src.Length; i++) srcVer[i] = versionRef(src[i]);
+            var p = new Plan { Fx = fx, Bit = b, Targets = targets, Ver = versionRef(targets), Src = src, SrcVer = srcVer, Tag = s.Tag, Pos = s.Pos, Px = s.Px, Py = s.Py, Col = s.Col, Opa = s.Opa,
+                Tp = s.Tp, Tc = s.Tc, To = s.To, Keys = s.Keys, Clean = clean };
             if (!p.Clean) p.Seen = new HashSet<scrDecoration>(FastMove.DecoEq);
             plans[b] = p; Active |= 1 << b; Created++;
         }
 
+        // 태그별 게임 목록이 확인을 시작할 때와 같은가 (장식이 태그에 더해지거나 빠지면 버전이 바뀐다)
+        private static bool SourcesSame(Plan p)
+        {
+            for (int i = 0; i < p.Src.Length; i++) if (versionRef(p.Src[i]) != p.SrcVer[i]) return false;
+            return true;
+        }
+        private static bool SameSourceLists(FastMove.ShapeInfo s, Plan p)
+        {
+            if (s.Sources.Count != p.Src.Length) return false;
+            for (int i = 0; i < p.Src.Length; i++) if (!ReferenceEquals(s.Sources[i], p.Src[i])) return false;
+            return true;
+        }
+
         private static void Work(Plan p)
         {
+            if (!SourcesSame(p)) { p.Valid = false; InvList++; return; }
             var l = p.Targets; int bit = 1 << p.Bit; int n = 0;
             while (p.Checked < l.Count)
             {
@@ -236,7 +263,7 @@ namespace StutterFix
                 if ((++n & 15) == 0 && Over()) return;
             }
             p.Ready = true; Ready++;
-            if (!p.Clean) { FastMove.MarkClean(l, p.Ver); p.Clean = true; p.Seen = null; }
+            if (!p.Clean) { if (p.Src.Length == 1) FastMove.MarkClean(l, p.Ver); p.Clean = true; p.Seen = null; }
         }
 
         private static void NotNoopWhy(Plan p, string why)
@@ -281,11 +308,11 @@ namespace StutterFix
             Plan p = null;
             for (int b = 0; b < MaxPlans; b++) if (plans[b] != null && ReferenceEquals(plans[b].Fx, fx)) { p = plans[b]; break; }
             if (p == null) return false;
-            bool ok = p.Ready && p.Valid && On && versionRef(p.Targets) == p.Ver;
+            bool ok = p.Ready && p.Valid && On && versionRef(p.Targets) == p.Ver && SourcesSame(p);
             if (ok)
             {
                 var s = FastMove.Shape(fx);   // 효과 값이 확인할 때와 같은지
-                ok = s != null && ReferenceEquals(s.Targets, p.Targets) && s.Pos == p.Pos && s.Px == p.Px && s.Py == p.Py && s.Col == p.Col && s.Opa == p.Opa
+                ok = s != null && SameSourceLists(s, p) && s.Pos == p.Pos && s.Px == p.Px && s.Py == p.Py && s.Col == p.Col && s.Opa == p.Opa
                     && InstantMove.Bits(s.Tp.x) == InstantMove.Bits(p.Tp.x) && InstantMove.Bits(s.Tp.y) == InstantMove.Bits(p.Tp.y)
                     && InstantMove.Bits(s.Tc.r) == InstantMove.Bits(p.Tc.r) && InstantMove.Bits(s.Tc.g) == InstantMove.Bits(p.Tc.g) && InstantMove.Bits(s.Tc.b) == InstantMove.Bits(p.Tc.b) && InstantMove.Bits(s.Tc.a) == InstantMove.Bits(p.Tc.a)
                     && InstantMove.Bits(s.To) == InstantMove.Bits(p.To);
