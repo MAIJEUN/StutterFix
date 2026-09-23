@@ -62,6 +62,8 @@ namespace StutterFix
                 if (Edition.Dev) h.Patch(set, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ProfStart)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(ProfEnd)));
                 h.Patch(start, prefix: new HarmonyMethod(typeof(MoveApply), nameof(Enter)), finalizer: new HarmonyMethod(typeof(MoveApply), nameof(Exit)));
                 var mgrLate = AccessTools.Method(typeof(scrDecorationManager), "LateUpdate");
+                var mgrUpd = AccessTools.Method(typeof(scrDecorationManager), "Update");
+                if (mgrUpd != null) h.Patch(mgrUpd, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerUpdatePrefix)), transpiler: new HarmonyMethod(typeof(MoveApply), nameof(ManagerUpdateTranspiler)));
                 var mLogic = AccessTools.Method(typeof(scrDecoration), "LogicUpdate");
                 if (mLogic != null) logicUpdate = (Action<scrDecoration, bool>)Delegate.CreateDelegate(typeof(Action<scrDecoration, bool>), mLogic);
                 if (mgrLate != null) h.Patch(mgrLate, prefix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerLatePrefix)), postfix: new HarmonyMethod(typeof(MoveApply), nameof(ManagerLatePostfix)),
@@ -293,6 +295,25 @@ namespace StutterFix
             if (LogicSkip && Enabled && Dormancy.IsDormant(d, disableShader))
             { LogicSkips++; Dormancy.Sleep(d); return; }
             logicUpdate(d, disableShader);
+        }
+
+        public static void ManagerUpdatePrefix() { Dormancy.HitboxNewFrame(); }
+
+        public static IEnumerable<CodeInstruction> ManagerUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            int lists = 0;
+            foreach (var c in instructions)
+            {
+                var fi = c.operand as FieldInfo;
+                if (c.opcode == OpCodes.Ldfld && fi != null && fi.Name == "allDecorations" && fi.DeclaringType == typeof(scrDecorationManager))
+                {
+                    c.opcode = OpCodes.Call;
+                    c.operand = AccessTools.Method(typeof(Dormancy), nameof(Dormancy.HitboxList));
+                    lists++;
+                }
+                yield return c;
+            }
+            if (lists != 2) Main.Entry.Logger.Log("[히트박스 순회] 목록 읽기 " + lists + "곳 (예상 2곳)");
         }
 
         public static IEnumerable<CodeInstruction> ManagerLateTranspiler(IEnumerable<CodeInstruction> instructions)

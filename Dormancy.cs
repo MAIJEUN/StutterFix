@@ -76,7 +76,7 @@ namespace StutterFix
         }
 
         public static void WakePost(scrVisualDecoration __instance) { Wake(__instance); }
-        public static void WakeBase(scrDecoration __instance) { Wake(__instance); }
+        public static void WakeBase(scrDecoration __instance) { hbDirty = true; Wake(__instance); }
 
         private static void Wake(scrDecoration d)
         {
@@ -143,6 +143,42 @@ namespace StutterFix
             }
         }
 
+        // ── 히트박스 순회 ──
+        // scrDecorationManager.Update 는 매 프레임 장식 전부에 CheckHitboxHit 을 부른다(1.3.5 측정: 가벼운 구간에서도 0.78ms).
+        // CheckHitboxHit 은 히트박스가 없으면(hitbox == 0) 첫 줄에서 끝난다. hitbox 와 hitboxDetectTarget 을 쓰는 곳은
+        // 게임 전체에서 scrDecoration.Awake 와 Setup 뿐이다(IL 전체 검색). 그래서 히트박스 있는 장식만 담은 목록을 넘긴다.
+        // 목록이 바뀌거나 Awake/Setup 이 불리면 다시 만든다.
+        private static readonly List<scrDecoration> hitboxList = new List<scrDecoration>();
+        private static List<scrDecoration> hbSource;
+        private static int hbVersion = -1, hbCount = -1;
+        private static bool hbDirty = true, hbPrepared;
+        internal static long HitboxRebuilds, HitboxFrames;
+        internal static int HitboxCount, HitboxAll;
+
+        internal static void HitboxNewFrame() { hbPrepared = false; }
+
+        public static List<scrDecoration> HitboxList(scrDecorationManager mgr)
+        {
+            var all = allRef(mgr);
+            if (!Enabled || broken || !MoveApply.Enabled || all == null || !Hitch.Playing) return all;
+            if (hbPrepared) return hitboxList;
+            hbPrepared = true;
+            int ver = versionRef != null ? versionRef(all) : 0;
+            if (hbDirty || !ReferenceEquals(all, hbSource) || all.Count != hbCount || ver != hbVersion)
+            {
+                hitboxList.Clear();
+                for (int i = 0; i < all.Count; i++)
+                {
+                    var d = all[i];
+                    if ((object)d == null || d.hitbox != 0) hitboxList.Add(d);   // null 은 원래대로 둔다(원래 코드가 그대로 부른다)
+                }
+                hbSource = all; hbCount = all.Count; hbVersion = ver; hbDirty = false;
+                HitboxRebuilds++;
+            }
+            HitboxFrames++; HitboxCount = hitboxList.Count; HitboxAll = all.Count;
+            return hitboxList;
+        }
+
         // MoveApply.LogicMaybe 가 "이 장식은 호출해도 바뀌는 게 없다" 고 판단했을 때 부른다. 다음 프레임부터 목록에서 뺀다.
         internal static void Sleep(scrDecoration d)
         {
@@ -165,11 +201,12 @@ namespace StutterFix
 
         internal static string Summary()
         {
-            if (AwakeFrames == 0) return "";
-            return string.Format(" | 매 프레임 순회: 전체 {0}개 중 평균 {1:F0}개만 훑음 (잠재움 {2}번, 깨움 {3}번, 목록 새로 만듦 {4}번, 안전망 검사 {5}번에 놓친 깨움 {6}개)",
+            if (AwakeFrames == 0 && HitboxFrames == 0) return "";
+            string hb = HitboxFrames > 0 ? string.Format(" | 히트박스 순회: 전체 {0}개 중 히트박스 있는 {1}개만 (목록 새로 만듦 {2}번)", HitboxAll, HitboxCount, HitboxRebuilds) : "";
+            return hb + string.Format(" | 매 프레임 순회: 전체 {0}개 중 평균 {1:F0}개만 훑음 (잠재움 {2}번, 깨움 {3}번, 목록 새로 만듦 {4}번, 안전망 검사 {5}번에 놓친 깨움 {6}개)",
                 AllCount, (double)AwakeTotal / AwakeFrames, Slept, Wakes, Rebuilds, Audits, Missed);
         }
 
-        internal static void ResetStats() { Rebuilds = Slept = Wakes = Missed = Audits = AwakeFrames = AwakeTotal = 0; }
+        internal static void ResetStats() { Rebuilds = Slept = Wakes = Missed = Audits = AwakeFrames = AwakeTotal = 0; HitboxRebuilds = HitboxFrames = 0; }
     }
 }
