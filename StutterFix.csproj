@@ -63,6 +63,7 @@
     <Compile Include="InstantMove.cs" />
     <Compile Include="MoveProf.cs" />
     <Compile Include="FastMove.cs" />
+    <Compile Include="Precheck.cs" />
     <Compile Include="UiDraw.cs" />
     <Compile Include="LogExport.cs" />
     <Compile Include="Hotkey.cs" />

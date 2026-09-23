@@ -93,12 +93,19 @@ namespace StutterFix
         public static bool Prefix(ffxMoveDecorationsPlus __instance, object[] __args, bool __runOriginal)
         {
             if (!__runOriginal) return false;
-            if (bypass || running || !Enabled || !Installed || !Hitch.Playing) return true;
-            if (!InstantMove.Enabled || !InstantMove.Patched || !ZeroTween.Enabled || !ZeroTween.Patched || !ZeroTween.CanEase) return true;
+            if (bypass || running || !Enabled || !Installed || !Hitch.Playing) return Orig(__instance);
+            if (!InstantMove.Enabled || !InstantMove.Patched || !ZeroTween.Enabled || !ZeroTween.Patched || !ZeroTween.CanEase) return Orig(__instance);
             running = true;
             try
             {
-                if (!Take(__instance)) return true;   // 원래 코드가 돈다 (아직 아무것도 안 바꿨다)
+                // 미리 확인이 "아무것도 안 바꾼다" 고 확인해 둔 효과: 효과 앞부분의 필드 쓰기만 하고 건너뛴다
+                if (Precheck.Active != 0 && Precheck.TrySkip(__instance))
+                {
+                    if (!float.IsNaN(tScale(__instance))) tScaleV2(__instance) = new Vector2(tScale(__instance), tScale(__instance));
+                    if (Edition.Dev && (Precheck.Used & 1) == 1) VerifyNoop(__instance);
+                    return false;
+                }
+                if (!Take(__instance)) return Orig(__instance);   // 원래 코드가 돈다 (아직 아무것도 안 바꿨다)
                 bool sample = Edition.Dev && ((Effects + 1) % 16) == 1;
                 if (sample) { hidBefore.Clear(); foreach (var dec in src) hidBefore.Add(InvisibleSkip.IsHidden(dec)); }
                 Run(__instance);
@@ -112,6 +119,98 @@ namespace StutterFix
                 return false;
             }
             finally { running = false; }
+        }
+
+        // 원래 코드로 돈다. 원래 코드는 대상 장식의 애니메이션 사전을 바꿀 수 있으므로, 미리 확인 중인 계획이 그 장식을 보고 있으면 취소한다.
+        private static bool Orig(ffxMoveDecorationsPlus fx)
+        {
+            if (Precheck.Active != 0)
+            {
+                var mgr = mgrRef(fx);
+                Precheck.TouchTargets(tagsRef(fx), (object)mgr == null ? null : taggedRef(mgr));
+            }
+            return true;
+        }
+
+        // ── 미리 확인이 쓰는 것 ──
+        internal sealed class ShapeInfo { public List<scrDecoration> Targets; public string Tag; public bool Pos, Px, Py, Col, Opa; public Vector2 Tp; public Color Tc; public float To; public int Keys; }
+        private static readonly ShapeInfo shape = new ShapeInfo();
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, Color> tCol = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, Color>("targetColor");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, float> tOpa = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, float>("targetOpacity");
+        // 미리 확인할 수 있는 효과면 모양(대상 목록, 쓰는 속성, 넣을 값)을 돌려준다: 길이 0, 위치·색·불투명도만, 상대 이동 아님, 태그 하나.
+        // 돌려주는 것은 다시 쓰는 객체다(바로 복사해서 쓸 것).
+        internal static ShapeInfo Shape(ffxMoveDecorationsPlus fx)
+        {
+            if (durRef(fx) > 0f) return null;
+            if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) return null;
+            if (mtUsed(fx) && (int)mtRef(fx) != 7) return null;
+            if (parUsed(fx) || visUsed(fx) || depthUsed(fx)) return null;
+            bool move = !fdt(fx);
+            var tp = tPos(fx);
+            bool px = move && posUsed(fx) && !float.IsNaN(tp.x), py = move && posUsed(fx) && !float.IsNaN(tp.y), pos = px || py;
+            if (pos && (int)mtRef(fx) == 7) return null;
+            if (move)
+            {
+                var a = tParOff(fx); if (parOffUsed(fx) && (!float.IsNaN(a.x) || !float.IsNaN(a.y))) return null;
+                var b = tPiv(fx); if (pivUsed(fx) && (!float.IsNaN(b.x) || !float.IsNaN(b.y))) return null;
+                if (rotUsed(fx)) return null;
+                if (scaleUsed(fx))
+                {
+                    Vector2 sc = !float.IsNaN(tScale(fx)) ? new Vector2(tScale(fx), tScale(fx)) : tScaleV2(fx);
+                    if (!float.IsNaN(sc.x) || !float.IsNaN(sc.y)) return null;
+                }
+            }
+            bool col = colUsed(fx), opa = opaUsed(fx);
+            if (!pos && !col && !opa) return null;
+            var tags = tagsRef(fx); var mgr = mgrRef(fx);
+            if (tags == null || tags.Count != 1 || tags[0] == null || (object)mgr == null) return null;
+            var dict = taggedRef(mgr); List<scrDecoration> l;
+            if (dict == null || !dict.TryGetValue(tags[0], out l) || l == null) return null;
+            shape.Targets = l; shape.Tag = tags[0]; shape.Pos = pos; shape.Px = px; shape.Py = py; shape.Col = col; shape.Opa = opa;
+            shape.Tp = tp; shape.Tc = tCol(fx); shape.To = tOpa(fx);
+            shape.Keys = (px ? 1 << 1 : 0) | (py ? 1 << 2 : 0) | (col ? 1 << 9 : 0) | (opa ? 1 << 10 : 0);
+            return shape;
+        }
+        internal static IEqualityComparer<scrDecoration> DecoEq { get { return RefEq.I; } }
+        internal static bool IsClean(List<scrDecoration> l, int ver) { int at; return cleanAt.TryGetValue(l, out at) && at == ver; }
+        internal static void MarkClean(List<scrDecoration> l, int ver) { cleanAt[l] = ver; }
+        // 키 묶음(비트 = TweenType 번호)이 사전에 모두 있고 전부 "끝난 대역" 인가
+        internal static bool AllDeadMask(Dictionary<global::TweenType, Tween> d, int mask)
+        {
+            if (mask == 0 || d == null) return false;
+            int need = 0; for (int m = mask; m != 0; m &= m - 1) need++;
+            if (d.Count < need) return false;
+            var dead = InstantMove.Dead; int found = 0;
+            foreach (var kv in d)
+            {
+                int key = (int)kv.Key;
+                if (key < 0 || key >= 31 || (mask & (1 << key)) == 0) continue;
+                if (!ReferenceEquals(kv.Value, dead)) return false;
+                found++;
+            }
+            return found == need;
+        }
+
+        // 개발자용: 미리 확인으로 건너뛴 효과를 실제로 돌려(원래 함수 표본 대조는 끄고) 대상 상태가 하나도 안 바뀌는지 본다
+        private static void VerifyNoop(ffxMoveDecorationsPlus fx)
+        {
+            if (!Take(fx)) return;
+            var decs = new List<scrDecoration>(); var a = new List<S>();
+            for (int i = 0; i < src.Count; i += 4) { decs.Add(src[i]); a.Add(Snap(src[i])); }
+            InstantMove.NoSample = true;
+            MoveProf.Pause = true;
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            try { Run(fx); }
+            finally { InstantMove.NoSample = false; MoveProf.Pause = false; MoveProf.Exclude(System.Diagnostics.Stopwatch.GetTimestamp() - t0); }
+            int bad = 0; string first = "";
+            for (int i = 0; i < decs.Count; i++)
+            {
+                string diff = Diff(a[i], Snap(decs[i]));
+                if (diff == null) continue;
+                bad++;
+                if (first.Length < 300) first += " [" + decs[i].name + ": " + diff + "]";
+            }
+            Precheck.VerifyResult(decs.Count, bad, first);
         }
 
         // 맡을 수 있는지 보고, 맡으면 대상 목록을 만든다. 여기까지는 게임 상태를 바꾸지 않는다.
@@ -385,8 +484,9 @@ namespace StutterFix
                 Effects, DecoCount, Fallbacks, why[0], why[1], why[2], why[3], why[4], why[5]);
             if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + ", 보이다 투명해져서 목록만 다른 것 " + Explained + First + ")";
             else if (First.Length > 0) s += First;
+            s += Precheck.Summary();
             return s;
         }
-        internal static void Reset() { stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }

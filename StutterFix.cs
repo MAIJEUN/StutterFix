@@ -107,6 +107,7 @@ namespace StutterFix
                 InstantMove.Install(harmony);
                 MoveProf.Install(harmony);
                 FastMove.Install(harmony);
+                Precheck.Install(harmony);
                 MoveApply.Install(harmony);
                 Dormancy.Install(harmony);
                 ImagePrefetch.Install(harmony);
@@ -419,6 +420,7 @@ namespace StutterFix
             InstantMove.Enabled = Config.InstantDirect;
             InstantMove.SkipSame = Config.SkipSame;
             FastMove.Enabled = Config.FastLoop;
+            Precheck.Enabled = Config.Precheck; Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
             MoveApply.Enabled = Config.MoveFinish;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
@@ -608,6 +610,7 @@ namespace StutterFix
         public bool InstantDirect = true;  // 길이 0 장식 이동을 게임 코드의 애니메이션 만들기 없이 처리
         public bool SkipSame = true;       // 즉시 이동 값이 이미 그대로면(투명 장식) 설정 함수를 부르지 않음
         public bool FastLoop = true;       // 길이 0 장식 이동 효과를 게임 코드 대신 모드 루프로
+        public bool Precheck = true;       // 곧 발동할 무거운 장식 이동이 아무것도 안 바꾸는지 미리 확인해 두고 건너뛰기
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
         public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)

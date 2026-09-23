@@ -36,7 +36,10 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrDecoration, Color> colorRef =
             AccessTools.FieldRefAccess<scrDecoration, Color>("rendererColor");
 
-        private static readonly HashSet<SpriteRenderer> hidden = new HashSet<SpriteRenderer>(RefEq.Instance);
+        // 안 그리는 장식 -> "미리 확인"(Precheck)이 지켜보는 표시(비트). 표시가 있는 장식이 바뀌면 그 확인을 취소한다.
+        // 확인 조건에 쓰는 값(색·불투명도·그리기 색·위치·미루기 목록)은 대부분 여기 두 곳(ApplyColor 뒤, SetPosition 앞)을 거치므로
+        // 원래 하던 목록 조회에 얹어 추가 비용 없이 알 수 있다.
+        private static readonly Dictionary<SpriteRenderer, int> hidden = new Dictionary<SpriteRenderer, int>(RefEq.Instance);
         private static readonly Dictionary<Shader, bool> shaderOk = new Dictionary<Shader, bool>();
         internal static int Count { get { return hidden.Count; } }
         internal static int Peak;
@@ -86,18 +89,22 @@ namespace StutterFix
             if ((object)r == null) return;
             if (colorRef(inst).a <= 0f)
             {
-                if (hidden.Contains(r) || rejected.Contains(r)) return;   // 대부분(98%)이 여기서 끝난다: 투명 -> 투명
+                int w;
+                if (hidden.TryGetValue(r, out w)) { if (w != 0) Precheck.Touch(w); return; }   // 대부분(98%)이 여기서 끝난다: 투명 -> 투명
+                if (rejected.Contains(r)) return;
                 if (!AlphaMeansVisibility(r)) { rejected.Add(r); return; }
                 r.forceRenderingOff = true;
-                hidden.Add(r);
+                hidden[r] = 0;
                 Toggles++;
                 if (hidden.Count > Peak) Peak = hidden.Count;
             }
-            else if (hidden.Remove(r) && CountShown())
+            else if (Unhide(r) && CountShown())
             {
                 r.forceRenderingOff = false;
                 Toggles++;
-                if (verify.Count > 0 && verify.Remove(inst)) Verify(inst); else ApplyLazy(inst);
+                // 정답 표본이어도 모드가 위치를 미뤄 둔 장식(장식 이동 루프가 바로 미룸)이면 미룬 것을 반영한다. 정답 비교는 미룬 적 없는 것만.
+                bool truth = verify.Count > 0 && verify.Remove(inst);
+                if (lazy.Count > 0 && lazy.Contains(inst)) ApplyLazy(inst); else if (truth) Verify(inst);
             }
         }
 
@@ -125,8 +132,13 @@ namespace StutterFix
         // 끄거나 모드를 내릴 때, 그리고 맵을 새로 열 때 원래대로 돌려놓는다.
         internal static void RestoreAll()
         {
+            Precheck.ResetAll();
+            RestoreAllCore();
+        }
+        private static void RestoreAllCore()
+        {
             ApplyAllLazy();
-            foreach (var r in hidden)
+            foreach (var r in hidden.Keys)
                 if (r != null) r.forceRenderingOff = false;
             hidden.Clear();
             rejected.Clear();
@@ -137,7 +149,7 @@ namespace StutterFix
         internal static string Summary()
         {
             // 사라진 장식(맵이 바뀜)은 목록에서 뺀다
-            hidden.RemoveWhere(r => r == null);
+            RemoveDead();
             string s = "지금 안 그리는 투명 장식 " + hidden.Count + "개, 곡 중 최대 " + Peak + "개";
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
             if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
@@ -187,7 +199,10 @@ namespace StutterFix
             var v = __instance as scrVisualDecoration;
             if ((object)v == null || __instance.hitbox != 0) return true;
             var r = rendererRef(v);
-            if ((object)r == null || !hidden.Contains(r) || isMask(v)) return true;
+            int wb;
+            if ((object)r == null || !hidden.TryGetValue(r, out wb)) return true;
+            if (wb != 0) Precheck.Touch(wb);   // 지켜보는 장식의 위치가 바뀐다
+            if (isMask(v)) return true;
             if (parallaxRef(__instance) == null) return true;   // 원래 함수가 이때는 아무것도 안 한다
             if (Edition.Dev && TruthSample(__instance)) { verify.Add(__instance); return true; }
             pivotPosRef(__instance) = pivotPos;
@@ -208,10 +223,10 @@ namespace StutterFix
             if ((object)v == null) return No(2);
             if (d.hitbox != 0) return No(3);
             var r = rendererRef(v);
-            if ((object)r == null || !hidden.Contains(r)) return No(4);
+            if ((object)r == null || !hidden.ContainsKey(r)) return No(4);
             if (isMask(v)) return No(5);
             if (parallaxRef(d) == null) return No(6);
-            if (Edition.Dev && TruthSample(d)) return No(7);   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
+            // (개발자용 정답 표본은 LazyPrefix 에서만 뽑는다. 여기서도 빼면 미리 확인이 개발자용에서 한 번도 성립하지 않는다)
             return true;
         }
         // 개발자용: 빠른 길을 못 탄 이유별 수 (꺼짐/재생 아님, 보임, 이미지 장식 아님, 히트박스, 안 그리는 목록에 없음, 마스크, 시차 없음, 정답 표본)
@@ -225,6 +240,11 @@ namespace StutterFix
         }
         internal static void LazyStore(scrDecoration d, Vector2 pos, Vector2 off)
         {
+            if (Precheck.Active != 0) TouchDeco(d);
+            LazyStoreCore(d, pos, off);
+        }
+        private static void LazyStoreCore(scrDecoration d, Vector2 pos, Vector2 off)
+        {
             pivotPosRef(d) = pos;
             pivotOffRef(d) = off;
             lazy.Add(d);
@@ -235,6 +255,49 @@ namespace StutterFix
         private static bool TruthSample(scrDecoration d) { return ((uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) * 2654435761u) >> 29 == 0; }
         // SetPosition 은 시차 부품이 없으면 첫 줄에서 아무것도 안 하고 끝난다(IL 확인). 그런 장식은 부를 필요가 없다.
         internal static bool NoParallax(scrDecoration d) { return parallaxRef(d) == null; }
+
+        // ── 미리 확인(Precheck) 지켜보기 표시 ──
+        private static bool Unhide(SpriteRenderer r)
+        {
+            int w;
+            if (!hidden.TryGetValue(r, out w)) return false;
+            hidden.Remove(r);
+            if (w != 0) Precheck.Touch(w);   // 지켜보던 장식이 보이게 됐다
+            return true;
+        }
+        private static readonly List<SpriteRenderer> deadKeys = new List<SpriteRenderer>();
+        private static void RemoveDead()
+        {
+            deadKeys.Clear();
+            foreach (var r in hidden.Keys) if (r == null) deadKeys.Add(r);
+            foreach (var r in deadKeys) hidden.Remove(r);
+            deadKeys.Clear();
+        }
+        private static SpriteRenderer RendererOf(scrDecoration d)
+        {
+            var v = d as scrVisualDecoration;
+            return (object)v == null ? null : rendererRef(v);
+        }
+        // 안 그리는 장식이면 지켜보기 표시를 붙인다 (못 붙이면 false)
+        internal static bool AddWatch(scrDecoration d, int bit)
+        {
+            var r = RendererOf(d); int w;
+            if ((object)r == null || !hidden.TryGetValue(r, out w)) return false;
+            hidden[r] = w | bit;
+            return true;
+        }
+        internal static void ClearWatch(scrDecoration d, int bit)
+        {
+            var r = RendererOf(d); int w;
+            if ((object)r == null || !hidden.TryGetValue(r, out w) || (w & bit) == 0) return;
+            hidden[r] = w & ~bit;
+        }
+        // 게임 코드가 이 장식을 바꾸려 한다 (배치 방식, 마스크, 모드가 바로 미룬 위치, 원래 코드로 도는 장식 이동 효과)
+        internal static void TouchDeco(scrDecoration d)
+        {
+            var r = RendererOf(d); int w;
+            if ((object)r != null && hidden.TryGetValue(r, out w) && w != 0) Precheck.Touch(w);
+        }
 
         // 보이게 되는 순간 저장해 둔 위치를 반영한다
         private static void ApplyLazy(scrVisualDecoration v)
@@ -301,12 +364,12 @@ namespace StutterFix
             var v = d as scrVisualDecoration;
             if ((object)v == null) return false;
             var r = rendererRef(v);
-            return (object)r != null && hidden.Contains(r);
+            return (object)r != null && hidden.ContainsKey(r);
         }
 
         internal static void ResetPeak()
         {
-            hidden.RemoveWhere(r => r == null); rejected.RemoveWhere(r => r == null);
+            RemoveDead(); rejected.RemoveWhere(r => r == null);
             Peak = hidden.Count; Compares = ComparesDiffer = 0;
             Calls = Toggles = Ticks = 0; WorstFrameMs = 0; LazySkips = LazyApplied = 0;
             Verified = ChildDiff = PivotPosDiff = PivotRotDiff = PivotScaleDiff = 0; FirstDiff = ""; verify.RemoveWhere(d => d == null);
@@ -334,7 +397,7 @@ namespace StutterFix
             yield return new WaitForEndOfFrame();
             Texture2D a = null, b = null;
             var list = new List<SpriteRenderer>();
-            foreach (var r in hidden) if (r != null) list.Add(r);
+            foreach (var r in hidden.Keys) if (r != null) list.Add(r);
             try
             {
                 a = RenderCams();

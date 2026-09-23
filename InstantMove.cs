@@ -213,6 +213,7 @@ namespace StutterFix
         //   HidC   : 안 그림 여부 (0 모름, 1 안 그림, 2 그림). 색·불투명도를 실제로 넣으면 다시 본다
         //   LazyC  : 투명 장식 위치 미루기 조건 (0 모름, 1 됨, 2 안 됨). 위치 X 와 Y 사이에는 조건에 쓰는 값이 바뀌지 않는다
         internal static bool InLoop, NoKill;
+        internal static bool NoSample;   // 개발자용: 미리 확인 검증처럼 "아무것도 안 바뀌어야 하는" 실행에서는 원래 함수를 부르는 표본 대조를 끈다
         internal static int HidC, LazyC;
         internal static void DecoStart(bool noKill) { NoKill = noKill; HidC = 0; LazyC = 0; }
         internal static void DecoEnd() { NoKill = false; HidC = 0; LazyC = 0; }
@@ -297,7 +298,7 @@ namespace StutterFix
         private static Snap snap; private static bool snapPending;
         private static bool Skip(scrDecoration dec)
         {
-            if (Edition.Dev && (++sameCounter & 15) == 0) { snap = Take(dec); snapPending = true; return false; }
+            if (Edition.Dev && !NoSample && (++sameCounter & 15) == 0) { snap = Take(dec); snapPending = true; return false; }
             SameSkipped++;
             return true;
         }
@@ -407,7 +408,7 @@ namespace StutterFix
             var off = pivotOffRef(dec);
             if (NoopOn && LazyCanC(dec))
             {
-                if (!(Edition.Dev && (++sameCounter & 15) == 0))
+                if (!(Edition.Dev && !NoSample && (++sameCounter & 15) == 0))
                 {
                     InvisibleSkip.LazyStore(dec, p, off);
                     SameSkipped++;

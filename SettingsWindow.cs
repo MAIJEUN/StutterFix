@@ -433,12 +433,12 @@ namespace StutterFix
 
             var c = Main.Config;
             int on = (c.GcPause ? 1 : 0) + (c.EffectSplit ? 1 : 0) + (c.RecolorSplit ? 1 : 0) + (c.TweenGuard ? 1 : 0) + (c.SkipSameText ? 1 : 0)
-                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.SkipSame ? 1 : 0) + (c.FastLoop ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
+                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.SkipSame ? 1 : 0) + (c.FastLoop ? 1 : 0) + (c.Precheck ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
             string d = BootConfig.Describe();
             bool jobs = d.Contains("Jobified") || d.Contains("Split");
 
             GUILayout.BeginHorizontal();
-            Stat(on + " / 18", T("켜진 기능", "Features on"), true);
+            Stat(on + " / 19", T("켜진 기능", "Features on"), true);
             GUILayout.Space(14);
             Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"), false);
             GUILayout.Space(14);
@@ -556,6 +556,10 @@ namespace StutterFix
             ch |= Option("fastloop", ref c.FastLoop, T("장식 이동 루프", "Decoration move loop"),
                 T("길이 0 장식 이동 효과를 게임 코드 대신 모드의 루프로 돕니다. 게임 코드는 장식마다 객체를 여러 개 만들고 대상 목록을 여러 겹으로 훑는데, 같은 순서로 같은 일만 합니다. 이미지·마스크를 바꾸는 효과는 원래대로 둡니다(\"즉시 이동 최적화\"와 \"즉시 이동 직접 처리\"가 켜져 있어야 동작).",
                   "Runs zero-length decoration move effects in the mod's own loop instead of the game code, which allocates several objects per decoration and walks the target list through layered queries. Same work in the same order. Effects that change images or masks are left alone (needs \"Instant decoration moves\" and \"Direct instant moves\")."),
+                T("효과 몰림", "Effect bursts"));
+            ch |= Option("precheck", ref c.Precheck, T("미리 확인", "Look-ahead check"),
+                T("곧 발동할 무거운 장식 이동 효과(대상 200개 이상)가 이미 투명하고 값도 그대로인 장식에만 닿는지 몇 초 앞서 여유 있는 프레임에 나눠 확인해 두고, 발동할 때까지 대상이 하나도 안 바뀌었으면 효과를 통째로 건너뜁니다. 대상이 바뀌는 모든 길을 지켜보다가 하나라도 바뀌면 원래대로 돕니다(\"장식 이동 루프\"와 \"투명 장식 빠른 처리\"가 켜져 있어야 동작).",
+                  "Checks upcoming heavy decoration moves (200+ targets) a few seconds ahead, spread over idle frames, and skips the whole effect when every target is already hidden with the same values and nothing touched them since. Any change to a watched decoration cancels the check (needs \"Decoration move loop\" and \"Fast path for hidden decorations\")."),
                 T("효과 몰림", "Effect bursts"));
             ch |= Option("movefinish", ref c.MoveFinish, T("장식 위치 계산 줄이기", "Fewer position updates"),
                 T("장식을 옮길 때 위치 마무리 계산을 한 번으로 묶고, 값이 그대로인 쓰기와 플레이 중 필요 없는 편집기 작업을 건너뜁니다. 보이는 장식의 위치 재계산은 어차피 같은 프레임에 게임이 다시 하므로 그때 한 번만 합니다.",
@@ -999,7 +1003,7 @@ namespace StutterFix
         private void ResetDefaults()
         {
             var c = Main.Config;
-            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.SkipSame = c.FastLoop = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = true;
+            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.SkipSame = c.FastLoop = c.Precheck = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = true;
             if (!c.LegacyGfxJobs) { c.LegacyGfxJobs = true; BootConfig.Apply(true); }
             Save();
         }
