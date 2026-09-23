@@ -128,6 +128,19 @@ namespace StutterFix
         internal const int BucketSec = 10, MaxBuckets = 180;
         internal static int SongBucket = -1;   // 지금 프레임이 곡의 몇 번째 10초 구간인지 (곡 밖이면 -1). 개발자용 함수별 비용이 쓴다.
         internal static int SongFrameCount { get { return Instance != null ? Instance.songFrames : 0; } }
+        internal static bool WorstBucket(out int idx, out int frames)
+        {
+            idx = -1; frames = 0; double worstFps = double.MaxValue;
+            var o = Instance; if (o == null) return false;
+            for (int i = 0; i < MaxBuckets; i++)
+            {
+                if (o.bucketFrames[i] < 100) continue;
+                double fps = o.bucketFrames[i] / o.bucketMs[i];
+                if (fps < worstFps) { worstFps = fps; idx = i; frames = o.bucketFrames[i]; }
+            }
+            return idx >= 0;
+        }
+
         internal static bool BestBucket(out int idx, out int frames)
         {
             idx = -1; frames = 0; double bestFps = 0;

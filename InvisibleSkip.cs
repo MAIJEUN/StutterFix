@@ -45,27 +45,50 @@ namespace StutterFix
             catch (Exception ex) { Main.Entry.Logger.Log("[투명 장식] 설치 실패: " + ex.Message); }
         }
 
+        // Arche 는 장식 28,835개 중 28,811개가 투명한 채로 깔려 있고, 효과 몰림 프레임에 색·투명도 변경이 수천 개씩 몰린다.
+        // 그래서 이 자리는 호출 한 번이 싸야 한다. 대부분은 "투명 -> 투명" 이라 할 일이 없는데, 처음 판에서는 그때도
+        // 엔진 값(forceRenderingOff)을 읽었다. 이제는 우리 목록만 보고 끝낸다. 엔진 값은 실제로 바꿀 때만 건드린다.
+        private static readonly HashSet<SpriteRenderer> rejected = new HashSet<SpriteRenderer>();   // 알파를 믿을 수 없는 셰이더
+        internal static long Calls, Toggles, Ticks;
+        internal static double WorstFrameMs;
+        private static double frameMs;
+        private static int frame = -1;
+
         public static void After(scrVisualDecoration __instance)
         {
             if (!Enabled) return;
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
                 var r = rendererRef(__instance);
-                if (r == null) return;
-                bool zero = colorRef(__instance).a <= 0f;
-                if (zero)
+                if ((object)r == null) return;
+                Calls++;
+                if (colorRef(__instance).a <= 0f)
                 {
-                    if (r.forceRenderingOff || !AlphaMeansVisibility(r)) return;
+                    if (hidden.Contains(r) || rejected.Contains(r)) return;
+                    if (!AlphaMeansVisibility(r)) { rejected.Add(r); return; }
                     r.forceRenderingOff = true;
                     hidden.Add(r);
+                    Toggles++;
                     if (hidden.Count > Peak) Peak = hidden.Count;
                 }
-                else if (r.forceRenderingOff && hidden.Remove(r))
+                else if (hidden.Remove(r))
                 {
                     r.forceRenderingOff = false;
+                    Toggles++;
                 }
             }
             catch { }
+            finally
+            {
+                // 이 기능이 효과 몰림 프레임을 늘리지 않는지 보려고, 쓴 시간과 가장 많이 쓴 프레임을 잰다.
+                long d = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+                Ticks += d;
+                int f = Time.frameCount;
+                if (f != frame) { frame = f; frameMs = 0; }
+                frameMs += d * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                if (frameMs > WorstFrameMs) WorstFrameMs = frameMs;
+            }
         }
 
         private static bool AlphaMeansVisibility(SpriteRenderer r)
@@ -90,6 +113,7 @@ namespace StutterFix
             foreach (var r in hidden)
                 if (r != null) r.forceRenderingOff = false;
             hidden.Clear();
+            rejected.Clear();
         }
 
         internal static void Uninstall() { RestoreAll(); }
@@ -101,10 +125,17 @@ namespace StutterFix
             string s = "지금 안 그리는 투명 장식 " + hidden.Count + "개, 곡 중 최대 " + Peak + "개";
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
             if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
+            s += string.Format(" | 색 바뀜 {0}번 확인, 그리기 켜고 끈 것 {1}번, 쓴 시간 {2:F1}ms, 가장 많이 쓴 프레임 {3:F2}ms",
+                Calls, Toggles, Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency, WorstFrameMs);
             return s;
         }
 
-        internal static void ResetPeak() { hidden.RemoveWhere(r => r == null); Peak = hidden.Count; Compares = ComparesDiffer = 0; }
+        internal static void ResetPeak()
+        {
+            hidden.RemoveWhere(r => r == null); rejected.RemoveWhere(r => r == null);
+            Peak = hidden.Count; Compares = ComparesDiffer = 0;
+            Calls = Toggles = Ticks = 0; WorstFrameMs = 0;
+        }
 
         // ── 개발자용: 정말 화면이 같은지 픽셀로 확인 ──
         // 곡 중 20초마다, 같은 프레임을 "투명 장식 뺀 채" 와 "다 그린 채" 로 두 번 그려 비교한다.

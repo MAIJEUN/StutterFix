@@ -142,6 +142,9 @@ namespace StutterFix
             int best, bestFrames;
             if (PerfOverlay.BestBucket(out best, out bestFrames))
                 Main.Entry.Logger.Log("[엔진 단계] 가장 가벼운 구간 " + best * 10 + "초, 프레임당: " + Rank(i => bucketTicks[best, i], bestFrames));
+            int worst, worstFrames;
+            if (PerfOverlay.WorstBucket(out worst, out worstFrames))
+                Main.Entry.Logger.Log("[엔진 단계] 가장 무거운 구간 " + worst * 10 + "초, 프레임당: " + Rank(i => bucketTicks[worst, i], worstFrames));
         }
 
         private static string Rank(Func<int, long> t, int frames)
