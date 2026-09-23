@@ -270,7 +270,7 @@ namespace StutterFix
             }
             if (!ADOBase.customLevel) return No(1);                                        // 공식 맵: 길이 보정(AdjustDurationForHardbake)이 있다
             if ((int)ADOBase.controller.visualQuality == 10) return No(2);                 // 원래 코드의 그래픽 설정 검사는 원래대로
-            if (imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx)) return No(3);
+            if (AnyImg(fx) && !ImgSafe(fx)) return No(3);                                // 이미지·마스크: 준비 실패나 원래 코드가 예외를 낼 이름이면 원래대로
             var tags = tagsRef(fx); var mgr = mgrRef(fx);
             if (tags == null || (object)mgr == null) return No(4);
             var dict = taggedRef(mgr);
@@ -387,6 +387,98 @@ namespace StutterFix
             for (int i = 0; i < list.Count && i < 8; i++) sb.AppendFormat(" {0} 효과 {1}개 장식 {2}개,", MixName(list[i].Key), list[i].Value[0], list[i].Value[1]);
             return sb.ToString().TrimEnd(',');
         }
+        // ── 이미지·원래 크기·부드럽게·마스크 블록 (원래 코드 IL 2526~2881 과 같은 순서) ──
+        // 깊이 다음에: 파티클 장식이면 파티클 이미지, 이미지 장식이면 이미지 -> 원래 크기 -> 부드럽게(값 넣고 SetSprite(null, true))
+        //   -> 마스크 종류 -> 마스크 대상 -> 마스크 깊이 사용 -> 앞/뒤 마스크 깊이
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, string> tImg = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, string>("targetImageFilename");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, Vector2> tSize = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, Vector2>("targetOriginalSize");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, bool> tSmooth = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, bool>("targetSmoothing");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, MaskingType> tMaskType = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, MaskingType>("targetMaskingType");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, string> tMaskTarget = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, string>("targetmaskingTarget");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, bool> tUseMaskDepth = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, bool>("targetUseMaskingDepth");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, int> tFront = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, int>("targetMaskingFrontDepth");
+        private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, int> tBack = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, int>("targetMaskingBackDepth");
+        private static readonly AccessTools.FieldRef<scrDecorationManager, TextureManager> imageHolderRef = AccessTools.FieldRefAccess<scrDecorationManager, TextureManager>("imageHolder");
+        private static readonly AccessTools.FieldRef<TextureManager, Dictionary<string, TextureManager.CustomSprite>> spritesRef = AccessTools.FieldRefAccess<TextureManager, Dictionary<string, TextureManager.CustomSprite>>("customSprites");
+        private static readonly AccessTools.FieldRef<scrVisualDecoration, bool> smoothingRef = AccessTools.FieldRefAccess<scrVisualDecoration, bool>("smoothing");
+        private static Action<scrVisualDecoration, TextureManager.CustomSprite, bool> setSprite;
+        private static Action<scrVisualDecoration, Vector2> setTexScale;
+        private static Action<scrVisualDecoration, MaskingType> setMaskType;
+        private static Action<scrVisualDecoration, string> setMaskTarget;
+        private static Action<scrParticleDecoration, TextureManager.CustomSprite> particleSetSprite;
+        private static Action<scrVisualDecoration, bool, int?, int?> maskDepth3;
+        private static Action<scrVisualDecoration, int?, int?> maskDepth2;
+        private static bool imgReady;
+        private static bool ImgInstall()
+        {
+            if (imgReady) return true;
+            try
+            {
+                var v = typeof(scrVisualDecoration);
+                setSprite = AccessTools.MethodDelegate<Action<scrVisualDecoration, TextureManager.CustomSprite, bool>>(AccessTools.Method(v, "SetSprite", new[] { typeof(TextureManager.CustomSprite), typeof(bool) }));
+                setTexScale = AccessTools.MethodDelegate<Action<scrVisualDecoration, Vector2>>(AccessTools.Method(v, "SetTextureScaleMultiplier", new[] { typeof(Vector2) }));
+                setMaskType = AccessTools.MethodDelegate<Action<scrVisualDecoration, MaskingType>>(AccessTools.Method(v, "SetMaskingType", new[] { typeof(MaskingType) }));
+                setMaskTarget = AccessTools.MethodDelegate<Action<scrVisualDecoration, string>>(AccessTools.Method(v, "SetMaskingTarget", new[] { typeof(string) }));
+                foreach (var m in typeof(scrParticleDecoration).GetMethods(AccessTools.all))
+                    if (m.Name == "SetSprite" && m.GetParameters().Length == 1 && m.DeclaringType == typeof(scrParticleDecoration)) particleSetSprite = AccessTools.MethodDelegate<Action<scrParticleDecoration, TextureManager.CustomSprite>>(m);
+                foreach (var m in v.GetMethods(AccessTools.all))
+                {
+                    if (m.Name != "SetMaskingDepth" || m.DeclaringType != v) continue;
+                    if (m.GetParameters().Length == 3) maskDepth3 = AccessTools.MethodDelegate<Action<scrVisualDecoration, bool, int?, int?>>(m);
+                    else if (m.GetParameters().Length == 2) maskDepth2 = AccessTools.MethodDelegate<Action<scrVisualDecoration, int?, int?>>(m);
+                }
+                imgReady = setSprite != null && setTexScale != null && setMaskType != null && setMaskTarget != null && particleSetSprite != null && maskDepth3 != null && maskDepth2 != null;
+            }
+            catch (Exception ex) { if (First.Length < 300) First += " [이미지 블록 준비 실패: " + ex.Message + "]"; imgReady = false; }
+            return imgReady;
+        }
+        private static void ImageBlock(ffxMoveDecorationsPlus fx, scrDecoration dec)
+        {
+            bool isVisual = dec is scrVisualDecoration, isParticle = dec is scrParticleDecoration;
+            if (isParticle && imgUsed(fx))
+            {
+                string fn = tImg(fx);
+                bool has = !string.IsNullOrEmpty(fn);
+                var sprites = spritesRef(imageHolderRef(scrDecorationManager.instance));
+                particleSetSprite((scrParticleDecoration)dec, has ? sprites[fn] : null);   // 원래도 사전 [] (없는 이름이면 Take 에서 원래 코드로 돌렸다)
+            }
+            if (!isVisual) return;
+            var vis = (scrVisualDecoration)dec;
+            if (imgUsed(fx))
+            {
+                var sprites = spritesRef(imageHolderRef(scrDecorationManager.instance));
+                TextureManager.CustomSprite cs;
+                string key = tImg(fx) ?? string.Empty;
+                if (!sprites.TryGetValue(key, out cs)) cs = null;   // GetValueOrDefault(키, null)
+                setSprite(vis, cs, false);
+            }
+            if (sizeUsed(fx)) setTexScale(vis, tSize(fx));
+            if (smoothUsed(fx)) { smoothingRef(vis) = tSmooth(fx); setSprite(vis, null, true); }
+            if (maskTypeUsed(fx)) setMaskType(vis, tMaskType(fx));
+            if (maskTargetUsed(fx)) setMaskTarget(vis, tMaskTarget(fx));
+            if (maskDepthUsed(fx)) maskDepth3(vis, tUseMaskDepth(fx), null, null);
+            if (maskFrontUsed(fx) || maskBackUsed(fx))
+                maskDepth2(vis, maskFrontUsed(fx) ? (int?)tFront(fx) : null, maskBackUsed(fx) ? (int?)tBack(fx) : null);
+        }
+        // 원래 코드와 똑같이 돌릴 수 있는가: 준비가 됐고, 이미지 사전이 있고, 파티클 장식이 쓸 이름이 사전에 있다
+        // (원래 코드는 파티클 장식에 사전 [] 를 써서 없는 이름이면 예외로 루프가 멈춘다 -> 그런 효과는 원래 코드로)
+        private static bool ImgSafe(ffxMoveDecorationsPlus fx)
+        {
+            if (!ImgInstall()) return false;
+            var mgr = scrDecorationManager.instance;
+            if ((object)mgr == null) return false;
+            var holder = imageHolderRef(mgr);
+            if ((object)holder == null) return false;
+            var sprites = spritesRef(holder);
+            if (sprites == null) return false;
+            if (imgUsed(fx)) { string fn = tImg(fx); if (!string.IsNullOrEmpty(fn) && !sprites.ContainsKey(fn)) return false; }
+            return true;
+        }
+        private static bool AnyImg(ffxMoveDecorationsPlus fx)
+        {
+            return imgUsed(fx) || sizeUsed(fx) || smoothUsed(fx) || maskTypeUsed(fx) || maskTargetUsed(fx) || maskDepthUsed(fx) || maskFrontUsed(fx) || maskBackUsed(fx);
+        }
+
         // 길이 있는 효과를 모드 애니메이터(DecoAnim)로 맡을 수 있는가: 위치·회전·크기·색·불투명도만 (피벗·시차 오프셋·시차 배율이 섞이면 원래대로),
         // 곡 시작 직후(되감기 구간)가 아님
         private static bool CanAnim(ffxMoveDecorationsPlus fx)
@@ -401,7 +493,7 @@ namespace StutterFix
             return true;
         }
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, float> tRot = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, float>("targetRot");
-        internal static long AnimEffects;
+        internal static long AnimEffects, ImgEffects;
         private static bool No(int w) { why[w]++; Fallbacks++; if (Edition.Dev) MoveProf.Fallback(w); return false; }
 
         private static void Run(ffxMoveDecorationsPlus fx)
@@ -411,7 +503,7 @@ namespace StutterFix
             Vector2 sc = tScaleV2(fx);
             bool placement = mtUsed(fx) && (int)mtRef(fx) != 7, relative = (int)mtRef(fx) == 7, move = !fdt(fx);
             bool pos = move && posUsed(fx), parOff = move && parOffUsed(fx), piv = move && pivUsed(fx), rot = move && rotUsed(fx), scale = move && scaleUsed(fx);
-            bool col = colUsed(fx), opa = opaUsed(fx), par = parUsed(fx), vis = visUsed(fx), dep = depthUsed(fx);
+            bool col = colUsed(fx), opa = opaUsed(fx), par = parUsed(fx), vis = visUsed(fx), dep = depthUsed(fx), img = AnyImg(fx);
             var tp = tPos(fx); var tpo = tParOff(fx); var tpv = tPiv(fx);
             bool px = !float.IsNaN(tp.x), py = !float.IsNaN(tp.y), pox = !float.IsNaN(tpo.x), poy = !float.IsNaN(tpo.y), pvx = !float.IsNaN(tpv.x), pvy = !float.IsNaN(tpv.y);
             bool sx = !float.IsNaN(sc.x), sy = !float.IsNaN(sc.y);
@@ -419,6 +511,7 @@ namespace StutterFix
             float dur = durRef(fx); var ease = easeRef(fx);
             float k = (!anim && (scale || par)) ? ZeroTween.EaseEnd(ease) : 1f;
             if (anim) AnimEffects++;
+            if (img) ImgEffects++;
             Vector2 parTarget = tParallax(fx) / 100f;
             var mt = mtRef(fx); bool visV = visible(fx); int depth = tDepth(fx);
 
@@ -458,6 +551,7 @@ namespace StutterFix
                         if (opa) DecoAnim.Opa(dec, d, tOpa(fx), dur, ease);
                         if (vis) setVisible(dec, visV ? !forceHideRef(dec) : false);
                         if (dep) setDepth(dec, depth);
+                        if (img) ImageBlock(fx, dec);   // 깊이 다음: 이미지·원래 크기·부드럽게·마스크
                         continue;
                     }
                     InstantMove.DecoStart(AllDead(d));
@@ -490,6 +584,7 @@ namespace StutterFix
                     InstantMove.DecoEnd();
                     if (vis) setVisible(dec, visV ? !forceHideRef(dec) : false);
                     if (dep) setDepth(dec, depth);
+                    if (img) ImageBlock(fx, dec);   // 깊이 다음: 이미지·원래 크기·부드럽게·마스크
                 }
             }
             finally { InstantMove.InLoop = false; InstantMove.DecoEnd(); }
@@ -519,7 +614,7 @@ namespace StutterFix
         private struct S
         {
             public Vector2 Pp, Po, Par, Scale, Mul; public float Rot, Opa; public Color Col, Rc, Src; public bool En, Lz, Hid, Fro, Live;
-            public Vector3 Child, PivPos, PivScale; public Quaternion PivRot; public int Order;
+            public Vector3 Child, PivPos, PivScale; public Quaternion PivRot; public int Order; public Sprite Spr; public Material Mat;
         }
         private static readonly AccessTools.FieldRef<scrDecoration, Vector2> pivotOffRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("pivotOffsetVec");
         private static readonly AccessTools.FieldRef<scrDecoration, Vector2> parOffRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("parallaxOffset");
@@ -545,7 +640,7 @@ namespace StutterFix
             var ch = childRef(dec); if (ch != null) s.Child = ch.localPosition;
             var pt = pivotTransRef(dec); if (pt != null) { s.PivPos = pt.localPosition; s.PivScale = pt.localScale; s.PivRot = pt.localRotation; }
             var v = dec as scrVisualDecoration; var r = (object)v == null ? null : srRef(v);
-            if (r != null) { s.Src = r.color; s.Fro = r.forceRenderingOff; s.Order = r.sortingOrder; }
+            if (r != null) { s.Src = r.color; s.Fro = r.forceRenderingOff; s.Order = r.sortingOrder; s.Spr = r.sprite; s.Mat = r.sharedMaterial; }
             var d = tweensRef(dec);
             if (d != null) foreach (var t in d.Values) if (t != null && t.active) { s.Live = true; break; }
             return s;
@@ -604,6 +699,8 @@ namespace StutterFix
             if (a.Lz != b.Lz) return "미루기 목록 " + a.Lz + " -> " + b.Lz;
             if (a.Hid != b.Hid || a.Fro != b.Fro) return "안 그림 " + a.Fro + " -> " + b.Fro;
             if (a.Order != b.Order) return "깊이 " + a.Order + " -> " + b.Order;
+            if (!ReferenceEquals(a.Spr, b.Spr)) return "이미지";
+            if (!ReferenceEquals(a.Mat, b.Mat)) return "재질";
             if (a.Live != b.Live) return "살아있는 애니메이션 " + a.Live + " -> " + b.Live;
             if (!Near(a.Child, b.Child)) return "안쪽 위치 " + a.Child.ToString("F5") + " -> " + b.Child.ToString("F5");
             if (!Near(a.PivPos, b.PivPos)) return "바깥 위치 " + a.PivPos.ToString("F5") + " -> " + b.PivPos.ToString("F5");
@@ -615,8 +712,8 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Effects == 0 && Fallbacks == 0) return "";
-            string s = string.Format(" | 장식 이동 루프: 효과 {0}개(장식 {1}개), 원래 코드로 넘긴 효과 {2}개 [길이 있음 {3}, 공식 맵 {4}, 그래픽 설정 {5}, 이미지·마스크 {6}, 대상 없음 {7}, null {8}]",
-                Effects, DecoCount, Fallbacks, why[0], why[1], why[2], why[3], why[4], why[5]);
+            string s = string.Format(" | 장식 이동 루프: 효과 {0}개(장식 {1}개), 원래 코드로 넘긴 효과 {2}개 [길이 있음 {3}, 공식 맵 {4}, 그래픽 설정 {5}, 이미지 준비 안 됨·없는 이미지 {6}, 대상 없음 {7}, null {8}], 이미지·마스크 바꾸는 효과 맡음 {9}개",
+                Effects, DecoCount, Fallbacks, why[0], why[1], why[2], why[3], why[4], why[5], ImgEffects);
             if (Edition.Dev) s += " (검증 " + Checked + "번, 장식 " + CheckedDecos + "개 중 다름 " + Mismatch + ", 보이다 투명해져서 목록만 다른 것 " + Explained + ", 개발자용 정답 표본이라 목록만 다른 것 " + TruthDiff + First + ")";
             else if (First.Length > 0) s += First;
             s += Precheck.Summary();
@@ -624,6 +721,6 @@ namespace StutterFix
             s += DecoAnim.Summary();
             return s;
         }
-        internal static void Reset() { animMix.Clear(); DecoAnim.ResetStats(); AnimEffects = 0; Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { animMix.Clear(); DecoAnim.ResetStats(); AnimEffects = ImgEffects = 0; Precheck.ResetStats(); stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = TruthDiff = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }
