@@ -58,7 +58,7 @@ namespace StutterFix
                     var p = m.GetParameters();
                     if (p.Length == 1 && p[0].ParameterType.IsAssignableFrom(typeof(List<string>)) && getTagged == null) getTagged = m;
                 }
-                h.Patch(start, prefix: new HarmonyMethod(typeof(MoveProf), nameof(Pre)) { priority = Priority.Last },
+                h.Patch(start, prefix: new HarmonyMethod(typeof(MoveProf), nameof(Pre)) { priority = Priority.VeryLow },   // FastMove(맨 끝) 보다 먼저
                     postfix: new HarmonyMethod(typeof(MoveProf), nameof(Post)) { priority = Priority.First });
 
                 int subs = 0;
@@ -80,9 +80,12 @@ namespace StutterFix
         private static long start;
         private static double ztStart;
 
+        // FastMove 검증이 원래 코드를 한 번 더 돌리는 동안은 재지 않는다
+        internal static bool Pause;
+        internal static void Exclude(long ticks) { if (inMove) start += ticks; }
         public static void Pre(ffxMoveDecorationsPlus __instance, bool __runOriginal)
         {
-            if (!__runOriginal || inMove) return;
+            if (!__runOriginal || inMove || Pause) return;
             cur.Effects++;
             if (durRef(__instance) <= 0f) cur.ZeroEffects++;
             // 태그 목록을 따로 한 번 끝까지 훑어 그 시간과 장식 수를 잰다 (원래 코드가 훑는 것과 같은 LINQ)
@@ -106,7 +109,7 @@ namespace StutterFix
 
         public static void Post(bool __runOriginal)
         {
-            if (!inMove) return;
+            if (!inMove || Pause) return;
             cur.Total += TS() - start;
             cur.ZtMs += ZeroTween.FrameToMs + ZeroTween.FrameDoneMs - ztStart;
             inMove = false;

@@ -109,10 +109,21 @@ namespace StutterFix
             if (custom == null) { lastEase = e; lastOver = ov; lastPeriod = pe; lastK = k; }
             return k;
         }
+        // FastMove 가 쓴다: 대역에 게임 코드처럼 SetEase(ease) 를 한 뒤의 이징 끝점 (Flash 계열의 overshoot 정수화까지 같은 경로)
+        private static TweenerCore<Vector2, Vector2, VectorOptions> kT;
+        internal static bool CanEase { get { return activeRef != null && easeEval != null; } }
+        internal static float EaseEnd(Ease ease)
+        {
+            var t = Proxy(ref kT);
+            t.SetEase(ease);
+            float k = EaseAtEnd(t);
+            activeRef(t) = false;
+            return k;
+        }
 
         // DOTween 플러그인과 같은 계산. 변화량은 float 로 한 번 반올림해 둔다(DOTween 은 changeValue 필드에 저장한다).
         private static float Calc(float s, float e, float k) { float ch = e - s; float m = ch * k; return s + m; }
-        private static Vector2 Calc(Vector2 s, Vector2 e, float k, VectorOptions o)
+        internal static Vector2 Calc(Vector2 s, Vector2 e, float k, VectorOptions o)
         {
             Vector2 ch = e - s, r;
             switch (o.axisConstraint)

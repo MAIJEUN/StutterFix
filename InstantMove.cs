@@ -90,6 +90,7 @@ namespace StutterFix
                 setRot = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetRotation", new[] { typeof(float) }));
                 setOpa = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetOpacity", new[] { typeof(float) }));
                 setCol = AccessTools.MethodDelegate<Action<scrDecoration, Color>>(AccessTools.Method(d, "SetColor", new[] { typeof(Color) }));
+                setScale = AccessTools.MethodDelegate<Action<scrDecoration, Vector2>>(AccessTools.Method(d, "SetScale", new[] { typeof(Vector2) }));
                 dead = AccessTools.CreateInstance<TweenerCore<float, float, FloatOptions>>();   // 끝난 애니메이션 자리(active = false)
                 h.Patch(start, transpiler: new HarmonyMethod(typeof(InstantMove), nameof(Transpiler)) { priority = Priority.Last },
                     postfix: new HarmonyMethod(typeof(InstantMove), nameof(After)));
@@ -311,16 +312,64 @@ namespace StutterFix
         private static void M1(int key, scrDecoration dec, bool same) { MoveProf.Setter(key, System.Diagnostics.Stopwatch.GetTimestamp() - mT, same, mHid && InvisibleSkip.IsHidden(dec)); }
         private static bool Eq(float a, float b) { return Bits(a) == Bits(b); }
 
+        // 게임 코드 안에 끼운 도우미: 길이 0 이 아니거나(원래 애니메이션) 개발자용 표본이면 false 를 돌려 원래 블록이 돈다.
         public static bool PosX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startX)
         {
             if (!Use(fx)) { Expect(dec, 1, startX + tPos(fx).x); return false; }
-            Kill(d, 1);
-            var p = pivotPosRef(dec); p.x = startX + tPos(fx).x;
-            return Pos(1, dec, d, p);
+            return CPosX(fx, dec, d, startX);
         }
         public static bool PosY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startY)
         {
             if (!Use(fx)) { Expect(dec, 2, startY + tPos(fx).y); return false; }
+            return CPosY(fx, dec, d, startY);
+        }
+        public static bool ParX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { Expect(dec, 12, tPar(fx).x); return false; }
+            return CParX(fx, dec, d);
+        }
+        public static bool ParY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { Expect(dec, 13, tPar(fx).y); return false; }
+            return CParY(fx, dec, d);
+        }
+        public static bool PivX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { Expect(dec, 3, tPiv(fx).x); return false; }
+            return CPivX(fx, dec, d);
+        }
+        public static bool PivY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { Expect(dec, 4, tPiv(fx).y); return false; }
+            return CPivY(fx, dec, d);
+        }
+        public static bool Rot(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { Expect(dec, 5, tRot(fx)); return false; }
+            return CRot(fx, dec, d);
+        }
+        public static bool Col(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { ExpectC(dec, tCol(fx)); return false; }
+            return CCol(fx, dec, d);
+        }
+        public static bool Opa(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        {
+            if (!Use(fx)) { Expect(dec, 10, tOpa(fx)); return false; }
+            return COpa(fx, dec, d);
+        }
+
+        // ── 속성 하나의 길이 0 처리 (끼운 도우미와 FastMove 루프가 같이 쓴다) ──
+        // 개발자용 시간 재기(Done 의 FrameMs)는 t0 부터 잰다. FastMove 는 부르기 전에 Begin() 한다.
+        internal static void Begin() { if (Edition.Dev) t0 = System.Diagnostics.Stopwatch.GetTimestamp(); }
+        internal static bool CPosX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startX)
+        {
+            Kill(d, 1);
+            var p = pivotPosRef(dec); p.x = startX + tPos(fx).x;
+            return Pos(1, dec, d, p);
+        }
+        internal static bool CPosY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startY)
+        {
             Kill(d, 2);
             var p = pivotPosRef(dec); p.y = startY + tPos(fx).y;
             return Pos(2, dec, d, p);
@@ -355,44 +404,38 @@ namespace StutterFix
             if (Edition.Dev) SameAfter(dec, key == 1 ? "위치X" : "위치Y");
             return Done(d, key);
         }
-        public static bool ParX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool CParX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { Expect(dec, 12, tPar(fx).x); return false; }
             Kill(d, 12); float v = tPar(fx).x;
             if (P) { bool same = Eq(parOffRef(dec).x, v); M0(dec); setParX(dec, v); M1(12, dec, same); } else setParX(dec, v);
             return Done(d, 12);
         }
-        public static bool ParY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool CParY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { Expect(dec, 13, tPar(fx).y); return false; }
             Kill(d, 13); float v = tPar(fx).y;
             if (P) { bool same = Eq(parOffRef(dec).y, v); M0(dec); setParY(dec, v); M1(13, dec, same); } else setParY(dec, v);
             return Done(d, 13);
         }
-        public static bool PivX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool CPivX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { Expect(dec, 3, tPiv(fx).x); return false; }
             Kill(d, 3); float v = tPiv(fx).x;
             if (P) { bool same = Eq(pivotOffRef(dec).x, v); M0(dec); setPivX(dec, v); M1(3, dec, same); } else setPivX(dec, v);
             return Done(d, 3);
         }
-        public static bool PivY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool CPivY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { Expect(dec, 4, tPiv(fx).y); return false; }
             Kill(d, 4); float v = tPiv(fx).y;
             if (P) { bool same = Eq(pivotOffRef(dec).y, v); M0(dec); setPivY(dec, v); M1(4, dec, same); } else setPivY(dec, v);
             return Done(d, 4);
         }
-        public static bool Rot(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool CRot(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { Expect(dec, 5, tRot(fx)); return false; }
             Kill(d, 5); float v = tRot(fx);
             if (P) { bool same = Eq(rotRef(dec), v); M0(dec); setRot(dec, v); M1(5, dec, same); } else setRot(dec, v);
             return Done(d, 5);
         }
-        public static bool Col(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool CCol(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { ExpectC(dec, tCol(fx)); return false; }
             Kill(d, 9); Color v = tCol(fx);
             if (ColorNoop(dec, v, opaRef(dec)) && Skip(dec)) { if (P) MoveProf.Skipped(9); return Done(d, 9); }
             if (P) { var c = colRef(dec); bool same = Eq(c.r, v.r) && Eq(c.g, v.g) && Eq(c.b, v.b) && Eq(c.a, v.a); M0(dec); setCol(dec, v); M1(9, dec, same); }
@@ -400,15 +443,34 @@ namespace StutterFix
             if (Edition.Dev) SameAfter(dec, "색");
             return Done(d, 9);
         }
-        public static bool Opa(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
+        internal static bool COpa(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
-            if (!Use(fx)) { Expect(dec, 10, tOpa(fx)); return false; }
             Kill(d, 10); float v = tOpa(fx);
             if (ColorNoop(dec, colRef(dec), v) && Skip(dec)) { if (P) MoveProf.Skipped(10); return Done(d, 10); }
             if (P) { bool same = Eq(opaRef(dec), v); M0(dec); setOpa(dec, v); M1(10, dec, same); } else setOpa(dec, v);
             if (Edition.Dev) SameAfter(dec, "불투명도");
             return Done(d, 10);
         }
+        // 크기(7 = X 축, 8 = Y 축)와 시차 배율(11). 게임 코드는 OnComplete 없이 DOTween 으로 값을 넣는다.
+        // 길이 0 이면 "즉시 이동 최적화"(ZeroTween)가 하는 계산과 똑같이 한다: 시작값 = 지금 값, 끝값에 이징 끝점을 곱한 변화량을 더함.
+        internal static bool CScale(scrDecoration dec, Dictionary<global::TweenType, Tween> d, int key, Vector2 target, float k)
+        {
+            Kill(d, key);
+            var o = default(VectorOptions); o.axisConstraint = key == 7 ? AxisConstraint.X : AxisConstraint.Y;
+            setScale(dec, ZeroTween.Calc(scaleRef(dec), target, k, o));
+            return Done(d, key);
+        }
+        internal static bool CParMul(scrDecoration dec, Dictionary<global::TweenType, Tween> d, Vector2 target, float k)
+        {
+            Kill(d, 11);
+            var par = parRef(dec);
+            var s = par.multiplier;
+            par.multiplier = ZeroTween.Calc(s, target, k, default(VectorOptions));
+            return Done(d, 11);
+        }
+        private static readonly AccessTools.FieldRef<scrDecoration, Vector2> scaleRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("scaleVec");
+        private static readonly AccessTools.FieldRef<scrDecoration, scrParallax> parRef = AccessTools.FieldRefAccess<scrDecoration, scrParallax>("parallax");
+        internal static Action<scrDecoration, Vector2> setScale;
 
         // ── 개발자용 대조: 원래 코드로 돈 표본이 끝난 뒤 값이 모드 예측과 같은지 ──
         private struct Check { public scrDecoration D; public int Key; public float V; public Color C; }
