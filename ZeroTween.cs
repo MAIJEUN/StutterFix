@@ -52,6 +52,7 @@ namespace StutterFix
             catch { activeRef = null; }
             if (activeRef == null) { Main.Entry.Logger.Log("[즉시 이동] 대역을 만들 수 없어 적용 안 함"); return; }
             h.Patch(start, transpiler: new HarmonyMethod(typeof(ZeroTween), nameof(Transpiler)));
+            try { BuildPairs(); } catch (Exception ex) { Main.Entry.Logger.Log("[즉시 이동] 짝 찾기 실패: " + ex.Message); }
             Main.Entry.Logger.Log("[즉시 이동] 설치" + (Patched ? "" : " - 모양이 달라 적용 안 함"));
         }
 
@@ -282,14 +283,129 @@ namespace StutterFix
             gF = null; sF = null; gV = null; sV = null; gC = null; sC = null;
             activeRef(t) = false;
             Fast++;
-            if (onUpdate != null) { try { onUpdate(); } catch (Exception ex) { Log(ex); } }
+            // OnComplete 가 같은 장식 함수를 목표값으로 다시 부르는 짝이면 OnUpdate 는 곧바로 덮어써진다(아래 SkipUpdate 설명).
+            bool skipUpdate = onUpdate != null && onComplete != null && SkipUpdate && IsPair(onUpdate, onComplete);
+            bool verify = skipUpdate && Edition.Dev && (++pairCounter % 64) == 0;
+            if (skipUpdate) PairSkips++;
+            else if (onUpdate != null) { try { onUpdate(); } catch (Exception ex) { Log(ex); } }
             long t2 = prof ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             if (onComplete != null) { try { onComplete(); } catch (Exception ex) { Log(ex); } }
+            if (verify) VerifyPair(onUpdate, onComplete);
             if (prof)
             {
                 double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
                 ProfN++; ProfSet += (t1 - t0) * f; ProfUpdate += (t2 - t1) * f; ProfComplete += (System.Diagnostics.Stopwatch.GetTimestamp() - t2) * f;
             }
+        }
+
+        // ── OnUpdate 건너뛰기 ──
+        // 효과 몰림 프레임 측정(개발자용 116ms): 즉시 이동 43,256번의 Done(값 넣기 + 콜백)이 41.8ms, 그중 OnUpdate 0.69us, OnComplete 0.27us.
+        // 장식 이동 효과의 콜백 짝을 IL 로 확인하면 OnComplete 가 있는 9개 모두 OnUpdate 와 같은 장식 함수를 목표값으로 부른다:
+        //   SetPositionX/Y, SetParallaxOffsetX/Y, SetPivotX/Y, SetRotation, SetColor, SetOpacity.
+        // 이 함수들은 값 하나를 저장하고 그 값으로 다시 적용하는 순수한 설정 함수라(SetPosition / SetTrans / ApplyColor),
+        // f(이징 값) 다음 f(목표값) 은 f(목표값) 만 한 것과 같다. 그래서 즉시 이동에서는 OnUpdate 를 부르지 않는다.
+        // (크기, 시차 배율은 OnComplete 가 없어 그대로 부른다.)
+        // 개발자용: 64번에 한 번, 건너뛴 뒤 장식 상태를 기록하고 OnUpdate -> OnComplete 를 원래대로 다시 불러 상태가 같은지 비교한다.
+        internal static bool SkipUpdate = true;
+        internal static long PairSkips, PairChecked, PairMismatch;
+        internal static string PairFirst = "";
+        private static long pairCounter;
+        private sealed class RefEqM : IEqualityComparer<MethodInfo>
+        {
+            internal static readonly RefEqM I = new RefEqM();
+            public bool Equals(MethodInfo a, MethodInfo b) { return ReferenceEquals(a, b); }
+            public int GetHashCode(MethodInfo m) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(m); }
+        }
+        private static readonly Dictionary<MethodInfo, MethodInfo> pairs = new Dictionary<MethodInfo, MethodInfo>(RefEqM.I);
+
+        private static void BuildPairs()
+        {
+            var byName = new Dictionary<string, MethodInfo>();
+            foreach (var nt in typeof(ffxMoveDecorationsPlus).GetNestedTypes(AccessTools.all))
+                foreach (var m in nt.GetMethods(AccessTools.all))
+                    if (m.DeclaringType == nt && m.Name.StartsWith("<StartEffect>b__")) byName[m.Name.Substring("<StartEffect>b__".Length)] = m;
+            // IL 로 확인한 짝 (OnUpdate, OnComplete)
+            int[,] p = { { 2, 3 }, { 6, 7 }, { 10, 11 }, { 14, 15 }, { 18, 19 }, { 22, 23 }, { 26, 27 }, { 34, 35 }, { 38, 39 } };
+            string[] fn = { "SetPositionX", "SetPositionY", "SetParallaxOffsetX", "SetParallaxOffsetY", "SetPivotX", "SetPivotY", "SetRotation", "SetColor", "SetOpacity" };
+            for (int i = 0; i < p.GetLength(0); i++)
+            {
+                MethodInfo u, c;
+                if (!byName.TryGetValue(p[i, 0].ToString(), out u) || !byName.TryGetValue(p[i, 1].ToString(), out c)) continue;
+                // 게임이 바뀌어 번호가 달라졌을 수 있으니, 둘 다 기대한 장식 함수를 부르는지 IL 에서 다시 확인한다
+                if (!Calls(u, fn[i]) || !Calls(c, fn[i])) continue;
+                pairs[u] = c;
+            }
+            Main.Entry.Logger.Log("[즉시 이동] OnUpdate 건너뛸 짝 " + pairs.Count + "개 (예상 9개)");
+        }
+
+        private static bool Calls(MethodInfo m, string name)
+        {
+            try
+            {
+                foreach (var ins in PatchProcessor.GetOriginalInstructions(m))
+                {
+                    var mi = ins.operand as MethodInfo;
+                    if (mi != null && mi.Name == name && mi.DeclaringType == typeof(scrDecoration)) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool IsPair(TweenCallback u, TweenCallback c)
+        {
+            MethodInfo want;
+            return pairs.Count > 0 && pairs.TryGetValue(u.Method, out want) && ReferenceEquals(want, c.Method);
+        }
+
+        // 개발자용 대조: 지금(건너뛴 뒤) 상태 -> 원래 순서로 다시 적용 -> 상태 비교
+        private static readonly Dictionary<Type, FieldInfo[]> decoPath = new Dictionary<Type, FieldInfo[]>();
+        private static scrDecoration FindDeco(object target)
+        {
+            // 클로저 객체에서 장식까지: 직접 dec 필드, 또는 CS$<>8__locals 를 따라 올라가서 dec
+            for (int depth = 0; depth < 4 && target != null; depth++)
+            {
+                var ty = target.GetType();
+                var dec = AccessTools.Field(ty, "dec");
+                if (dec != null) return dec.GetValue(target) as scrDecoration;
+                FieldInfo up = null;
+                foreach (var f in ty.GetFields(AccessTools.all)) if (f.Name.StartsWith("CS$<>8__locals")) { up = f; break; }
+                if (up == null) return null;
+                target = up.GetValue(target);
+            }
+            return null;
+        }
+
+        private static string Snap(scrDecoration d)
+        {
+            var t = Traverse.Create(d);
+            var sb = new System.Text.StringBuilder();
+            foreach (var n in new[] { "pivotPosVec", "pivotOffsetVec", "parallaxOffset", "scaleVec" }) sb.Append(((Vector2)t.Field(n).GetValue()).ToString("R")).Append(';');
+            sb.Append(((float)t.Field("rotAngle").GetValue()).ToString("R")).Append(';');
+            sb.Append(((Color)t.Field("color").GetValue()).ToString("R")).Append(';');
+            sb.Append(((float)t.Field("opacity").GetValue()).ToString("R")).Append(';');
+            sb.Append(((Color)t.Field("rendererColor").GetValue()).ToString("R")).Append(';');
+            var ct = t.Field("childTransform").GetValue() as Transform; var pt = t.Field("pivotTrans").GetValue() as Transform;
+            if (ct != null) sb.Append(ct.localPosition.ToString("R")).Append(';');
+            if (pt != null) sb.Append(pt.localPosition.ToString("R")).Append(';').Append(pt.localScale.ToString("R")).Append(';').Append(pt.localRotation.ToString("R")).Append(';');
+            var v = d as scrVisualDecoration;
+            if (v != null) { var sr = Traverse.Create(v).Field("spriteRenderer").GetValue() as SpriteRenderer; if (sr != null) sb.Append(sr.color.ToString("R")).Append(sr.forceRenderingOff); }
+            return sb.ToString();
+        }
+
+        private static void VerifyPair(TweenCallback u, TweenCallback c)
+        {
+            try
+            {
+                var d = FindDeco(c.Target);
+                if (d == null) return;
+                string a = Snap(d);
+                u(); c();
+                string b = Snap(d);
+                PairChecked++;
+                if (a != b) { PairMismatch++; if (PairFirst.Length < 500) PairFirst += " [" + c.Method.Name + " 건너뜀: " + a + " / 원래: " + b + "]"; }
+            }
+            catch (Exception ex) { if (PairFirst.Length < 500) PairFirst += " [검증 오류 " + ex.Message + "]"; }
         }
 
         // ── (개발자용) 남은 비용 쪼개기: 값 넣기 / OnUpdate / OnComplete 에 각각 얼마나 쓰는지, 같은 콜백이 얼마나 반복되는지 ──
@@ -390,9 +506,11 @@ namespace StutterFix
         internal static string Summary()
         {
             return string.Format("애니메이션 없이 처리 {0}개 | 표본 비교 {1}개 중 다름 {2}{3} | 콜백 없는 것 {4}",
-                Fast, Checked, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback) + Profile();
+                Fast, Checked, Mismatch, Mismatch > 0 ? " (예: " + FirstMismatch + ")" : "", NoCallback)
+                + (PairSkips > 0 ? " | 덮어써질 OnUpdate 건너뜀 " + PairSkips + "번" + (Edition.Dev ? " (상태 대조 " + PairChecked + "번 중 다름 " + PairMismatch + PairFirst + ")" : "") : "")
+                + Profile();
         }
 
-        internal static void Reset() { ProfN = 0; ProfSet = ProfUpdate = ProfComplete = 0; dupUpdate = 0; cbCount.Clear(); Fast = Checked = Mismatch = NoCallback = 0; FirstMismatch = ""; sample.Clear(); }
+        internal static void Reset() { ProfN = 0; ProfSet = ProfUpdate = ProfComplete = 0; dupUpdate = 0; cbCount.Clear(); Fast = Checked = Mismatch = NoCallback = 0; FirstMismatch = ""; sample.Clear(); PairSkips = PairChecked = PairMismatch = 0; PairFirst = ""; }
     }
 }
