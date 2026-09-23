@@ -126,7 +126,7 @@ namespace StutterFix
         // 곡 평균만으로는 "가벼운 구간에서 몇 FPS 까지 나오나" 를 알 수 없다(같은 설정으로도 곡 평균이 121~149 로 흔들렸다).
         // 곡을 10초씩 잘라 구간마다 평균을 남긴다.
         private const int BucketSec = 10, MaxBuckets = 180;
-        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets];
+        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets], bucketRender = new double[MaxBuckets], bucketWait = new double[MaxBuckets];
         private readonly int[] bucketFrames = new int[MaxBuckets];
 
         private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod, IsLoading; public string Cause, Detail, Title, Short; public Color Tone; }
@@ -189,10 +189,13 @@ namespace StutterFix
         // 프레임 시간 통계(FrameTimingManager)는 게임 설정에서 꺼져 있으면 아무것도 주지 않는다.
         // 개발자용에서는 다른 측정기가 켜 둔 덕에 값이 나왔고, 플레이어용에서는 "수집 0번" 이라 모든 끊김이
         // "원인 불명" 이 됐다. 이 두 기록기를 켜 두면 유니티가 프레임 시간 통계를 켠다. 값도 여기서 바로 읽을 수 있다.
-        private static Unity.Profiling.ProfilerRecorder recGpu, recCpu;
+        private static Unity.Profiling.ProfilerRecorder recGpu, recCpu, recRender, recWait;
+        // 프레임 시간이 메인 스레드 시간보다 1.7ms 길게 나오는 판이 있었다. 그 차이가 렌더 스레드를 기다린 것인지,
+        // 화면 넘기기(Present)를 기다린 것인지 가르려고 둘 다 잰다.
+        private float lastRender, lastWait;
         internal static void StopRecorders()
         {
-            try { if (recGpu.Valid) recGpu.Dispose(); if (recCpu.Valid) recCpu.Dispose(); } catch { }
+            try { if (recGpu.Valid) recGpu.Dispose(); if (recCpu.Valid) recCpu.Dispose(); if (recRender.Valid) recRender.Dispose(); if (recWait.Valid) recWait.Dispose(); } catch { }
         }
 
         private void CaptureTiming()
@@ -203,6 +206,8 @@ namespace StutterFix
                 {
                     recGpu = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "GPU Frame Time");
                     recCpu = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "CPU Main Thread Frame Time");
+                    recRender = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "CPU Render Thread Frame Time");
+                    recWait = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "CPU Main Thread Present Wait Time");
                 }
                 FrameTimingManager.CaptureFrameTimings();
                 uint got = FrameTimingManager.GetLatestTimings(1, timing);
@@ -214,6 +219,8 @@ namespace StutterFix
                     {
                         gpuRing[timingHead] = lastGpu = g;
                         cpuRing[timingHead] = lastCpu = c;
+                        lastRender = recRender.Valid ? recRender.LastValue / 1e6f : 0f;
+                        lastWait = recWait.Valid ? recWait.LastValue / 1e6f : 0f;
                         timingSamples++;
                         timingHead = (timingHead + 1) % gpuRing.Length;
                     }
@@ -224,6 +231,8 @@ namespace StutterFix
                     // 메인 스레드 시간이 비어 오는 환경이 있다. 그때는 전체 CPU 프레임 시간으로 대신한다
                     double cm = timing[0].cpuMainThreadFrameTime;
                     cpuRing[timingHead] = lastCpu = (float)(cm > 0 ? cm : timing[0].cpuFrameTime);
+                    lastRender = (float)timing[0].cpuRenderThreadFrameTime;
+                    lastWait = (float)timing[0].cpuMainThreadPresentWaitTime;
                     timingSamples++;
                     timingHead = (timingHead + 1) % gpuRing.Length;
                 }
@@ -268,12 +277,12 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); }
+            if (playing && !wasPlaying) { songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
             wasPlaying = playing;
             if (playing && ms < 1500f)
             {
                 int b = (int)(songMs / (BucketSec * 1000.0));
-                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; }
+                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
                 if (lastGpu > 0f || lastCpu > 0f) { songGpu += lastGpu; songCpu += lastCpu; songTiming++; }
                 songMod += ModCost.LastFrameMs;   // 모드가 그 프레임에 쓴 시간(모니터 그리기 포함)
@@ -445,7 +454,8 @@ namespace StutterFix
             {
                 if (o.bucketFrames[i] < 10) continue;
                 double fps = 1000.0 * o.bucketFrames[i] / o.bucketMs[i];
-                sb.AppendFormat(" {0}s {1:F0}({2:F1})", i * BucketSec, fps, o.bucketCpu[i] / o.bucketFrames[i]);
+                int n = o.bucketFrames[i];
+                sb.AppendFormat(" {0}s {1:F0}({2:F1}/{3:F1}/{4:F1})", i * BucketSec, fps, o.bucketCpu[i] / n, o.bucketRender[i] / n, o.bucketWait[i] / n);
                 if (fps > bestFps) { bestFps = fps; best = i; }
             }
             if (best >= 0) sb.AppendFormat(" | 가장 높은 구간 {0}s {1:F0} FPS", best * BucketSec, bestFps);
