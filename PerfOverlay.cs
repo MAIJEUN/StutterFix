@@ -448,7 +448,7 @@ namespace StutterFix
             if (o.songTiming > 0)
                 s += string.Format(" | GPU 평균 {0:F1}ms, CPU 평균 {1:F1}ms ({2}개 잼)", o.songGpu / o.songTiming, o.songCpu / o.songTiming, o.songTiming);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
-            var sb = new System.Text.StringBuilder("\n[곡] 10초 구간별 FPS (CPU ms):");
+            var sb = new System.Text.StringBuilder("\n[곡] 10초 구간별 FPS (메인/렌더 스레드/화면 대기 ms):");
             int best = -1; double bestFps = 0;
             for (int i = 0; i < MaxBuckets; i++)
             {
