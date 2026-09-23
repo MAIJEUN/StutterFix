@@ -402,7 +402,7 @@ namespace StutterFix
         }
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, float> tRot = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, float>("targetRot");
         internal static long AnimEffects;
-        private static bool No(int w) { why[w]++; Fallbacks++; return false; }
+        private static bool No(int w) { why[w]++; Fallbacks++; if (Edition.Dev) MoveProf.Fallback(w); return false; }
 
         private static void Run(ffxMoveDecorationsPlus fx)
         {

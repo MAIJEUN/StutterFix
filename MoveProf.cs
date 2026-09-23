@@ -103,6 +103,7 @@ namespace StutterFix
                 catch { }
             }
             inMove = true;
+            fxBefore = FastMove.Effects + Precheck.Used;
             ztStart = ZeroTween.FrameToMs + ZeroTween.FrameDoneMs;
             start = TS();
         }
@@ -110,14 +111,42 @@ namespace StutterFix
         public static void Post(bool __runOriginal)
         {
             if (!inMove || Pause) return;
-            cur.Total += TS() - start;
+            long el = TS() - start;
+            cur.Total += el;
+            if (FastMove.Effects + Precheck.Used == fxBefore) { origTicks += el; origN++; }   // 장식 이동 루프도, 미리 확인도 안 맡았다 = 원래 코드
             cur.ZtMs += ZeroTween.FrameToMs + ZeroTween.FrameDoneMs - ztStart;
             inMove = false;
         }
 
         private static int subDepth; private static long subStart;
-        public static void SubPre() { if (!inMove) return; if (subDepth++ == 0) subStart = TS(); }
-        public static void SubPost() { if (!inMove || subDepth == 0) return; if (--subDepth == 0) { cur.Sub += TS() - subStart; cur.SubN++; } }
+
+        // 다른 호출(보이기·깊이·배치 방식·스프라이트·마스크)을 함수별로
+        private static string subName;
+        private static readonly Dictionary<string, long[]> subBy = new Dictionary<string, long[]>();   // 이름 -> [번, 틱]
+        public static void SubPre(MethodBase __originalMethod) { if (!inMove) return; if (subDepth++ == 0) { subStart = TS(); subName = __originalMethod.DeclaringType.Name + "." + __originalMethod.Name; } }
+        public static void SubPost()
+        {
+            if (!inMove || subDepth == 0) return;
+            if (--subDepth != 0) return;
+            long t = TS() - subStart;
+            cur.Sub += t; cur.SubN++;
+            long[] v; if (!subBy.TryGetValue(subName, out v)) { v = new long[2]; subBy[subName] = v; }
+            v[0]++; v[1] += t;
+        }
+        // 원래 코드로 돈 장식 이동 효과 (장식 이동 루프가 못 맡은 것): 이유별 수와 시간
+        private static readonly int[] fallWhy = new int[8];
+        private static long fxBefore; private static long origTicks; private static int origN;
+        internal static void Fallback(int why) { if (Enabled && inMove && why >= 0 && why < fallWhy.Length) fallWhy[why]++; }
+        private static string SubText()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var kv in subBy) if (kv.Value[0] > 0) sb.AppendFormat(" {0} {1}번 {2:F1}ms,", kv.Key, kv.Value[0], kv.Value[1] * TickMs);
+            if (origN > 0)
+                sb.AppendFormat(" | 원래 코드로 돈 효과 {0}개 {1:F1}ms [길이 있음 {2}, 이미지·마스크 {3}, 대상 없음 {4}, null {5}, 공식 맵 {6}, 그래픽 설정 {7}]",
+                    origN, origTicks * TickMs, fallWhy[0], fallWhy[3], fallWhy[4], fallWhy[5], fallWhy[1], fallWhy[2]);
+            return sb.ToString().TrimEnd(',');
+        }
+        private static void ClearSub() { foreach (var kv in subBy) { kv.Value[0] = 0; kv.Value[1] = 0; } Array.Clear(fallWhy, 0, fallWhy.Length); origTicks = 0; origN = 0; }
 
         // InstantMove 도우미가 부른다: 설정 함수 시간과 같은 값 여부
         internal static bool On { get { return Enabled && inMove; } }
@@ -145,7 +174,7 @@ namespace StutterFix
                 if (total > worstMs) { worstMs = total; worst = s; }
                 if (logged < 12) { logged++; Main.Entry.Logger.Log("[장식 이동 쪼개기] " + Time.frameCount + "프레임: " + s); }
             }
-            cur.Clear();
+            cur.Clear(); ClearSub();
         }
 
         private static string Describe(double total)
@@ -163,7 +192,7 @@ namespace StutterFix
             double en = cur.Enum * TickMs, sub = cur.Sub * TickMs;
             double rest = total - help - sub - cur.ZtMs;
             return string.Format("효과 {0}개(길이 0 {1}개) 장식 {2}개(한 효과 최대 {3}) 총 {4:F1}ms | 직접 처리 {5}번 {6:F1}ms(그중 설정 함수 {7:F1}ms):{8} | 크기·시차배율 대역 {9:F1}ms | 다른 호출 {10}번 {11:F1}ms | 나머지(반복·클로저·태그 목록) {12:F1}ms | 태그 목록만 따로 훑기 {13:F1}ms",
-                cur.Effects, cur.ZeroEffects, cur.Decos, cur.MaxDecos, total, n, help, set, sb.ToString().TrimEnd(','), cur.ZtMs, cur.SubN, sub, rest, en);
+                cur.Effects, cur.ZeroEffects, cur.Decos, cur.MaxDecos, total, n, help, set, sb.ToString().TrimEnd(','), cur.ZtMs, cur.SubN, sub, rest, en) + " |" + SubText();
         }
 
         internal static string SongSummary()
