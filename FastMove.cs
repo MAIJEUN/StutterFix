@@ -171,6 +171,12 @@ namespace StutterFix
             shape.Keys = (px ? 1 << 1 : 0) | (py ? 1 << 2 : 0) | (col ? 1 << 9 : 0) | (opa ? 1 << 10 : 0);
             return shape;
         }
+        // 미리 확인이 부른다: 주어진 장식들에만 이 효과를 루프로 적용 (건드려진 장식만 원래 경로로)
+        internal static void RunOn(ffxMoveDecorationsPlus fx, List<scrDecoration> decs)
+        {
+            var saved = src; src = decs;
+            try { Run(fx); } finally { src = saved; }
+        }
         internal static string LastWhy = "";
         private static ShapeInfo Why(string w) { LastWhy = w; return null; }
         // 효과의 대상 수 (태그별 목록 길이 합, 중복 포함)

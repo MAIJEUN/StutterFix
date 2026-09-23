@@ -90,7 +90,7 @@ namespace StutterFix
             if (colorRef(inst).a <= 0f)
             {
                 int w;
-                if (hidden.TryGetValue(r, out w)) { if (w != 0) Precheck.Touch(w); return; }   // 대부분(98%)이 여기서 끝난다: 투명 -> 투명
+                if (hidden.TryGetValue(r, out w)) { if (w != 0) Precheck.Touch(w, inst, "색 적용"); return; }   // 대부분(98%)이 여기서 끝난다: 투명 -> 투명
                 if (rejected.Contains(r)) return;
                 if (!AlphaMeansVisibility(r)) { rejected.Add(r); return; }
                 r.forceRenderingOff = true;
@@ -98,7 +98,7 @@ namespace StutterFix
                 Toggles++;
                 if (hidden.Count > Peak) Peak = hidden.Count;
             }
-            else if (Unhide(r) && CountShown())
+            else if (Unhide(r, inst) && CountShown())
             {
                 r.forceRenderingOff = false;
                 Toggles++;
@@ -201,7 +201,7 @@ namespace StutterFix
             var r = rendererRef(v);
             int wb;
             if ((object)r == null || !hidden.TryGetValue(r, out wb)) return true;
-            if (wb != 0) Precheck.Touch(wb);   // 지켜보는 장식의 위치가 바뀐다
+            if (wb != 0) Precheck.Touch(wb, __instance, "위치 설정");   // 지켜보는 장식의 위치가 바뀐다
             if (isMask(v)) return true;
             if (parallaxRef(__instance) == null) return true;   // 원래 함수가 이때는 아무것도 안 한다
             if (Edition.Dev && TruthSample(__instance)) { verify.Add(__instance); return true; }
@@ -240,7 +240,7 @@ namespace StutterFix
         }
         internal static void LazyStore(scrDecoration d, Vector2 pos, Vector2 off)
         {
-            if (Precheck.Active != 0) TouchDeco(d);
+            if (Precheck.Active != 0) TouchDeco(d, "다른 효과가 위치를 바로 미룸");
             LazyStoreCore(d, pos, off);
         }
         private static void LazyStoreCore(scrDecoration d, Vector2 pos, Vector2 off)
@@ -259,12 +259,12 @@ namespace StutterFix
         internal static bool NoParallax(scrDecoration d) { return parallaxRef(d) == null; }
 
         // ── 미리 확인(Precheck) 지켜보기 표시 ──
-        private static bool Unhide(SpriteRenderer r)
+        private static bool Unhide(SpriteRenderer r, scrDecoration d)
         {
             int w;
             if (!hidden.TryGetValue(r, out w)) return false;
             hidden.Remove(r);
-            if (w != 0) Precheck.Touch(w);   // 지켜보던 장식이 보이게 됐다
+            if (w != 0) Precheck.Touch(w, d, "보이게 됨");   // 지켜보던 장식이 보이게 됐다
             return true;
         }
         private static readonly List<SpriteRenderer> deadKeys = new List<SpriteRenderer>();
@@ -295,10 +295,12 @@ namespace StutterFix
             hidden[r] = w & ~bit;
         }
         // 게임 코드가 이 장식을 바꾸려 한다 (배치 방식, 마스크, 모드가 바로 미룬 위치, 원래 코드로 도는 장식 이동 효과)
+        internal static string touchWhy = "기타";
+        internal static void TouchDeco(scrDecoration d, string why) { touchWhy = why; TouchDeco(d); }
         internal static void TouchDeco(scrDecoration d)
         {
             var r = RendererOf(d); int w;
-            if ((object)r != null && hidden.TryGetValue(r, out w) && w != 0) Precheck.Touch(w);
+            if ((object)r != null && hidden.TryGetValue(r, out w) && w != 0) Precheck.Touch(w, d, touchWhy);
         }
 
         // 보이게 되는 순간 저장해 둔 위치를 반영한다

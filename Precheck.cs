@@ -39,6 +39,7 @@ namespace StutterFix
             public bool Valid = true, Ready, Pos, Px, Py, Col, Opa; public int Checked;
             public Vector2 Tp; public Color Tc; public float To; public bool Clean; public int Keys;
             public HashSet<scrDecoration> Seen;
+            public HashSet<scrDecoration> Dirty; public List<scrDecoration> DirtyList;   // 확인한 뒤 건드려진 장식
             public List<scrDecoration> AddLazy;   // 효과가 "보일 때 반영" 목록에 넣을 장식 (값은 이미 같다). 건너뛸 때 이것만 한다
         }
         private static readonly Plan[] plans = new Plan[MaxPlans];
@@ -47,7 +48,7 @@ namespace StutterFix
         private static int scanIdx, lastCur = -1;
 
         internal static long Created, Ready, Used, UsedDecos, UsedLazyAdds, Checks, VerifyN, VerifyDecos, VerifyMismatch;
-        internal static long InvTouch, InvEffect, InvList, NotReady, NotNoop, NoBit, Resets;
+        internal static long InvTouch, InvEffect, InvList, NotReady, NotNoop, NoBit, Resets, TooDirty, UsedDirty;
         internal static string FirstNotNoop = "", VerifyFirst = "";
         private static readonly Dictionary<string, int> skipWhy = new Dictionary<string, int>();
         private static int bigSkipped, logged; private static string bigWhy = "";
@@ -84,18 +85,25 @@ namespace StutterFix
             catch (Exception ex) { Enabled = false; Main.Entry.Logger.Log("[미리 확인] 설치 실패, 끔: " + ex.Message); }
         }
 
-        public static void DecoTouchPre(scrDecoration __instance) { if (Active != 0) InvisibleSkip.TouchDeco(__instance); }
+        public static void DecoTouchPre(scrDecoration __instance, System.Reflection.MethodBase __originalMethod) { if (Active != 0) InvisibleSkip.TouchDeco(__instance, __originalMethod.Name); }
         public static void ParticlePre() { if (Active != 0) ResetAll(); }
 
-        // 표시가 붙은 장식이 바뀌었다: 그 장식을 지켜보던 계획을 모두 취소
-        internal static void Touch(int bits)
+        // 표시가 붙은 장식이 바뀌었다(또는 바뀔 수 있다): 그 장식을 지켜보던 계획마다 "건드려진 장식" 으로 적는다.
+        // 효과 안에서 장식끼리는 서로 영향을 주지 않으므로, 발동할 때 건드려진 장식만 원래 경로로 처리하면 된다.
+        // 대상의 4분의 1 넘게 건드려지면 그냥 전체를 원래대로 돌린다.
+        internal static void Touch(int bits, scrDecoration d, string why)
         {
             bits &= Active;
             for (int b = 0; bits != 0 && b < MaxPlans; b++, bits >>= 1)
             {
                 if ((bits & 1) == 0) continue;
                 var p = plans[b];
-                if (p != null && p.Valid) { p.Valid = false; InvTouch++; }
+                if (p == null || !p.Valid || (object)d == null) continue;
+                if (p.Dirty == null) { p.Dirty = new HashSet<scrDecoration>(FastMove.DecoEq); p.DirtyList = new List<scrDecoration>(); }
+                if (!p.Dirty.Add(d)) continue;
+                p.DirtyList.Add(d); InvTouch++;
+                if (Edition.Dev && p.DirtyList.Count == 1 && ++logged <= 30) Main.Entry.Logger.Log(string.Format("[미리 확인] 장식 {0}개 효과 ({1:F2}초): 확인한 장식이 건드려짐 - {2} ({3})", p.Targets.Count, startRef(p.Fx), why, d.name));
+                if (p.DirtyList.Count > p.Targets.Count / 4) { p.Valid = false; TooDirty++; }
             }
         }
 
@@ -108,7 +116,7 @@ namespace StutterFix
             {
                 List<scrDecoration> l;
                 if (tags[i] == null || !dict.TryGetValue(tags[i], out l) || l == null) continue;
-                for (int j = 0; j < l.Count; j++) if ((object)l[j] != null) InvisibleSkip.TouchDeco(l[j]);
+                for (int j = 0; j < l.Count; j++) if ((object)l[j] != null) InvisibleSkip.TouchDeco(l[j], "원래 코드로 도는 장식 이동");
             }
             if (InvTouch != before) { InvEffect += InvTouch - before; InvTouch = before; }
         }
@@ -276,10 +284,13 @@ namespace StutterFix
                 var s = FastMove.Shape(fx);   // 효과 값이 확인할 때와 같은지
                 ok = s != null && ReferenceEquals(s.Targets, p.Targets) && s.Pos == p.Pos && s.Px == p.Px && s.Py == p.Py && s.Col == p.Col && s.Opa == p.Opa
                     && InstantMove.Bits(s.Tp.x) == InstantMove.Bits(p.Tp.x) && InstantMove.Bits(s.Tp.y) == InstantMove.Bits(p.Tp.y)
-                    && s.Tc == p.Tc && InstantMove.Bits(s.To) == InstantMove.Bits(p.To);
+                    && InstantMove.Bits(s.Tc.r) == InstantMove.Bits(p.Tc.r) && InstantMove.Bits(s.Tc.g) == InstantMove.Bits(p.Tc.g) && InstantMove.Bits(s.Tc.b) == InstantMove.Bits(p.Tc.b) && InstantMove.Bits(s.Tc.a) == InstantMove.Bits(p.Tc.a)
+                    && InstantMove.Bits(s.To) == InstantMove.Bits(p.To);
             }
             if (!ok) { if (!p.Ready || !p.Valid) NotReady++; Free(p); return false; }
-            if (p.AddLazy != null) foreach (var d in p.AddLazy) InvisibleSkip.LazyAdd(d);
+            // 그대로인 장식: 목록 추가만 (값은 이미 같다). 건드려진 장식: 원래 경로(장식 이동 루프)로 처리
+            if (p.AddLazy != null) foreach (var d in p.AddLazy) if (p.Dirty == null || !p.Dirty.Contains(d)) InvisibleSkip.LazyAdd(d);
+            if (p.DirtyList != null && p.DirtyList.Count > 0) { UsedDirty += p.DirtyList.Count; FastMove.RunOn(fx, new List<scrDecoration>(p.DirtyList)); }
             Used++; UsedDecos += p.Targets.Count; if (p.AddLazy != null) UsedLazyAdds += p.AddLazy.Count;
             Free(p);
             return true;
@@ -329,8 +340,8 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Created == 0 && Resets == 0) return "";
-            string s = string.Format(" | 미리 확인: 계획 {0}개, 확인 끝남 {1}개, 건너뛴 효과 {2}개(장식 {3}개, 그중 목록 추가만 한 것 {13}개), 장식 확인 {4}번 | 못 쓴 것: 확인 뒤 바뀜 {5}번, 원래 코드 효과가 대상을 건드림 {6}번, 목록 바뀜 {7}번, 발동 전에 못 끝냄·취소 {8}번, 그대로가 아님 {9}번 [{10}], 자리 없음 {11}번, 전체 취소 {12}번",
-                Created, Ready, Used, UsedDecos, Checks, InvTouch, InvEffect, InvList, NotReady, NotNoop, FirstNotNoop, NoBit, Resets, UsedLazyAdds);
+            string s = string.Format(" | 미리 확인: 계획 {0}개, 확인 끝남 {1}개, 건너뛴 효과 {2}개(장식 {3}개, 그중 목록 추가만 한 것 {13}개), 장식 확인 {4}번 | 못 쓴 것: 확인 뒤 건드려진 장식 {5}개(따로 처리 {14}개, 너무 많아 포기 {15}번), 원래 코드 효과가 대상을 건드림 {6}번, 목록 바뀜 {7}번, 발동 전에 못 끝냄·취소 {8}번, 그대로가 아님 {9}번 [{10}], 자리 없음 {11}번, 전체 취소 {12}번",
+                Created, Ready, Used, UsedDecos, Checks, InvTouch, InvEffect, InvList, NotReady, NotNoop, FirstNotNoop, NoBit, Resets, UsedLazyAdds, UsedDirty, TooDirty);
             if (skipWhy.Count > 0)
             {
                 s += " | 대상 " + MinTargets + "개 이상인데 못 맡은 효과:";
@@ -344,7 +355,7 @@ namespace StutterFix
         {
             ResetAll();
             Created = Ready = Used = UsedDecos = UsedLazyAdds = Checks = VerifyN = VerifyDecos = VerifyMismatch = 0;
-            InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = ""; logged = 0;
+            InvTouch = InvEffect = InvList = NotReady = NotNoop = NoBit = Resets = TooDirty = UsedDirty = 0; FirstNotNoop = ""; VerifyFirst = ""; skipWhy.Clear(); bigSkipped = 0; bigWhy = ""; logged = 0;
         }
     }
 }
