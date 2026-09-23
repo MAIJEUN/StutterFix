@@ -100,9 +100,88 @@ namespace StutterFix
             hidden.RemoveWhere(r => r == null);
             string s = "지금 안 그리는 투명 장식 " + hidden.Count + "개, 곡 중 최대 " + Peak + "개";
             if (SkippedShaders.Count > 0) s += " | 알파를 믿을 수 없어 건너뛴 셰이더: " + string.Join(", ", SkippedShaders);
+            if (Compares > 0) s += " | 픽셀 비교 " + Compares + "번 중 화면이 달랐던 것 " + ComparesDiffer + "번";
             return s;
         }
 
-        internal static void ResetPeak() { hidden.RemoveWhere(r => r == null); Peak = hidden.Count; }
+        internal static void ResetPeak() { hidden.RemoveWhere(r => r == null); Peak = hidden.Count; Compares = ComparesDiffer = 0; }
+
+        // ── 개발자용: 정말 화면이 같은지 픽셀로 확인 ──
+        // 곡 중 20초마다, 같은 프레임을 "투명 장식 뺀 채" 와 "다 그린 채" 로 두 번 그려 비교한다.
+        // 알파가 0 이면 어떤 셰이더든 결과에 더해지는 것이 없어야 하므로 차이는 정확히 0 이어야 한다.
+        private static float nextCompare;
+        private static bool comparing;
+        internal static int Compares, ComparesDiffer;
+
+        internal static void DevTick()
+        {
+            if (!Enabled || comparing || !Hitch.Playing || hidden.Count == 0) return;
+            if (Time.realtimeSinceStartup < nextCompare) return;
+            nextCompare = Time.realtimeSinceStartup + 20f;
+            if (PerfOverlay.Instance != null) PerfOverlay.Instance.StartCoroutine(CompareRun());
+        }
+
+        private static System.Collections.IEnumerator CompareRun()
+        {
+            comparing = true;
+            yield return new WaitForEndOfFrame();
+            Texture2D a = null, b = null;
+            var list = new List<SpriteRenderer>();
+            foreach (var r in hidden) if (r != null) list.Add(r);
+            try
+            {
+                a = RenderCams();
+                foreach (var r in list) r.forceRenderingOff = false;
+                b = RenderCams();
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[투명 비교] 그리기 실패: " + ex.Message); }
+            finally { foreach (var r in list) if (r != null) r.forceRenderingOff = true; }
+            comparing = false;
+            if (a == null || b == null) yield break;
+            try
+            {
+                var pa = a.GetPixels32(); var pb = b.GetPixels32();
+                int n = Mathf.Min(pa.Length, pb.Length), differ = 0, max = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    int d = Mathf.Max(Mathf.Abs(pa[i].r - pb[i].r), Mathf.Max(Mathf.Abs(pa[i].g - pb[i].g), Mathf.Abs(pa[i].b - pb[i].b)));
+                    if (d > 0) { differ++; if (d > max) max = d; }
+                }
+                Compares++;
+                string extra = "";
+                if (differ > 0)
+                {
+                    ComparesDiffer++;
+                    string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StutterFix-invisible");
+                    string stamp = DateTime.Now.ToString("HHmmss");
+                    System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "뺀-" + stamp + ".png"), a.EncodeToPNG());
+                    System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "다그림-" + stamp + ".png"), b.EncodeToPNG());
+                    extra = " | 저장: " + dir + " (" + stamp + ")";
+                }
+                Main.Entry.Logger.Log(string.Format("[투명 비교] 뺀 장식 {0}개 | {1}x{2} 중 다른 픽셀 {3}개 (최대 차이 {4}/255){5}",
+                    list.Count, a.width, a.height, differ, max, extra));
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[투명 비교] 실패: " + ex.Message); }
+            UnityEngine.Object.Destroy(a); UnityEngine.Object.Destroy(b);
+        }
+
+        private static Texture2D RenderCams()
+        {
+            int w = Screen.width, h = Screen.height;
+            var rt = RenderTexture.GetTemporary(w, h, 24, RenderTextureFormat.ARGB32);
+            var cams = new List<Camera>(Camera.allCameras);
+            cams.RemoveAll(c => c == null || c.targetTexture != null);
+            cams.Sort((x, y) => x.depth.CompareTo(y.depth));
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt; GL.Clear(true, true, Color.black);
+            foreach (var c in cams) { c.targetTexture = rt; c.Render(); c.targetTexture = null; }
+            RenderTexture.active = rt;
+            var tex = new Texture2D(w, h);
+            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+            return tex;
+        }
     }
 }

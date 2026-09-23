@@ -364,6 +364,7 @@ namespace StutterFix
                 if (Input.GetKeyDown(KeyCode.F9)) AllocScan.Toggle();
                 if (Input.GetKeyDown(KeyCode.F6)) TextureCensus.Run();
                 BlendProbe.Tick();
+                InvisibleSkip.DevTick();
             }
 
             if (capacityApplied) return;
