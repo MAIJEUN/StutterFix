@@ -68,7 +68,6 @@ namespace StutterFix
             public bool Equals(scrDecoration a, scrDecoration b) { return ReferenceEquals(a, b); }
             public int GetHashCode(scrDecoration o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
         }
-        private static readonly HashSet<scrDecoration> seen = new HashSet<scrDecoration>(RefEq.I);
         private static readonly List<scrDecoration> list = new List<scrDecoration>();
         private static bool running, bypass;
 
@@ -101,7 +100,7 @@ namespace StutterFix
             {
                 if (!Take(__instance)) return true;   // 원래 코드가 돈다 (아직 아무것도 안 바꿨다)
                 bool sample = Edition.Dev && ((Effects + 1) % 16) == 1;
-                if (sample) { hidBefore.Clear(); foreach (var dec in list) hidBefore.Add(InvisibleSkip.IsHidden(dec)); }
+                if (sample) { hidBefore.Clear(); foreach (var dec in src) hidBefore.Add(InvisibleSkip.IsHidden(dec)); }
                 Run(__instance);
                 if (sample) Verify(__instance, __args);
                 return false;
@@ -126,7 +125,21 @@ namespace StutterFix
             if (tags == null || (object)mgr == null) return No(4);
             var dict = taggedRef(mgr);
             if (dict == null) return No(4);
-            seen.Clear(); list.Clear();
+            // 대상 목록. 태그가 하나이고 그 목록에 중복·null 이 없으면(목록이 바뀔 때만 다시 확인) 게임 목록을 그대로 쓴다.
+            // 예전에는 효과마다 중복 거르기 집합을 비웠는데, 1만 4천 개 효과 한 번에 집합이 커진 뒤로는 비울 때마다
+            // 큰 배열 전체를 지워서, 장식이 몇 개 없는 효과 수백 개가 몰린 프레임(개발자용 640개)에서 비용이 컸다.
+            // 이제는 "이번 효과 번호" 를 적어 두는 방식이라 비울 일이 없다.
+            if (tags.Count == 1)
+            {
+                var tag = tags[0];
+                if (tag == null) return No(5);
+                List<scrDecoration> l;
+                if (!dict.TryGetValue(tag, out l)) { list.Clear(); src = list; return true; }
+                if (l == null) return No(5);
+                if (Clean(l)) { src = l; return true; }
+            }
+            serial++;
+            list.Clear();
             for (int i = 0; i < tags.Count; i++)
             {
                 var tag = tags[i];
@@ -138,16 +151,52 @@ namespace StutterFix
                 {
                     var dec = l[j];
                     if ((object)dec == null) return No(5);
-                    if (seen.Add(dec)) list.Add(dec);
+                    int s;
+                    if (stamp.TryGetValue(dec, out s) && s == serial) continue;
+                    stamp[dec] = serial;
+                    list.Add(dec);
                 }
             }
+            src = list;
+            return true;
+        }
+
+        private static List<scrDecoration> src;
+        private static readonly Dictionary<scrDecoration, int> stamp = new Dictionary<scrDecoration, int>(RefEq.I);
+        private static int serial;
+        private sealed class ListEq : IEqualityComparer<List<scrDecoration>>
+        {
+            internal static readonly ListEq I = new ListEq();
+            public bool Equals(List<scrDecoration> a, List<scrDecoration> b) { return ReferenceEquals(a, b); }
+            public int GetHashCode(List<scrDecoration> o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
+        }
+        private static readonly Dictionary<List<scrDecoration>, int> cleanAt = new Dictionary<List<scrDecoration>, int>(ListEq.I);   // 중복·null 없음을 확인한 목록 -> 그때의 버전
+        private static AccessTools.FieldRef<List<scrDecoration>, int> versionRef;
+        private static bool versionTried;
+        // 목록에 중복과 null 이 없는가 (Distinct 를 거쳐도 그대로인 목록). 목록 버전이 그대로면 다시 보지 않는다.
+        private static bool Clean(List<scrDecoration> l)
+        {
+            if (!versionTried) { versionTried = true; try { versionRef = AccessTools.FieldRefAccess<List<scrDecoration>, int>("_version"); } catch { versionRef = null; } }
+            if (versionRef == null) return false;
+            int ver = versionRef(l), at;
+            if (cleanAt.TryGetValue(l, out at) && at == ver) return true;
+            serial++;
+            for (int j = 0; j < l.Count; j++)
+            {
+                var dec = l[j];
+                if ((object)dec == null) return false;
+                int s;
+                if (stamp.TryGetValue(dec, out s) && s == serial) return false;
+                stamp[dec] = serial;
+            }
+            cleanAt[l] = ver;
             return true;
         }
         private static bool No(int w) { why[w]++; Fallbacks++; return false; }
 
         private static void Run(ffxMoveDecorationsPlus fx)
         {
-            Effects++; DecoCount += list.Count;
+            Effects++; DecoCount += src.Count;
             if (!float.IsNaN(tScale(fx))) tScaleV2(fx) = new Vector2(tScale(fx), tScale(fx));
             Vector2 sc = tScaleV2(fx);
             bool placement = mtUsed(fx) && (int)mtRef(fx) != 7, relative = (int)mtRef(fx) == 7, move = !fdt(fx);
@@ -174,9 +223,10 @@ namespace StutterFix
             InstantMove.InLoop = true;
             try
             {
-                for (int i = 0; i < list.Count; i++)
+                var targets = src;
+                for (int i = 0; i < targets.Count; i++)
                 {
-                    var dec = list[i];
+                    var dec = targets[i];
                     var d = tweensRef(dec);
                     InstantMove.DecoStart(AllDead(d));
                     if (placement) setPlacement(dec, mt);
@@ -272,7 +322,7 @@ namespace StutterFix
         private static void Verify(ffxMoveDecorationsPlus fx, object[] args)
         {
             if (posUsed(fx) && !fdt(fx) && (int)mtRef(fx) == 7) return;   // 상대 이동은 두 번 돌리면 두 번 움직인다
-            var decs = new List<scrDecoration>(list);
+            var decs = new List<scrDecoration>(src);
             before.Clear();
             foreach (var dec in decs) before.Add(Snap(dec));
             bypass = true;
@@ -337,6 +387,6 @@ namespace StutterFix
             else if (First.Length > 0) s += First;
             return s;
         }
-        internal static void Reset() { Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = 0; First = ""; Array.Clear(why, 0, why.Length); }
+        internal static void Reset() { stamp.Clear(); cleanAt.Clear(); Effects = DecoCount = Fallbacks = Checked = CheckedDecos = Mismatch = Explained = 0; First = ""; Array.Clear(why, 0, why.Length); }
     }
 }
