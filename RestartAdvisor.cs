@@ -48,7 +48,7 @@ namespace StutterFix
                 if (dllPath != null && File.Exists(dllPath) && File.GetLastWriteTimeUtc(dllPath) > dllTime.AddSeconds(1))
                     reasons.Add(SettingsWindow.T("모드 파일이 새 버전으로 바뀌었습니다", "The mod file was updated"));
                 float game = SystemMonitor.RamGameMB, total = SystemMonitor.RamTotalMB;
-                if (game > 0 && total > 0 && (game > total * 0.5f || SystemMonitor.RamLoad > 0.9f))
+                if (game > 0 && total > 0 && (game > total * 0.5f || SystemMonitor.RamLoad >= 90f)   // RamLoad 는 시스템 메모리 사용률(%))
                     reasons.Add(string.Format(SettingsWindow.T("게임이 메모리를 많이 쓰고 있습니다 ({0:F1}GB)", "The game is using a lot of memory ({0:F1} GB)"), game / 1024f));
                 int vram = SystemInfo.graphicsMemorySize;
                 if (!Hitch.Playing && vram > 0 && SystemMonitor.VramUsedMB > vram * 0.9f)
