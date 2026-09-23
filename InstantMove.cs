@@ -464,9 +464,10 @@ namespace StutterFix
         internal static bool CCol(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             Kill(d, 9); Color v = tCol(fx);
-            if (ColorNoop(dec, v, opaRef(dec)) && Skip(dec)) { if (P) MoveProf.Skipped(9); return Done(d, 9); }
+            bool noop = ColorNoop(dec, v, opaRef(dec));
+            if (noop && Skip(dec)) { if (P) MoveProf.Skipped(9); return Done(d, 9); }   // Skip 이 false 면 개발자용 대조 표본: 아래 원래 경로로
             Color rc;
-            if (HiddenStay(dec, v, opaRef(dec), out rc) && HidSet(dec, v, opaRef(dec), rc, 9)) return Done(d, 9);
+            if (!noop && HiddenStay(dec, v, opaRef(dec), out rc) && HidSet(dec, v, opaRef(dec), rc, 9)) return Done(d, 9);
             if (P) { var c = colRef(dec); bool same = Eq(c.r, v.r) && Eq(c.g, v.g) && Eq(c.b, v.b) && Eq(c.a, v.a); M0(dec); setCol(dec, v); M1(9, dec, same); }
             else setCol(dec, v);
             HidC = 0; LazyC = 0;   // 색을 실제로 넣었으면 안 그림 상태가 바뀌었을 수 있다
@@ -476,9 +477,10 @@ namespace StutterFix
         internal static bool COpa(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
             Kill(d, 10); float v = tOpa(fx);
-            if (ColorNoop(dec, colRef(dec), v) && Skip(dec)) { if (P) MoveProf.Skipped(10); return Done(d, 10); }
+            bool noop = ColorNoop(dec, colRef(dec), v);
+            if (noop && Skip(dec)) { if (P) MoveProf.Skipped(10); return Done(d, 10); }
             Color rc;
-            if (HiddenStay(dec, colRef(dec), v, out rc) && HidSet(dec, colRef(dec), v, rc, 10)) return Done(d, 10);
+            if (!noop && HiddenStay(dec, colRef(dec), v, out rc) && HidSet(dec, colRef(dec), v, rc, 10)) return Done(d, 10);
             if (P) { bool same = Eq(opaRef(dec), v); M0(dec); setOpa(dec, v); M1(10, dec, same); } else setOpa(dec, v);
             HidC = 0; LazyC = 0;
             if (Edition.Dev) SameAfter(dec, "불투명도");
