@@ -152,7 +152,13 @@ namespace StutterFix
         // 제외: 히트박스 장식(투명해도 충돌 판정에 위치가 필요), 마스크 장식(투명해도 다른 장식을 가림).
         internal static bool LazyMove = true;
         internal static long LazySkips, LazyApplied;
-        private static readonly HashSet<scrDecoration> lazy = new HashSet<scrDecoration>();
+        private sealed class DecEq : IEqualityComparer<scrDecoration>
+        {
+            internal static readonly DecEq Instance = new DecEq();
+            public bool Equals(scrDecoration a, scrDecoration b) { return ReferenceEquals(a, b); }
+            public int GetHashCode(scrDecoration o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
+        }
+        private static readonly HashSet<scrDecoration> lazy = new HashSet<scrDecoration>(DecEq.Instance);   // 참조 비교 (유니티 객체 비교는 가상 호출이라 느리다)
         private static readonly AccessTools.FieldRef<scrDecoration, Vector2> pivotPosRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("pivotPosVec");
         private static readonly AccessTools.FieldRef<scrDecoration, Vector2> pivotOffRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("pivotOffsetVec");
         private static readonly AccessTools.FieldRef<scrDecoration, scrParallax> parallaxRef = AccessTools.FieldRefAccess<scrDecoration, scrParallax>("parallax");
@@ -186,12 +192,12 @@ namespace StutterFix
             return false;
         }
 
-        // 즉시 이동 직접 처리(InstantMove)가 부른다: 지금 SetPosition(pos, 지금 오프셋)을 부르면 아무것도 안 바뀌는가.
-        // LazyPrefix 가 미루는 조건과 똑같이 보고, 이미 미뤄 둔 목록에 있고 저장된 값도 같으면, 부르든 안 부르든 결과가 같다
-        // (필드에 같은 값 저장 + 이미 든 목록에 다시 넣기). Arche 효과 몰림의 1만 4천 개 장식 이동이 거의 전부 이 경우였다.
-        internal static bool LazyNoop(scrDecoration d, Vector2 pos)
+        // 즉시 이동 직접 처리(InstantMove)가 부른다. LazyPrefix 가 이 장식의 SetPosition 을 미룰 것인가 (조건이 LazyPrefix 와 똑같다).
+        // 미룬다면 SetPosition 이 하는 일은 "값 두 개 저장 + 미루기 목록에 넣기" 뿐이라, 게임 함수를 거치지 않고 LazyStore 로 바로 한다.
+        // Arche 효과 몰림의 1만 4천 개 장식 이동이 거의 전부 이 경우였고, 함수 사슬(SetPositionX -> WithX -> SetPosition 감싸기 -> 앞 패치)만 7ms 넘게 썼다.
+        internal static bool LazyCan(scrDecoration d)
         {
-            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing || lazy.Count == 0) return false;
+            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return false;
             if (colorRef(d).a > 0f) return false;
             var v = d as scrVisualDecoration;
             if ((object)v == null || d.hitbox != 0) return false;
@@ -199,9 +205,14 @@ namespace StutterFix
             if ((object)r == null || !hidden.Contains(r) || isMask(v)) return false;
             if (parallaxRef(d) == null) return false;
             if (Edition.Dev && (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(d) & 7) == 0) return false;   // 개발자용 정답 표본은 LazyPrefix 가 따로 다룬다
-            if (!lazy.Contains(d)) return false;
-            var cur = pivotPosRef(d);
-            return InstantMove.Bits(cur.x) == InstantMove.Bits(pos.x) && InstantMove.Bits(cur.y) == InstantMove.Bits(pos.y);
+            return true;
+        }
+        internal static void LazyStore(scrDecoration d, Vector2 pos, Vector2 off)
+        {
+            pivotPosRef(d) = pos;
+            pivotOffRef(d) = off;
+            lazy.Add(d);
+            LazySkips++;
         }
         internal static bool InLazy(scrDecoration d) { return lazy.Contains(d); }
 

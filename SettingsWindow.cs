@@ -224,19 +224,16 @@ namespace StutterFix
 
                 var dock = DockRect(sw, sh, e);
                 rect = PanelRect(sw, sh, dock, pe);
-                // 창이 떠 있는 동안은 화면 전체에 보이지 않는 UI 판을 깔아 뒤의 게임 UI(에디터 버튼 등)가 클릭을 받지 않게 하고,
-                // 아이콘 줄과 패널 바깥을 누르면 그 클릭은 게임에 넘기지 않고 창만 닫는다.
+                // 아이콘 줄(과 펼친 패널) 자리에만 보이지 않는 UI 판을 깔아 뒤의 게임이 그 자리 클릭을 받지 않게 한다.
+                // 그 바깥을 누르면 창을 닫고, 클릭은 그대로 게임에 간다(닫으려고 한 번, 게임을 누르려고 또 한 번 누를 필요가 없게).
                 if (closing) UiInputBlock.Clear(this);
                 else
                 {
-                    UiInputBlock.Place(this, new Rect(0, 0, Screen.width, Screen.height));
+                    var blk = panelT > 0f ? Union(dock, rect) : dock;
+                    UiInputBlock.Place(this, new Rect(blk.x * scale, blk.y * scale, blk.width * scale, blk.height * scale));
                     var ev = Event.current;
-                    if (ev.type == EventType.MouseDown)
-                    {
-                        var mp = ev.mousePosition;
-                        bool inside = dock.Contains(mp) || (panelT > 0f && rect.Contains(mp));
-                        if (!inside) { SetOpen(false); ev.Use(); }
-                    }
+                    if (ev.type == EventType.MouseDown && !dock.Contains(ev.mousePosition) && !(panelT > 0f && rect.Contains(ev.mousePosition)))
+                        SetOpen(false);
                 }
 
                 DrawDock(dock);
@@ -552,9 +549,9 @@ namespace StutterFix
                 T("즉시 이동이 한꺼번에 몰리는 순간(효과 몰림) 게임 코드가 속성마다 애니메이션 객체를 만드는 과정 자체를 건너뛰고 최종 값만 넣습니다. Arche 효과 몰림 68 → 36ms.",
                   "When many instant moves land at once, skips the game's per-property animation setup entirely and applies only the final values. Arche effect burst 68 → 36 ms."),
                 T("효과 몰림", "Effect bursts"));
-            ch |= Option("samevalue", ref c.SkipSame, T("그대로인 값 건너뛰기", "Skip unchanged values"),
-                T("즉시 이동이 투명한 장식에 이미 가진 것과 같은 위치·색을 다시 넣을 때는 설정 함수를 부르지 않습니다. 부르든 안 부르든 게임 상태가 똑같은 경우만 건너뜁니다(\"즉시 이동 직접 처리\"가 켜져 있어야 동작).",
-                  "When an instant move writes the same position or color a transparent decoration already has, the setter is not called. Only skipped when the game state would be identical either way (needs \"Direct instant moves\")."),
+            ch |= Option("samevalue", ref c.SkipSame, T("투명 장식 빠른 처리", "Fast path for hidden decorations"),
+                T("즉시 이동이 투명한 장식을 옮기면 게임 함수를 거치지 않고 위치를 바로 \"보일 때 반영\" 목록에 넣고, 이미 가진 것과 같은 색을 다시 넣을 때는 설정 함수를 부르지 않습니다. 게임 상태는 원래와 똑같습니다(\"즉시 이동 직접 처리\"가 켜져 있어야 동작, 위치는 \"투명한 장식 위치 미루기\"도 필요).",
+                  "When an instant move touches a transparent decoration, its position goes straight into the apply-when-visible list without the game's setter chain, and re-writing an unchanged color is skipped. Game state stays identical (needs \"Direct instant moves\"; positions also need \"Defer hidden decoration moves\")."),
                 T("효과 몰림", "Effect bursts"));
             ch |= Option("movefinish", ref c.MoveFinish, T("장식 위치 계산 줄이기", "Fewer position updates"),
                 T("장식을 옮길 때 위치 마무리 계산을 한 번으로 묶고, 값이 그대로인 쓰기와 플레이 중 필요 없는 편집기 작업을 건너뜁니다. 보이는 장식의 위치 재계산은 어차피 같은 프레임에 게임이 다시 하므로 그때 한 번만 합니다.",

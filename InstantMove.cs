@@ -253,7 +253,6 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> srRef = AccessTools.FieldRefAccess<scrVisualDecoration, SpriteRenderer>("spriteRenderer");
         private static readonly AccessTools.FieldRef<scrDecoration, Transform> childRef = AccessTools.FieldRefAccess<scrDecoration, Transform>("childTransform");
 
-        private static bool PosNoop(scrDecoration dec, Vector2 p) { return NoopOn && InvisibleSkip.LazyNoop(dec, p); }
 
         private static bool ColorNoop(scrDecoration dec, Color c, float o)
         {
@@ -267,7 +266,7 @@ namespace StutterFix
             return Eq(rc.r, c.r) && Eq(rc.g, c.g) && Eq(rc.b, c.b) && Eq(rc.a, a);
         }
 
-        // true 면 설정 함수를 건너뛴다. 개발자용 표본이면 false 를 돌려 원래대로 부르게 하고, 부른 뒤 SameAfter 에서 대조한다.
+        // (색·불투명도) true 면 설정 함수를 건너뛴다. 개발자용 표본이면 false 를 돌려 원래대로 부르게 하고, 부른 뒤 SameAfter 에서 대조한다.
         private struct Snap { public Vector2 Pp, Po; public bool Lz, Hid, Fro; public Color Rc, Col, Src; public float Opa; public Vector3 Child; }
         private static Snap snap; private static bool snapPending;
         private static bool Skip(scrDecoration dec)
@@ -302,7 +301,7 @@ namespace StutterFix
         internal static string SameSummary()
         {
             if (SameSkipped == 0 && SameChecked == 0) return "";
-            return " | 값이 그대로라 설정 건너뜀 " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + SameFirst + ")" : "");
+            return " | 투명 장식 빠른 처리(위치 바로 미루기, 같은 색 건너뛰기) " + SameSkipped + "번" + (Edition.Dev ? " (대조 " + SameChecked + "번 중 다름 " + SameMismatch + SameFirst + ")" : "");
         }
 
         // 개발자용 쪼개기(MoveProf): 설정 함수 시간, 이미 같은 값이었는지, 투명한 채로 남았는지
@@ -315,24 +314,45 @@ namespace StutterFix
         public static bool PosX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startX)
         {
             if (!Use(fx)) { Expect(dec, 1, startX + tPos(fx).x); return false; }
-            Kill(d, 1); float v = startX + tPos(fx).x;
-            var p = pivotPosRef(dec); p.x = v;
-            if (PosNoop(dec, p) && Skip(dec)) { if (P) MoveProf.Skipped(1); return Done(d, 1); }
-            if (P) { bool same = Eq(pivotPosRef(dec).x, v); M0(dec); setPosX(dec, v, pivotOffRef(dec)); M1(1, dec, same); }
-            else setPosX(dec, v, pivotOffRef(dec));
-            if (Edition.Dev) SameAfter(dec, "위치X");
-            return Done(d, 1);
+            Kill(d, 1);
+            var p = pivotPosRef(dec); p.x = startX + tPos(fx).x;
+            return Pos(1, dec, d, p);
         }
         public static bool PosY(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d, float startY)
         {
             if (!Use(fx)) { Expect(dec, 2, startY + tPos(fx).y); return false; }
-            Kill(d, 2); float v = startY + tPos(fx).y;
-            var p = pivotPosRef(dec); p.y = v;
-            if (PosNoop(dec, p) && Skip(dec)) { if (P) MoveProf.Skipped(2); return Done(d, 2); }
-            if (P) { bool same = Eq(pivotPosRef(dec).y, v); M0(dec); setPosY(dec, v, pivotOffRef(dec)); M1(2, dec, same); }
-            else setPosY(dec, v, pivotOffRef(dec));
-            if (Edition.Dev) SameAfter(dec, "위치Y");
-            return Done(d, 2);
+            Kill(d, 2);
+            var p = pivotPosRef(dec); p.y = startY + tPos(fx).y;
+            return Pos(2, dec, d, p);
+        }
+        // 위치 한 축. 원래 최종 호출은 SetPositionX(값, pivotOffsetVec) -> SetPosition(pivotPosVec 의 그 축만 바꾼 것, pivotOffsetVec).
+        // 투명 장식 위치 미루기가 미룰 장식이면 SetPosition 이 하는 일(값 저장 + 미루기 목록)을 바로 한다.
+        // 개발자용은 16번에 1번 원래대로 부르고, 그 결과가 "바로 한 것" 과 같은지(값, 목록, 엔진 위치·색 그대로) 대조한다.
+        private static bool Pos(int key, scrDecoration dec, Dictionary<global::TweenType, Tween> d, Vector2 p)
+        {
+            var off = pivotOffRef(dec);
+            if (NoopOn && InvisibleSkip.LazyCan(dec))
+            {
+                if (!(Edition.Dev && (++sameCounter & 15) == 0))
+                {
+                    InvisibleSkip.LazyStore(dec, p, off);
+                    SameSkipped++;
+                    if (P) MoveProf.Skipped(key);
+                    return Done(d, key);
+                }
+                snap = Take(dec); snap.Pp = p; snap.Po = off; snap.Lz = true; snapPending = true;   // 원래대로 부른 뒤 이 상태여야 한다
+            }
+            if (P)
+            {
+                bool same = key == 1 ? Eq(pivotPosRef(dec).x, p.x) : Eq(pivotPosRef(dec).y, p.y);
+                M0(dec);
+                if (key == 1) setPosX(dec, p.x, off); else setPosY(dec, p.y, off);
+                M1(key, dec, same);
+            }
+            else if (key == 1) setPosX(dec, p.x, off);
+            else setPosY(dec, p.y, off);
+            if (Edition.Dev) SameAfter(dec, key == 1 ? "위치X" : "위치Y");
+            return Done(d, key);
         }
         public static bool ParX(ffxMoveDecorationsPlus fx, scrDecoration dec, Dictionary<global::TweenType, Tween> d)
         {
