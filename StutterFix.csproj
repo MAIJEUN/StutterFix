@@ -33,6 +33,7 @@
     <Compile Include="UiProf.cs" />
     <Compile Include="LowEnd.cs" />
     <Compile Include="HalfRender.cs" />
+    <Compile Include="RenderVerify.cs" />
     <Compile Include="WarmChars.cs" />
     <Compile Include="Profiler.cs" />
     <Compile Include="SceneScan.cs" />

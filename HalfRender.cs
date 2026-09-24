@@ -16,6 +16,7 @@ namespace StutterFix
     internal static class HalfRender
     {
         internal static bool Enabled;
+        internal static bool Suppress;   // 개발자용 검증이 카메라를 직접 그리는 동안 콜백을 멈춘다
         internal static long Rendered, Skipped;
         private static readonly AccessTools.FieldRef<scrCamera, Camera> camRef = AccessTools.FieldRefAccess<scrCamera, Camera>("camobj");
         private static readonly AccessTools.FieldRef<scrCamera, Camera> bgRef = AccessTools.FieldRefAccess<scrCamera, Camera>("BGcam");
@@ -107,7 +108,7 @@ namespace StutterFix
         // 카메라가 그리기 직전: 본 카메라를 그리면 그 상태를 기록, OverlayCam 을 그릴 때 사이 프레임이면 사각형을 옮긴다
         private static void PreCull(Camera cam)
         {
-            if (!Enabled) return;
+            if (!Enabled || Suppress) return;
             try
             {
                 var sc = scrCamera.instance;
@@ -125,7 +126,20 @@ namespace StutterFix
                     pos0 = t.position; rot0 = t.eulerAngles.z; size0 = cam.orthographicSize;
                     haveState = cam.orthographic && size0 > 0f;
                 }
-                else if (skipping && haveState && cam == ovRef(sc) && quadT != null)
+                else if (skipping && haveState && cam == ovRef(sc) && quadT != null) ApplyNow(sc);
+            }
+            catch { }
+        }
+
+        internal static bool SkippingNow { get { return skipping && haveState && quadT != null; } }
+        internal static void ResetNow() { ResetQuad(); }
+        // 사각형을 지금 본 카메라 상태에 맞게 옮긴다 (OverlayCam 그리기 직전, 개발자용 검증도 같은 계산을 쓴다)
+        internal static void ApplyNow(scrCamera sc)
+        {
+            try
+            {
+                var cam = ovRef(sc);
+                if (cam == null || quadT == null) return;
                 {
                     var main = camRef(sc);
                     if (main == null) return;
@@ -151,7 +165,7 @@ namespace StutterFix
         // 꺼져 있으면 안 되므로, 카메라가 꺼져 있는 시간은 "이번 프레임 그리기" 동안뿐이다.
         private static void PostRender(Camera cam)
         {
-            if (!skipping) return;
+            if (!skipping || Suppress) return;
             try
             {
                 var sc = scrCamera.instance;

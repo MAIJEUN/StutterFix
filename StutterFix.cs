@@ -113,6 +113,7 @@ namespace StutterFix
                 DecoAnim.Install(harmony);
                 LowEnd.Install(harmony);
                 HalfRender.Install(harmony);
+                RenderVerify.Install(harmony);
                 FrameParts.Install(harmony);
                 UiProf.Install(harmony);
                 MoveApply.Install(harmony);

@@ -292,9 +292,11 @@ namespace StutterFix
         public static void LogicMaybe(scrDecoration d, bool disableShader)
         {
             LogicCalls++;
-            if (LogicSkip && Dormancy.Enabled && Dormancy.IsDormant(d, disableShader))
+            if (LogicSkip && Dormancy.Enabled && disableShader && Dormancy.IsDormant(d, true))
             { LogicSkips++; Dormancy.Sleep(d); return; }
             logicUpdate(d, disableShader);
+            // 새 맵(V15): 안 보이는 장식은 한 번 돈 "뒤" 에는 다시 불러도 바뀌는 것이 없다 -> 지금 재워 다음 프레임부터 뺀다
+            if (!disableShader && LogicSkip && Dormancy.Enabled && Dormancy.IsDormantV15(d)) { Dormancy.V15Slept++; Dormancy.Sleep(d); }
         }
 
         public static void ManagerUpdatePrefix() { Dormancy.HitboxNewFrame(); }
