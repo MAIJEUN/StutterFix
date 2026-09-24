@@ -99,8 +99,8 @@ namespace StutterFix
         // 두 곳에서 Screen 크기 대신 배율을 곱한 크기를 쓰게 한다. 배율 100% 면 원래와 똑같다.
         internal static int RenderScalePct = 100;
         private static readonly AccessTools.FieldRef<scrCamera, RenderTexture> camRTRef = AccessTools.FieldRefAccess<scrCamera, RenderTexture>("camRT");
-        public static int RTWidth() { return RenderScalePct >= 100 ? Screen.width : Mathf.Max(64, Mathf.RoundToInt(Screen.width * RenderScalePct / 100f)); }
-        public static int RTHeight() { return RenderScalePct >= 100 ? Screen.height : Mathf.Max(64, Mathf.RoundToInt(Screen.height * RenderScalePct / 100f)); }
+        public static int RTWidth() { int p = EffectivePct; return p >= 100 ? Screen.width : Mathf.Max(64, Mathf.RoundToInt(Screen.width * p / 100f)); }
+        public static int RTHeight() { int p = EffectivePct; return p >= 100 ? Screen.height : Mathf.Max(64, Mathf.RoundToInt(Screen.height * p / 100f)); }
         public static bool NeedsRecreationPrefix(scrCamera __instance, ref bool __result)
         {
             var rt = camRTRef(__instance);
@@ -129,11 +129,43 @@ namespace StutterFix
         }
         internal static bool RenderScaleReady;
 
+        // ── 동적 해상도 (자동 해상도) ──
+        // 목표 FPS 를 못 맞출 만큼 그래픽카드가 바쁠 때만 게임 화면 해상도를 낮추고, 여유가 생기면 다시 올린다.
+        // 기준은 GPU 시간뿐이다(CPU 가 한계라 느린 것은 해상도로 안 풀린다). 해상도를 바꿀 때마다 게임이 텍스처를 다시 만들므로
+        // 10% 단위로, 내릴 때는 1.5초, 올릴 때는 3초 간격 이상으로만 바꾼다. 텍스처 일부에만 그리는 방식은 유니티 필터가
+        // 카메라 영역을 무시해 필터 많은 맵에서 깨질 수 있어 쓰지 않는다. 슬라이더 값이 최대, AutoMinPct 가 최소.
+        internal static bool AutoRes;
+        internal static int AutoTargetFps = 60, AutoMinPct = 50, AutoPct = 100;
+        internal static long AutoDown, AutoUp;
+        private static Unity.Profiling.ProfilerRecorder gpuRec;
+        private static float gpuEma, nextChange;
+        internal static float GpuEma { get { return gpuEma; } }
+        internal static int EffectivePct { get { return AutoRes ? Math.Min(AutoPct, RenderScalePct) : RenderScalePct; } }
+        internal static void AutoTick()
+        {
+            if (!AutoRes || !Hitch.Playing || !RenderScaleReady) { AutoPct = RenderScalePct; gpuEma = 0f; return; }
+            try
+            {
+                if (!gpuRec.Valid) gpuRec = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, "GPU Frame Time");
+                float g = gpuRec.LastValue / 1e6f;
+                if (g <= 0f || g > 500f) return;   // 값이 없거나 멈춘 프레임
+                gpuEma = gpuEma <= 0f ? g : gpuEma * 0.92f + g * 0.08f;
+                float now = Time.realtimeSinceStartup;
+                if (now < nextChange) return;
+                float budget = 1000f / Mathf.Max(30, AutoTargetFps);
+                int max = RenderScalePct, min = Mathf.Min(AutoMinPct, max);
+                if (gpuEma > budget * 0.85f && AutoPct > min) { AutoPct = Math.Max(min, AutoPct - 10); nextChange = now + 1.5f; AutoDown++; EnsureSharpen(); }
+                else if (gpuEma < budget * 0.55f && AutoPct < max) { AutoPct = Math.Min(max, AutoPct + 10); nextChange = now + 3f; AutoUp++; EnsureSharpen(); }
+            }
+            catch { }
+        }
+
+
         // 게임 화면을 작게 그렸을 때 늘리는 방식: 부드럽게(기본, Bilinear) / 선명하게(도트처럼, Point). 배율 100% 면 건드리지 않는다.
         internal static bool SharpUpscale;
         public static void CamUpdatePostfix(scrCamera __instance)
         {
-            if (RenderScalePct >= 100) return;
+            if (EffectivePct >= 100) return;
             var rt = camRTRef(__instance);
             if (rt == null) return;
             var fm = SharpUpscale ? FilterMode.Point : FilterMode.Bilinear;
@@ -174,7 +206,7 @@ namespace StutterFix
                 var oc = cam == null ? null : overlayRef(cam);
                 if (oc == null) return;
                 var comp = oc.GetComponent<UpscaleSharpen>();
-                bool want = Sharpen && SharpenReady && RenderScalePct < 100;
+                bool want = Sharpen && SharpenReady && EffectivePct < 100;
                 if (comp == null) { if (!want) return; comp = oc.gameObject.AddComponent<UpscaleSharpen>(); }
                 if (comp.enabled != want) comp.enabled = want;
             }
@@ -242,10 +274,10 @@ namespace StutterFix
 
         internal static string Summary()
         {
-            if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100 && !HalfRender.Enabled) return "";
+            if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100 && !HalfRender.Enabled && !AutoRes) return "";
             string rt = ""; try { var cam = scrCamera.instance; var t = cam == null ? null : camRTRef(cam); if (t != null) rt = ", 게임 화면 " + t.width + "x" + t.height; } catch { }
             return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}, 선명도 보정 {6}프레임",
-                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames) + HalfRender.Summary();
+                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames) + (AutoRes ? string.Format(", 자동 해상도: 목표 {0} FPS, 내림 {1}번, 올림 {2}번, 끝났을 때 {3}%", AutoTargetFps, AutoDown, AutoUp, AutoPct) : "") + HalfRender.Summary();
         }
     }
 }

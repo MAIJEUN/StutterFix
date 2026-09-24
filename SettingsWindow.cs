@@ -836,6 +836,13 @@ namespace StutterFix
                 T("게임은 매 프레임 음악 주파수를 분석하는데, 이 값을 쓰는 곳은 타일 색 방식 'Volume' 뿐입니다. 그 방식을 쓰는 타일이 없으면 분석을 건너뜁니다. 곡 도중 타일이 Volume 으로 바뀌면 바로 다시 켜며, 그 첫 한 프레임만 색이 한 프레임 늦을 수 있습니다.",
                   "The game analyses the music spectrum every frame, but only 'Volume' track colours use it. Skips it when no tile uses that mode; turns back on immediately if a tile switches to Volume (that first frame may lag by one frame)."),
                 T("게임", "Game"));
+            GUILayout.Space(10);
+            GUILayout.Label(T("효과 몰림 더 잘게 나누기", "Split effect bursts finer"), sBody);
+            GUILayout.Label(T("한 박자에 효과가 몰릴 때 한 프레임에 쓰는 시간을 더 짧게 끊어 여러 프레임에 나눕니다(타일 색 바꾸기도 더 작은 조각으로). CPU 가 약하면 멈칫이 줄어드는 대신, 몰린 효과 중 뒤쪽 것이 몇 프레임(수십 ms) 늦게 시작할 수 있습니다. 판정에는 영향이 없습니다.",
+                "When many effects fire on one beat, spreads them over more frames with a shorter per-frame time (and smaller tile-recolour chunks). Fewer hitches on weak CPUs; later effects in a burst may start a few frames (tens of ms) late. Judgement is unaffected."), sDim);
+            GUILayout.Space(6);
+            int sp = Mathf.Clamp(c.LowSplit, 0, 2);
+            if (Segment("lowsplit", ref sp, new[] { T("기본 (10ms)", "Default (10 ms)"), T("잘게 (5ms)", "Fine (5 ms)"), T("아주 잘게 (3ms)", "Finest (3 ms)") })) { c.LowSplit = sp; ch = true; }
             Section(T("그래픽카드 쪽", "Graphics card"));
             GUILayout.Label(T("게임 화면 해상도", "Game view resolution"), sBody);
             GUILayout.Label(T("플레이 중 게임 화면(타일, 장식, 배경, 필터)을 이 배율로 작게 그린 뒤 늘려서 보여 줍니다. 그래픽카드가 약할수록 효과가 가장 큽니다(50% 면 그릴 픽셀이 4분의 1). 게임 화면이 흐려지고, 픽셀 크기를 쓰는 일부 필터는 모양이 조금 달라질 수 있습니다. HUD·설정 창 글자는 선명하게 남습니다. 바로 적용됩니다.",
@@ -847,8 +854,25 @@ namespace StutterFix
                 int v = Mathf.Clamp(Mathf.RoundToInt(fs / 5f) * 5, 10, 100);   // 5% 단위
                 if (v != c.LowRenderScale) { c.LowRenderScale = v; ch = true; }
             }
+            GUILayout.Space(8);
+            ch |= Option("lowauto", ref c.LowAutoRes, T("자동 해상도 (목표 FPS 유지)", "Auto resolution (keep target FPS)"),
+                T("그래픽카드가 바빠서 목표 FPS 를 못 맞출 때만 게임 화면 해상도를 10%씩 낮추고, 여유가 생기면 다시 올립니다. 가벼운 구간은 선명하게, 무거운 구간만 잠깐 흐려집니다. 위 슬라이더가 최대 배율입니다. CPU 가 한계라 느린 것은 해상도로 풀리지 않아 건드리지 않습니다. 해상도가 바뀌는 순간 아주 짧게 멈칫할 수 있어 바꾸는 간격을 두었습니다.",
+                  "Lowers the game-view resolution in 10% steps only when the GPU can't keep the target FPS, and raises it back when there is headroom. Light parts stay sharp; only heavy parts get softer. The slider above is the maximum. CPU-bound slowdowns are left alone. A resolution change can cause a tiny hitch, so changes are spaced out."),
+                T("그래픽카드", "GPU"));
+            if (c.LowAutoRes)
+            {
+                int fi = c.LowAutoFps >= 240 ? 3 : c.LowAutoFps >= 144 ? 2 : c.LowAutoFps >= 120 ? 1 : 0;
+                if (Segment("lowautofps", ref fi, new[] { "60 FPS", "120 FPS", "144 FPS", "240 FPS" })) { c.LowAutoFps = fi == 3 ? 240 : fi == 2 ? 144 : fi == 1 ? 120 : 60; ch = true; }
+                float mn = Mathf.Clamp(c.LowAutoMin, 10, 100);
+                if (Slider("lowautomin", ref mn, 10f, 100f, T("최소 배율", "Minimum"), Mathf.RoundToInt(mn) + "%"))
+                {
+                    int v = Mathf.Clamp(Mathf.RoundToInt(mn / 5f) * 5, 10, 100);
+                    if (v != c.LowAutoMin) { c.LowAutoMin = v; ch = true; }
+                }
+                if (Hitch.Playing) GUILayout.Label(string.Format(T("지금 {0}% (GPU {1:F1}ms)", "Now {0}% (GPU {1:F1} ms)"), LowEnd.EffectivePct, LowEnd.GpuEma), sSub);
+            }
             if (!LowEnd.RenderScaleReady) GUILayout.Label(T("이 게임 버전에서는 쓸 수 없습니다 (게임 코드 모양이 다름)", "Not available in this game version"), sSub);
-            if (c.LowRenderScale < 100)
+            if (c.LowRenderScale < 100 || c.LowAutoRes)
             {
                 GUILayout.Label(string.Format(T("게임 화면을 {0}×{1} 로 그립니다", "Game view drawn at {0}×{1}"), LowEnd.RTWidth(), LowEnd.RTHeight()), sSub);
                 GUILayout.Space(6);
@@ -884,10 +908,10 @@ namespace StutterFix
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("모두 켜기", "Turn all on"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; c.LowSplit = 1; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowSharpen = c.LowHalfRender = false; c.LowRenderScale = 100; c.LowImageCap = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]

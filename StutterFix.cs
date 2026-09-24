@@ -371,7 +371,7 @@ namespace StutterFix
 
             long q = System.Diagnostics.Stopwatch.GetTimestamp();
             GcControl.Tick(dt); Tk(0, ref q);
-            RestartAdvisor.Tick(); Tk(1, ref q);
+            RestartAdvisor.Tick(); LowEnd.AutoTick(); Tk(1, ref q);
             EffectBudget.Tick(); Tk(2, ref q);
             RecolorSplit.Tick(); Tk(3, ref q);
             FastBlend.Tick(); Tk(4, ref q);
@@ -451,7 +451,10 @@ namespace StutterFix
             Precheck.Enabled = Config.Precheck; Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
             if (!Config.DecoAnim && global::StutterFix.DecoAnim.Enabled) global::StutterFix.DecoAnim.FinishAll();   // 끄면 진행 중인 것은 끝값으로 (Kill(true) 와 같음)
             global::StutterFix.DecoAnim.Enabled = Config.DecoAnim;
-            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 10, 100); LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Sharpen = Config.LowSharpen; LowEnd.SharpenValue = Mathf.Clamp(Config.LowSharpenValue, 0.25f, 4f); HalfRender.Enabled = Config.LowHalfRender; LowEnd.Apply();
+            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 10, 100); LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Sharpen = Config.LowSharpen; LowEnd.SharpenValue = Mathf.Clamp(Config.LowSharpenValue, 0.25f, 4f); HalfRender.Enabled = Config.LowHalfRender; LowEnd.AutoRes = Config.LowAutoRes; LowEnd.AutoTargetFps = Config.LowAutoFps; LowEnd.AutoMinPct = Mathf.Clamp(Config.LowAutoMin, 10, 100);
+            EffectBudget.BudgetMs = Config.LowSplit >= 2 ? 3f : Config.LowSplit == 1 ? 5f : 10f;
+            RecolorSplit.ChunkTiles = Config.LowSplit >= 2 ? 120 : Config.LowSplit == 1 ? 200 : 400;
+            LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
@@ -653,6 +656,10 @@ namespace StutterFix
         public bool LowSharpen = false;     // (실험) 늘린 게임 화면에 선명도 보정
         public float LowSharpenValue = 1f;  // (실험) 선명도 보정 세기 (셰이더 _Value)
         public bool LowHalfRender = false;  // (실험) 두 프레임에 한 번만 그리고 사이 프레임은 카메라만 옮기기
+        public bool LowAutoRes = false;     // 자동 해상도: 목표 FPS 를 못 맞출 만큼 GPU 가 바쁠 때만 게임 화면 해상도를 낮춤
+        public int LowAutoFps = 60;         // 자동 해상도 목표 FPS
+        public int LowAutoMin = 50;         // 자동 해상도 최소 배율 %
+        public int LowSplit = 0;            // 효과 몰림 나누기 세기: 0 기본(10ms, 400칸), 1 잘게(5ms, 200칸), 2 아주 잘게(3ms, 120칸)
         public string ReopenLevel = "";     // 재시작 버튼으로 껐을 때 다시 켠 뒤 에디터로 열 맵 (한 번 쓰고 비움)
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
