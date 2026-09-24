@@ -87,6 +87,9 @@ namespace StutterFix
                 {
                     new[] { "scrController", "Restart" },
                     new[] { "scnEditor", "Play" },
+                    // 에디터에서 죽은 뒤 아무 키나 눌러 다시 할 때는 Restart 가 아니라 이것이다 (Fail2_Update IL 로 확인).
+                    // 빠져 있어서 2.0.1 에서는 실패 뒤 정리를 기다리는 동안 다시 한 판들을 곡으로 못 알아보고 GC 를 계속 꺼 둔 채였다(힙 1140MB).
+                    new[] { "scrController", "ResetCustomLevel" },
                 };
 
                 foreach (var e in ends)
@@ -302,6 +305,15 @@ namespace StutterFix
             // 지금은 곡 소리가 재생 중이면 끝난 것으로 보지 않는다.
             bool songRunning = false;
             try { var cd = scrConductor.instance; songRunning = cd != null && cd.song != null && cd.song.isPlaying; } catch { }
+            // 안전장치: 실패 뒤 정리를 기다리는데 모르는 길로 곡이 다시 돌기 시작했다(곡으로 못 알아봄).
+            // 여기서 한꺼번에 치우면 곡 중에 멈추므로, 정리 없이 GC 만 원래대로 켠다(게임 기본 동작과 같음).
+            if (holdAfterFail && songRunning && !playing)
+            {
+                holdAfterFail = false;
+                try { GarbageCollector.GCMode = GarbageCollector.Mode.Enabled; Paused = false; resumeCountdown = -1f; } catch { }
+                Main.Entry.Logger.Log("[GC] 실패 뒤 곡이 다시 도는 것을 감지: 정리 없이 GC 를 켬 (힙 " + heapNow + "MB)");
+                return;
+            }
             if (songRunning) { quietTimer = 0f; quietHeapMark = heapNow; }
             else quietTimer += dt;
             if (quietTimer >= 10f)
