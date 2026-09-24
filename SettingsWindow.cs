@@ -841,17 +841,35 @@ namespace StutterFix
             GUILayout.Label(T("플레이 중 게임 화면(타일, 장식, 배경, 필터)을 이 배율로 작게 그린 뒤 늘려서 보여 줍니다. 그래픽카드가 약할수록 효과가 가장 큽니다(50% 면 그릴 픽셀이 4분의 1). 게임 화면이 흐려지고, 픽셀 크기를 쓰는 일부 필터는 모양이 조금 달라질 수 있습니다. HUD·설정 창 글자는 선명하게 남습니다. 바로 적용됩니다.",
                 "Draws the game view (tiles, decorations, background, filters) at this scale during play and stretches it to the screen. Biggest win on weak graphics cards (50% = a quarter of the pixels). The game view gets softer and some pixel-based filters may look slightly different. HUD and this window stay sharp. Applies immediately."), sDim);
             GUILayout.Space(6);
-            int rs = c.LowRenderScale >= 100 ? 0 : c.LowRenderScale >= 75 ? 1 : 2;
-            if (Segment("lowscale", ref rs, new[] { "100%", "75%", "50%" })) { c.LowRenderScale = rs == 0 ? 100 : rs == 1 ? 75 : 50; ch = true; }
+            float fs = Mathf.Clamp(c.LowRenderScale, 10, 100);
+            if (Slider("lowscale", ref fs, 10f, 100f, T("배율", "Scale"), Mathf.RoundToInt(fs) + "%"))
+            {
+                int v = Mathf.Clamp(Mathf.RoundToInt(fs / 5f) * 5, 10, 100);   // 5% 단위
+                if (v != c.LowRenderScale) { c.LowRenderScale = v; ch = true; }
+            }
             if (!LowEnd.RenderScaleReady) GUILayout.Label(T("이 게임 버전에서는 쓸 수 없습니다 (게임 코드 모양이 다름)", "Not available in this game version"), sSub);
+            if (c.LowRenderScale < 100)
+            {
+                GUILayout.Label(string.Format(T("게임 화면을 {0}×{1} 로 그립니다", "Game view drawn at {0}×{1}"), LowEnd.RTWidth(), LowEnd.RTHeight()), sSub);
+                GUILayout.Space(6);
+                int up = c.LowSharpUpscale ? 1 : 0;
+                if (Segment("lowsharp", ref up, new[] { T("부드럽게 늘리기", "Smooth"), T("선명하게 늘리기 (도트)", "Sharp (pixelated)") })) { c.LowSharpUpscale = up == 1; ch = true; }
+            }
+            GUILayout.Space(12);
+            GUILayout.Label(T("장식 이미지 최대 크기", "Max decoration image size"), sBody);
+            GUILayout.Label(T("장식 이미지를 불러올 때 긴 변을 이 크기로 줄입니다. 그래픽 메모리가 적은 컴퓨터(내장 그래픽, 2~4GB 그래픽카드)에서 이미지가 많은 맵의 끊김과 로딩 시간이 줄어듭니다. 장식의 화면 크기는 그대로이고 선명도만 낮아집니다. '맵 불러오기' 페이지 설정보다 작은 쪽을 쓰며, 다음에 여는 맵부터 적용됩니다.",
+                "Shrinks decoration images so their longer side is at most this size when loading. Helps PCs with little video memory on image-heavy levels (less stutter and faster loading). On-screen size stays the same; only sharpness drops. Uses the smaller of this and the Level loading setting; applies to the next level you open."), sDim);
+            GUILayout.Space(6);
+            int ic = c.LowImageCap >= 1024 ? 1 : c.LowImageCap > 0 ? 2 : 0;
+            if (Segment("lowimg", ref ic, new[] { T("그대로", "Unchanged"), "1024", "512" })) { c.LowImageCap = ic == 1 ? 1024 : ic == 2 ? 512 : 0; ch = true; }
             if (ch) Save();
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("모두 켜기", "Turn all on"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = false; c.LowRenderScale = 100; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = false; c.LowRenderScale = 100; c.LowImageCap = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]

@@ -129,6 +129,25 @@ namespace StutterFix
         }
         internal static bool RenderScaleReady;
 
+        // 게임 화면을 작게 그렸을 때 늘리는 방식: 부드럽게(기본, Bilinear) / 선명하게(도트처럼, Point). 배율 100% 면 건드리지 않는다.
+        internal static bool SharpUpscale;
+        public static void CamUpdatePostfix(scrCamera __instance)
+        {
+            if (RenderScalePct >= 100) return;
+            var rt = camRTRef(__instance);
+            if (rt == null) return;
+            var fm = SharpUpscale ? FilterMode.Point : FilterMode.Bilinear;
+            if (rt.filterMode != fm) rt.filterMode = fm;
+        }
+        // 장식 이미지 최대 크기 (저사양): 켜면 "맵 불러오기" 페이지 설정보다 작은 쪽을 쓴다
+        internal static int ImageCap;
+        internal static int CombinedMaxSide(int pageSetting)
+        {
+            if (ImageCap <= 0) return pageSetting;
+            return pageSetting > 0 ? Math.Min(pageSetting, ImageCap) : ImageCap;
+        }
+
+
         internal static void Install(Harmony h)
         {
             if (installed) return;
@@ -141,7 +160,7 @@ namespace StutterFix
                     if (m.Name == "ColorFloor" && m.GetParameters().Length > 0 && m.GetParameters()[0].ParameterType == typeof(TrackColorType))
                         h.Patch(m, prefix: new HarmonyMethod(typeof(LowEnd), nameof(ColorFloorPrefix)));
                 var cu = AccessTools.Method(typeof(scrCamera), "Update");
-                if (cu != null) h.Patch(cu, transpiler: new HarmonyMethod(typeof(LowEnd), nameof(CamUpdateTranspiler)));
+                if (cu != null) h.Patch(cu, transpiler: new HarmonyMethod(typeof(LowEnd), nameof(CamUpdateTranspiler)), postfix: new HarmonyMethod(typeof(LowEnd), nameof(CamUpdatePostfix)));
                 var nr = AccessTools.PropertyGetter(typeof(scrCamera), "camRTNeedsRecreation");
                 if (nr != null && RenderScaleReady) h.Patch(nr, prefix: new HarmonyMethod(typeof(LowEnd), nameof(NeedsRecreationPrefix)));
                 Main.Entry.Logger.Log("[저사양] 설치 (게임 화면 해상도 " + (RenderScaleReady ? "사용 가능" : "사용 불가") + ")");

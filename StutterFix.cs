@@ -449,7 +449,7 @@ namespace StutterFix
             Precheck.Enabled = Config.Precheck; Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
             if (!Config.DecoAnim && global::StutterFix.DecoAnim.Enabled) global::StutterFix.DecoAnim.FinishAll();   // 끄면 진행 중인 것은 끝값으로 (Kill(true) 와 같음)
             global::StutterFix.DecoAnim.Enabled = Config.DecoAnim;
-            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 25, 100); LowEnd.Apply();
+            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 10, 100); LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
@@ -460,7 +460,7 @@ namespace StutterFix
             InvisibleSkip.LazyMove = Config.LazyHidden;
             if (!InvisibleSkip.Enabled) InvisibleSkip.RestoreAll();
             else if (!InvisibleSkip.LazyMove) InvisibleSkip.ApplyAllLazy();
-            ImagePrefetch.MaxSide = Config.ImageMaxSide;
+            ImagePrefetch.MaxSide = LowEnd.CombinedMaxSide(Config.ImageMaxSide);
         }
 
         private static void OnGUI(UnityModManager.ModEntry modEntry)
@@ -645,7 +645,9 @@ namespace StutterFix
         public bool LowPriority = false;    // 게임 우선순위 높음
         public bool LowNoThrottle = false;  // 윈도우 절전 제한 끄기 + 타이머 1ms
         public bool LowNoFft = false;       // Volume 타일이 없으면 음악 주파수 분석 건너뛰기
-        public int LowRenderScale = 100;    // 게임 화면(카메라) 해상도 배율 %, 100 = 원래대로
+        public int LowRenderScale = 100;    // 게임 화면(카메라) 해상도 배율 % (10~100), 100 = 원래대로
+        public bool LowSharpUpscale = false; // 작게 그린 게임 화면을 선명하게(도트처럼) 늘리기
+        public int LowImageCap = 0;         // 장식 이미지 최대 크기 (0 = 맵 불러오기 설정 그대로, 1024, 512)
         public string ReopenLevel = "";     // 재시작 버튼으로 껐을 때 다시 켠 뒤 에디터로 열 맵 (한 번 쓰고 비움)
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
