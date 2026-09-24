@@ -30,6 +30,11 @@ namespace StutterFix
         // 연출이 끝날 때까지 기다렸다가 치운다.
         private static float resumeCountdown = -1f;
         private static string resumeReason;
+        // 죽은 뒤(FailAction)에는 3초 뒤에 치우지 않고, 다음 화면 전환(재시작·재생·편집 복귀)까지 미룬다.
+        // 사용자 로그(2.0.0, 에디터에서 죽고 다시 하기 반복): 죽고 3초 뒤 실패 화면에서 160~340ms 정리가 끊김 알림으로 떠서
+        // "메모리 정리 때문에 끊긴다" 로 보였다. 재시작 순간은 어차피 곡 준비로 400~700ms 멈추므로 그때 같이 치운다.
+        // 아무것도 안 하고 10초 있으면(10초간 조용함) 그때 치운다.
+        private static bool holdAfterFail;
         internal static int IncrementalStartMB = 800;     // 조금씩 치우기 모드에서만 쓴다
         internal static float SliceMs = 2f;
         internal static int SliceEveryFrames = 4;
@@ -160,7 +165,14 @@ namespace StutterFix
             Hitch.Report();
             // 편집 화면으로 돌아가거나 메뉴로 나갈 때는 타일/장식을 다시 만드느라 멈춘다 (완주 연출은 끊김으로 본다)
             string n = __originalMethod.Name;
-            if (n == "SwitchToEditMode" || n.Contains("Quit")) PerfOverlay.MarkLoading(SettingsWindow.T("편집 화면으로", "Back to editor"));
+            if (n == "SwitchToEditMode" || n.Contains("Quit"))
+            {
+                // 화면이 바뀌며 어차피 멈추는 순간이라 바로 치운다
+                PerfOverlay.MarkLoading(SettingsWindow.T("편집 화면으로", "Back to editor"));
+                Resume(n);
+                return;
+            }
+            if (n == "FailAction" || n == "Fail2Action") { if (Paused) holdAfterFail = true; return; }
             ScheduleResume(__originalMethod.Name);
         }
 
@@ -203,6 +215,15 @@ namespace StutterFix
             if (!Paused) return;
             try
             {
+                holdAfterFail = false;
+                // 곡 밖에서 하는 정리는 곡 중 끊김이 아니다(곡 중에 날 정리를 미뤄 둔 것). 모니터에는 회색으로 따로 적는다.
+                // (재시작·맵 로딩처럼 이미 불러오기로 적힌 순간이면 그 이름을 그대로 둔다)
+                bool outside = false;
+                try { outside = !IsPlaying(); } catch { }
+                if (outside && !PerfOverlay.IsLoadingNow)
+                    PerfOverlay.MarkLoading(SettingsWindow.T("곡 밖 메모리 정리", "Memory cleanup outside play"),
+                        SettingsWindow.T("곡 중에 끊기지 않게 미뤄 둔 메모리 정리를 곡 밖에서 했습니다. 끊김으로 세지 않습니다",
+                            "Memory cleanup postponed from gameplay ran outside play; not counted as a hitch"));
                 GarbageCollector.GCMode = GarbageCollector.Mode.Enabled;
                 Paused = false;
                 resumeCountdown = -1f;
@@ -247,7 +268,7 @@ namespace StutterFix
             Hitch.Tick(dt, playing);
 
             if (playing && !Paused) { Pause(); pausedFor = 0f; PeakHeapMB = 0; quietTimer = 0f; quietHeapMark = GC.GetTotalMemory(false) / 1048576; }
-            else if (!playing && Paused) { Hitch.Report(); ScheduleResume("곡 종료 [" + LastScene + "]"); }
+            else if (!playing && Paused) { Hitch.Report(); if (!holdAfterFail) ScheduleResume("곡 종료 [" + LastScene + "]"); }
 
             // 곡이 끝났으면 연출이 끝나기를 기다렸다 치운다.
             if (resumeCountdown > 0f)

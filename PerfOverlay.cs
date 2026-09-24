@@ -564,12 +564,15 @@ namespace StutterFix
         }
         private float smooth;
 
-        internal static void MarkLoading(string what)
+        internal static void MarkLoading(string what) { MarkLoading(what, null); }
+        internal static void MarkLoading(string what, string detail)
         {
             loadFrame = Time.frameCount;          // 긴 프레임은 시간으로 재면 창을 넘기므로 프레임 수로도 본다
             loadTime = Time.realtimeSinceStartup;
             loadWhat = what;
+            loadDetail = detail;
         }
+        private static string loadDetail;
 
         private static bool InLoading { get { return Time.frameCount - loadFrame <= 30 || Time.realtimeSinceStartup - loadTime < 2f; } }
         internal static bool IsLoadingNow { get { return InLoading; } }
@@ -626,8 +629,8 @@ namespace StutterFix
                 return Loading(ms, T("게임·모드 시작 중", "Game / mods starting"),
                     T("게임과 모드들이 처음 준비되는 중입니다. 끊김으로 세지 않습니다", "The game and mods are still loading; not counted as a hitch"));
             if (ms > 1500f || ImagePrefetch.Running || InLoading)
-                return Loading(ms, T("불러오기", "Loading") + (loadWhat.Length > 0 ? " · " + loadWhat : ""),
-                    T("맵이나 곡을 준비하느라 멈췄습니다. 끊김으로 세지 않습니다", "Preparing a level or scene; not counted as a hitch"));
+                return Loading(ms, InLoading && loadDetail != null ? loadWhat : T("불러오기", "Loading") + (loadWhat.Length > 0 ? " · " + loadWhat : ""),
+                    InLoading && loadDetail != null ? loadDetail : T("맵이나 곡을 준비하느라 멈췄습니다. 끊김으로 세지 않습니다", "Preparing a level or scene; not counted as a hitch"));
             if (InStartPhase)
                 return Loading(ms, T("곡 시작 연출", "Level start"),
                     T("곡 시작과 첫 타일에서 맵의 시작 효과들이 한꺼번에 실행됐습니다. 끊김으로 세지 않습니다", "The level's opening effects ran all at once at the start / first tile; not counted as a hitch"));
