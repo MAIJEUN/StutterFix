@@ -242,10 +242,10 @@ namespace StutterFix
 
         internal static string Summary()
         {
-            if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100) return "";
+            if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100 && !HalfRender.Enabled) return "";
             string rt = ""; try { var cam = scrCamera.instance; var t = cam == null ? null : camRTRef(cam); if (t != null) rt = ", 게임 화면 " + t.width + "x" + t.height; } catch { }
             return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}, 선명도 보정 {6}프레임",
-                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames);
+                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames) + HalfRender.Summary();
         }
     }
 }

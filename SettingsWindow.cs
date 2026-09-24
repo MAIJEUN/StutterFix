@@ -875,6 +875,11 @@ namespace StutterFix
                 if (Slider("lowsharpv", ref sv, 0.25f, 4f, T("세기", "Strength"), sv.ToString("F2"))) { c.LowSharpenValue = Mathf.Round(sv * 20f) / 20f; ch = true; }
                 if (!LowEnd.SharpenReady) GUILayout.Label(T("셰이더를 찾지 못해 쓸 수 없습니다", "Shader not found; unavailable"), sSub);
             }
+            GUILayout.Space(8);
+            ch |= Option("lowhalf", ref c.LowHalfRender, T("반만 그리기 + 카메라 보정", "Half-rate render + camera reprojection"),
+                T("게임 화면을 두 프레임에 한 번만 그리고, 사이 프레임에는 지난 그림을 카메라가 움직인 만큼 밀고·돌리고·키워 보여 줍니다(VR 의 재투영과 같은 방식). 그래픽카드 일이 절반이 되고, 프레임 생성과 달리 지연이 늘지 않습니다. 대신 행성·장식·필터는 절반 속도로 움직이고, 배경 그림은 사이 프레임에 조금 밀릴 수 있으며, 빠르게 움직일 때 화면 가장자리가 잠깐 빌 수 있습니다. 그래픽카드가 한계인 컴퓨터에서만 효과가 있습니다.",
+                  "Draws the game view every other frame; in between, the last image is shifted, rotated and scaled by the camera's movement (like VR reprojection). Halves GPU work without adding latency, unlike frame generation. Planets, decorations and filters update at half rate, background art may shift slightly on in-between frames, and edges may briefly show gaps during fast movement. Only helps when the graphics card is the bottleneck."),
+                T("실험", "Experimental"));
             if (ch) Save();
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
@@ -882,7 +887,7 @@ namespace StutterFix
             { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowSharpen = false; c.LowRenderScale = 100; c.LowImageCap = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowSharpen = c.LowHalfRender = false; c.LowRenderScale = 100; c.LowImageCap = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]
