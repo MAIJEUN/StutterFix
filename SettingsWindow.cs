@@ -844,23 +844,14 @@ namespace StutterFix
             int rs = c.LowRenderScale >= 100 ? 0 : c.LowRenderScale >= 75 ? 1 : 2;
             if (Segment("lowscale", ref rs, new[] { "100%", "75%", "50%" })) { c.LowRenderScale = rs == 0 ? 100 : rs == 1 ? 75 : 50; ch = true; }
             if (!LowEnd.RenderScaleReady) GUILayout.Label(T("이 게임 버전에서는 쓸 수 없습니다 (게임 코드 모양이 다름)", "Not available in this game version"), sSub);
-            GUILayout.Space(10);
-            ch |= Option("lowfilter", ref c.LowNoFilters, T("화면 필터 끄기", "Turn off screen filters"),
-                T("맵의 필터 효과(흑백, 흐림, 글리치, 물결 등 SetFilter)를 그리지 않습니다. 필터는 화면 전체를 한 번 더 그려서 그래픽카드가 약하면 가장 비쌉니다. <b>맵이 보이는 모습이 달라집니다.</b> 화면 타일·스크롤 같은 연출은 그대로입니다.",
-                  "Skips the level's filter effects (grayscale, blur, glitch, waves, etc.). Filters redraw the whole screen and cost the most on weak graphics. <b>The level will look different.</b> Screen tile/scroll effects are kept."),
-                T("화면 달라짐", "Changes visuals"));
-            ch |= Option("lowbloom", ref c.LowNoBloom, T("블룸 끄기", "Turn off bloom"),
-                T("빛 번짐 효과(SetBloom)를 그리지 않습니다. 필터처럼 화면 전체를 여러 번 그리는 효과라 그래픽카드 부담이 큽니다. <b>밝은 부분의 번짐이 사라집니다.</b>",
-                  "Skips the bloom glow effect, which also redraws the whole screen several times. <b>Bright glows disappear.</b>"),
-                T("화면 달라짐", "Changes visuals"));
             if (ch) Save();
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("모두 켜기", "Turn all on"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowNoFilters = c.LowNoBloom = true; c.LowRenderScale = 75; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowNoFilters = c.LowNoBloom = false; c.LowRenderScale = 100; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = false; c.LowRenderScale = 100; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]
