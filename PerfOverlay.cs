@@ -530,6 +530,7 @@ namespace StutterFix
             catch (System.Exception ex) { return "화면: 읽기 실패 " + ex.Message; }
         }
 
+        internal static int SongFrames { get { var o = Instance; return o == null ? 0 : o.songFrames; } }
         internal static string SongSummary()
         {
             var o = Instance;

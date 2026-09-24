@@ -198,7 +198,8 @@ namespace StutterFix
                 // 곡이 끝난 뒤(결과 화면 등) 재생 상태가 프레임마다 켜졌다 꺼졌다 해서 이 줄이 수백 번 찍혔다.
                 // 한 일이 없으면 남기지 않는다.
                 // 곡이 끝난 뒤에도 결과 화면에서 장식이 조금씩 움직여 이 요약이 수십 번 찍혔다. 곡마다 한 번만 남긴다.
-                if (!endLogged && (ZeroTween.Fast > 100 || MoveApply.PosWrites > 1000))
+                // 장식이 없는 맵(논이펙)은 위 값이 0 이라 곡 요약이 안 남았다. 곡 프레임이 충분하면 남긴다.
+                if (!endLogged && (ZeroTween.Fast > 100 || MoveApply.PosWrites > 1000 || PerfOverlay.SongFrames >= 600))
                 {
                     endLogged = true;
                     string perf = PerfOverlay.SongSummary();
