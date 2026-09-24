@@ -64,6 +64,17 @@ namespace StutterFix
             catch { return true; }
         }
 
+        internal static long SkippedSameShadow;
+        private static readonly AccessTools.FieldRef<UnityEngine.UI.Shadow, Color> shadowColorRef = AccessTools.FieldRefAccess<UnityEngine.UI.Shadow, Color>("m_EffectColor");
+        public static bool ShadowColorPrefix(UnityEngine.UI.Shadow __instance, Color value)
+        {
+            if (!SkipSameText) return true;
+            var c = shadowColorRef(__instance);
+            // Color == 는 근사 비교라 쓰지 않는다. 성분이 비트까지 같을 때만 (NaN 은 같지 않으므로 원래대로)
+            if (c.r == value.r && c.g == value.g && c.b == value.b && c.a == value.a) { SkippedSameShadow++; return false; }
+            return true;
+        }
+
         internal static void Install(Harmony harmony)
         {
             try
@@ -77,6 +88,16 @@ namespace StutterFix
                 {
                     harmony.Patch(setText, prefix: new HarmonyMethod(typeof(TextFix), nameof(SetTextPrefix)));
                     Main.Entry.Logger.Log("patched scrTextDecoration.SetText (같은 글자 건너뛰기)");
+                }
+
+                // 글자 그림자 색: 게임 HUD 글자(scrHUDText.Update)가 커스텀 맵에서 매 프레임 그림자 색을 다시 넣는데,
+                // 유니티 Shadow.effectColor 는 값이 같아도 무조건 SetVerticesDirty 를 불러(IL 확인) 글자 메시를 매 프레임 새로 만든다.
+                // (Graphic.color 는 SetPropertyUtility 로 같은 값이면 건너뛴다.) 같은 값이면 결과 메시도 같으므로 건너뛴다.
+                var shadowSetter = AccessTools.PropertySetter(typeof(UnityEngine.UI.Shadow), "effectColor");
+                if (shadowSetter != null)
+                {
+                    harmony.Patch(shadowSetter, prefix: new HarmonyMethod(typeof(TextFix), nameof(ShadowColorPrefix)));
+                    Main.Entry.Logger.Log("patched Shadow.effectColor (같은 그림자 색 건너뛰기)");
                 }
 
                 // 코루틴 본체는 컴파일러가 만든 <SetCollider>d__NN 클래스의 MoveNext 안에 있다.
