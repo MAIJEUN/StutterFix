@@ -21,6 +21,7 @@ namespace StutterFix
         private class Slot
         {
             public string Name;
+            public string Asm;   // 어느 DLL 소속인지 (게임 본체 / 모드 이름)
             public long Ticks;
             public int Calls;
             // 곡 전체와 10초 구간별 누적. 끊긴 프레임이 아니라 평소 프레임에 매번 드는 비용을 보려고 둔다.
@@ -66,7 +67,8 @@ namespace StutterFix
                             if (m == null || m.IsAbstract || m.ContainsGenericParameters) continue;
                             if (slots.ContainsKey(m)) continue;
 
-                            var slot = new Slot { Name = m.DeclaringType.Name + "." + name, Bucket = new long[PerfOverlay.MaxBuckets] };
+                            string asm = m.DeclaringType.Assembly.GetName().Name;
+                            var slot = new Slot { Name = m.DeclaringType.Name + "." + name + (asm == "Assembly-CSharp" ? "" : " [" + asm + "]"), Asm = asm, Bucket = new long[PerfOverlay.MaxBuckets] };
                             slots[m] = slot;
                             all.Add(slot);
 
@@ -190,6 +192,7 @@ namespace StutterFix
         internal static void ResetSong()
         {
             for (int i = 0; i < all.Count; i++) { all[i].SongTicks = 0; all[i].SongCalls = 0; System.Array.Clear(all[i].Bucket, 0, all[i].Bucket.Length); }
+            Main.UpdateTicks = 0; System.Array.Clear(Main.TickCost, 0, Main.TickCost.Length);
         }
 
         // 곡이 끝나면 "평소 프레임 하나에 어느 함수가 얼마나 드나" 를 남긴다. 곡 전체 평균과, 가장 가벼운 10초 구간.
@@ -199,13 +202,46 @@ namespace StutterFix
             if (!Installed || all.Count == 0) return;
             int frames = PerfOverlay.SongFrameCount;
             if (frames < 30) return;
-            Main.Entry.Logger.Log("[프레임 비용] 곡 평균, 프레임당: " + Rank(s => s.SongTicks, frames, s => s.SongCalls, 15));
+            Main.Entry.Logger.Log("[프레임 비용] 곡 평균, 프레임당: " + Rank(s => s.SongTicks, frames, s => s.SongCalls, 40));
+            Main.Entry.Logger.Log("[프레임 비용] DLL별 합계, 프레임당: " + ByAsm(frames) + " (감싼 함수 " + all.Count + "개) | StutterFix OnUpdate " + (Main.UpdateTicks * 1000.0 / Stopwatch.Frequency / frames).ToString("F3") + "ms [" + TickText(frames) + "]");
             int best, bestFrames;
             if (PerfOverlay.BestBucket(out best, out bestFrames))
                 Main.Entry.Logger.Log("[프레임 비용] 가장 가벼운 구간 " + best * 10 + "초, 프레임당: " + Rank(s => s.Bucket[best], bestFrames, null, 12));
             int worst, worstFrames;
             if (PerfOverlay.WorstBucket(out worst, out worstFrames))
                 Main.Entry.Logger.Log("[프레임 비용] 가장 무거운 구간 " + worst * 10 + "초, 프레임당: " + Rank(s => s.Bucket[worst], worstFrames, null, 12));
+        }
+
+        // 게임 본체와 모드별로 Update/LateUpdate 에 쓴 시간을 합친다 (다른 모드가 매 프레임 얼마나 쓰는지)
+        private static string TickText(int frames)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < Main.TickCost.Length; i++)
+            {
+                double ms = Main.TickCost[i] * 1000.0 / Stopwatch.Frequency / frames;
+                if (ms < 0.001) continue;
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(Main.TickName[i]).Append(' ').Append(ms.ToString("F3"));
+            }
+            return sb.ToString();
+        }
+
+        private static string ByAsm(int frames)
+        {
+            var sum = new Dictionary<string, long>();
+            foreach (var s in all) { if (s.Asm == null) continue; long v; sum.TryGetValue(s.Asm, out v); sum[s.Asm] = v + s.SongTicks; }   // 안쪽 함수(타일·애니메이션)는 겹쳐 세므로 뺌
+            var list = new List<KeyValuePair<string, long>>(sum);
+            list.Sort((a, b) => b.Value.CompareTo(a.Value));
+            var sb = new System.Text.StringBuilder();
+            long total = 0; foreach (var kv in list) total += kv.Value;
+            sb.Append("전체 ").Append((total * 1000.0 / Stopwatch.Frequency / frames).ToString("F2")).Append("ms |");
+            foreach (var kv in list)
+            {
+                double ms = kv.Value * 1000.0 / Stopwatch.Frequency / frames;
+                if (ms < 0.005) continue;
+                sb.Append(' ').Append(kv.Key).Append(' ').Append(ms.ToString("F2")).Append("ms,");
+            }
+            return sb.ToString().TrimEnd(',');
         }
 
         private static string Rank(Func<Slot, long> ticks, int frames, Func<Slot, long> calls, int count)
@@ -216,7 +252,7 @@ namespace StutterFix
             for (int i = 0; i < list.Count && i < count; i++)
             {
                 double ms = ticks(list[i]) * 1000.0 / Stopwatch.Frequency / frames;
-                if (ms < 0.02) break;
+                if (ms < 0.005) break;
                 if (sb.Length > 0) sb.Append(", ");
                 sb.Append(list[i].Name).Append(' ').Append(ms.ToString("F2")).Append("ms");
                 if (calls != null) sb.Append(" (").Append((calls(list[i]) / (double)frames).ToString("F1")).Append("회)");

@@ -343,7 +343,18 @@ namespace StutterFix
 
         private static bool reloading;
 
+        internal static long UpdateTicks;   // (개발자용 측정) 이 모드 OnUpdate 에 쓴 시간
+        internal static readonly long[] TickCost = new long[17];
+        internal static readonly string[] TickName = { "GcControl", "RestartAdvisor", "EffectBudget", "RecolorSplit", "FastBlend", "MoveApply", "VramGuard", "ImagePrefetch", "RenderWatch(개발)", "ModWatch(개발)", "AllocScan(개발)", "AbTest(개발)", "LoopProfiler(개발)", "Profiler(개발)", "InvisibleSkip.DevTick(개발)", "BlendProbe(개발)", "그중 Hitch.Tick(GcControl 안, 개발자용 측정 대부분)" };
+        private static void Tk(int i, ref long q) { long n = System.Diagnostics.Stopwatch.GetTimestamp(); TickCost[i] += n - q; q = n; }
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            OnUpdateBody(modEntry, dt);
+            UpdateTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        }
+
+        private static void OnUpdateBody(UnityModManager.ModEntry modEntry, float dt)
         {
             // Ctrl+F5: 게임을 켠 채로 새 DLL을 불러온다. 옛 코드는 여기서 바로 빠져나가야 한다.
             if (Edition.Dev && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) && Input.GetKeyDown(KeyCode.F5))
@@ -354,30 +365,31 @@ namespace StutterFix
 
             if (!installed) return;   // 꺼져 있으면 아무 일도 하지 않는다
 
-            GcControl.Tick(dt);
-            RestartAdvisor.Tick();
-            EffectBudget.Tick();
-            RecolorSplit.Tick();
-            FastBlend.Tick();
-            MoveApply.Tick();
-            VramGuard.Tick();
-            ImagePrefetch.LogAfterLoad();
+            long q = System.Diagnostics.Stopwatch.GetTimestamp();
+            GcControl.Tick(dt); Tk(0, ref q);
+            RestartAdvisor.Tick(); Tk(1, ref q);
+            EffectBudget.Tick(); Tk(2, ref q);
+            RecolorSplit.Tick(); Tk(3, ref q);
+            FastBlend.Tick(); Tk(4, ref q);
+            MoveApply.Tick(); Tk(5, ref q);
+            VramGuard.Tick(); Tk(6, ref q);
+            ImagePrefetch.LogAfterLoad(); Tk(7, ref q);
 
             if (Edition.Dev)
             {
-                RenderWatch.Tick(dt);
-                ModWatch.Tick(dt);
-                AllocScan.Tick(dt);
-                AbTest.Tick(dt);
-                LoopProfiler.Tick(dt);
-                Profiler.Tick(dt);
+                RenderWatch.Tick(dt); Tk(8, ref q);
+                ModWatch.Tick(dt); Tk(9, ref q);
+                AllocScan.Tick(dt); Tk(10, ref q);
+                AbTest.Tick(dt); Tk(11, ref q);
+                LoopProfiler.Tick(dt); Tk(12, ref q);
+                Profiler.Tick(dt); Tk(13, ref q);
 
                 if (Input.GetKeyDown(KeyCode.F7)) LoopProfiler.Toggle();
                 if (Input.GetKeyDown(KeyCode.F8)) AbTest.Toggle();
                 if (Input.GetKeyDown(KeyCode.F9)) AllocScan.Toggle();
                 if (Input.GetKeyDown(KeyCode.F6)) TextureCensus.Run();
-                BlendProbe.Tick();
-                InvisibleSkip.DevTick();
+                BlendProbe.Tick(); Tk(15, ref q);
+                InvisibleSkip.DevTick(); Tk(14, ref q);
             }
 
             if (capacityApplied) return;

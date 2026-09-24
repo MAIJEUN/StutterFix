@@ -155,10 +155,10 @@ namespace StutterFix
             idx.Sort((a, b) => t(b).CompareTo(t(a)));
             var sb = new System.Text.StringBuilder();
             sb.Append("합계 ").Append((total * 1000.0 / Stopwatch.Frequency / frames).ToString("F2")).Append("ms | ");
-            for (int n = 0; n < idx.Count && n < 14; n++)
+            for (int n = 0; n < idx.Count && n < 24; n++)
             {
                 double ms = t(idx[n]) * 1000.0 / Stopwatch.Frequency / frames;
-                if (ms < 0.05) break;
+                if (ms < 0.01) break;
                 if (n > 0) sb.Append(", ");
                 sb.Append(names[idx[n]]).Append(' ').Append(ms.ToString("F2")).Append("ms");
             }

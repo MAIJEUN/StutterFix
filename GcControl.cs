@@ -49,6 +49,8 @@ namespace StutterFix
         private static float quietTimer;
         private static long quietHeapMark;
         private static int frameCounter;
+        private static int slowFrame, ramMB;
+        private static float slowDt;
         private static bool patched;
 
         internal static void Install()
@@ -268,7 +270,9 @@ namespace StutterFix
             }
 
             bool playing = IsPlaying();
+            long hq = System.Diagnostics.Stopwatch.GetTimestamp();
             Hitch.Tick(dt, playing);
+            Main.TickCost[16] += System.Diagnostics.Stopwatch.GetTimestamp() - hq;
 
             if (playing && !Paused) { Pause(); pausedFor = 0f; PeakHeapMB = 0; quietTimer = 0f; quietHeapMark = GC.GetTotalMemory(false) / 1048576; }
             else if (!playing && Paused) { Hitch.Report(); if (!holdAfterFail) ScheduleResume("곡 종료 [" + LastScene + "]"); }
@@ -296,6 +300,11 @@ namespace StutterFix
                 return;
             }
 
+            // 아래 판단(힙 최고치, 10초간 조용함, 실패 뒤 곡 감지, 힙 한계)은 느슨한 것이라 8프레임에 한 번만 한다.
+            // 예전에는 매 프레임 힙 크기·음악 재생 여부·시스템 RAM 크기(엔진 호출)를 읽었다.
+            slowDt += dt;
+            if (++slowFrame < 8) return;
+            dt = slowDt; slowDt = 0f; slowFrame = 0;
             long heapNow = GC.GetTotalMemory(false) / 1048576;
             if (heapNow > PeakHeapMB) PeakHeapMB = (int)heapNow;
 
@@ -329,7 +338,8 @@ namespace StutterFix
 
             // RAM 이 적은 컴퓨터에서는 한계를 낮춘다 (RAM 의 40%, 최소 1.5GB)
             int limit = HardLimitMB;
-            try { int ram = SystemInfo.systemMemorySize; if (ram > 0) limit = Mathf.Min(limit, Mathf.Max(1500, ram * 2 / 5)); } catch { }
+            if (ramMB == 0) { try { ramMB = SystemInfo.systemMemorySize; } catch { ramMB = -1; } }   // 바뀌지 않으므로 한 번만
+            if (ramMB > 0) limit = Mathf.Min(limit, Mathf.Max(1500, ramMB * 2 / 5));
             if (heapNow > limit)
             {
                 // 안전장치. 여기까지 오면 어쩔 수 없이 한 번 멈춘다.
@@ -410,7 +420,87 @@ namespace StutterFix
             catch { return -1; }
         }
 
+        // ── 빠른 판단 ──
+        // 예전에는 매 프레임 리플렉션 7번(값 상자 만들기 포함) + 상태 이름 ToString + LastScene 문자열 이어 붙이기를 했다.
+        // 논이펙 맵 측정에서 UMM 의 UI.Update(모든 모드의 OnUpdate 를 부름)가 프레임당 0.08ms 였다. 같은 값을 델리게이트로 읽고,
+        // 상태 문자열은 값이 바뀔 때만 만든다. 판단 결과와 로그는 예전과 같다.
+        private static bool fastTried, fastOk;
+        private static Func<scrController> ctrlGet;
+        private static Func<scrController, bool> pausedGet;
+        private static Func<scnEditor, bool> playModeGet, pausedInPlayGet;
+        private static AccessTools.FieldRef<scrController, bool> gameworldRef;
+        private static AccessTools.FieldRef<scrController, States> stateRef;
+        private static AccessTools.FieldRef<scnEditor> editorInstRef;
+        private static int lastKey = int.MinValue;
+
+        private static bool PrepareFast()
+        {
+            if (fastTried) return fastOk;
+            fastTried = true;
+            try
+            {
+                ctrlGet = AccessTools.MethodDelegate<Func<scrController>>(AccessTools.PropertyGetter(typeof(ADOBase), "controller"));
+                pausedGet = AccessTools.MethodDelegate<Func<scrController, bool>>(AccessTools.PropertyGetter(typeof(scrController), "paused"));
+                playModeGet = AccessTools.MethodDelegate<Func<scnEditor, bool>>(AccessTools.PropertyGetter(typeof(scnEditor), "playMode"));
+                var pip = AccessTools.PropertyGetter(typeof(scnEditor), "pausedInPlayMode");
+                pausedInPlayGet = pip != null ? AccessTools.MethodDelegate<Func<scnEditor, bool>>(pip) : null;
+                gameworldRef = AccessTools.FieldRefAccess<scrController, bool>("gameworld");
+                stateRef = AccessTools.FieldRefAccess<scrController, States>("currentState");
+                fastOk = ctrlGet != null && pausedGet != null && playModeGet != null && gameworldRef != null && stateRef != null
+                         && AccessTools.Field(typeof(scnEditor), "instance") != null;
+            }
+            catch (Exception ex) { fastOk = false; Main.Entry.Logger.Log("[GC] 빠른 판단 준비 실패, 예전 방식 사용: " + ex.Message); }
+            return fastOk;
+        }
+
+        private static bool IsPlayingFast()
+        {
+            bool gameworld = false, paused = false, playMode = true, hasEditor = false;
+            int st = -1;
+            var ctrl = ctrlGet();
+            if (ctrl != null)
+            {
+                gameworld = gameworldRef(ctrl);
+                paused = pausedGet(ctrl);
+                st = (int)stateRef(ctrl);
+            }
+            var editor = scnEditor.instance;
+            if (editor != null)
+            {
+                hasEditor = true;
+                playMode = playModeGet(editor);
+                if (pausedInPlayGet != null && pausedInPlayGet(editor)) paused = true;
+            }
+            bool stateOk = st != (int)States.Fail && st != (int)States.Fail2 && st != (int)States.Won;
+            bool playing = gameworld && !paused && playMode && stateOk && !endedByHook;
+
+            // 상태 이름 문자열은 값이 바뀔 때만 만든다 (예전과 같은 모양)
+            int key = (st + 1) | (endedByHook ? 1 << 8 : 0) | (gameworld ? 1 << 9 : 0) | (hasEditor ? 1 << 10 : 0) | (playMode ? 1 << 11 : 0) | (paused ? 1 << 12 : 0);
+            if (key != lastKey)
+            {
+                lastKey = key;
+                string stateName = st < 0 ? "?" : ((States)st).ToString();
+                LastScene = stateName
+                          + (endedByHook ? " 종료됨" : "")
+                          + (gameworld ? "" : " world:X")
+                          + (hasEditor ? (playMode ? " 에디터재생" : " 편집중") : "")
+                          + (paused ? " 일시정지" : "");
+                if (LastScene != loggedScene)
+                {
+                    loggedScene = LastScene;
+                    Main.Entry.Logger.Log("[상태] " + LastScene + (playing ? "  -> 플레이" : "  -> 정지"));
+                }
+            }
+            return playing;
+        }
+
         private static bool IsPlaying()
+        {
+            try { if (PrepareFast()) return IsPlayingFast(); } catch { }
+            return IsPlayingSlow();
+        }
+
+        private static bool IsPlayingSlow()
         {
             PrepareReflection();
             try
