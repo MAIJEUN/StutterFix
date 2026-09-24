@@ -75,7 +75,7 @@ namespace StutterFix
             return false;
         }
         public static void ColorFloorPrefix(TrackColorType __0) { if (__0 == TrackColorType.Volume) volumeSeen = true; }
-        internal static void SongStarted() { volumeSeen = false; scanFrame = -1000; }   // 맵마다 새로 본다
+        internal static void SongStarted() { volumeSeen = false; scanFrame = -1000; WrapFilters(); }   // 맵마다 새로 본다
 
         private static readonly AccessTools.FieldRef<scrFloor, TrackColorType> colorTypeRef = AccessTools.FieldRefAccess<scrFloor, TrackColorType>("specialColorType");
         private static bool AnyVolumeFloor()
@@ -129,10 +129,67 @@ namespace StutterFix
         }
         internal static bool RenderScaleReady;
 
+        // ── 5. 화면 필터 끄기 / 블룸 끄기 ──
+        // 필터(SetFilter 로 켜지는 CameraFilterPack 계열)와 블룸(VideoBloom 등)은 카메라의 OnRenderImage 에서 화면 전체를
+        // 한 번 더 그리는 후처리라, 그래픽카드가 약하면 가장 비싸다. 켜면 그리지 않고 들어온 화면을 그대로 넘긴다(Graphics.Blit).
+        // 게임의 VideoBloom 도 조건이 안 맞을 때 이렇게 그대로 넘긴다(IL 확인). 화면 타일·스크롤·극좌표·블렌드 모드는
+        // 맵 연출 자체라 건드리지 않는다.
+        // 필터 종류가 300개가 넘어 전부 미리 감싸면 시작이 느려진다. 옵션이 켜져 있을 때 곡 시작마다 카메라에 실제로 붙은
+        // 종류만 감싼다(처음 한 번만, 곡 시작 연출 중).
+        internal static bool NoFilters, NoBloom;
+        internal static long FilterSkips, BloomSkips;
+        private static Harmony harmony;
+        private static readonly System.Collections.Generic.HashSet<Type> wrapped = new System.Collections.Generic.HashSet<Type>();
+        public static bool FilterPrefix(RenderTexture __0, RenderTexture __1)
+        {
+            if (!NoFilters) return true;
+            Graphics.Blit(__0, __1); FilterSkips++;
+            return false;
+        }
+        public static bool BloomPrefix(RenderTexture __0, RenderTexture __1)
+        {
+            if (!NoBloom) return true;
+            Graphics.Blit(__0, __1); BloomSkips++;
+            return false;
+        }
+        private static int Kind(Type t)
+        {
+            string n = t.Name;
+            if (n.StartsWith("CameraFilterPack", StringComparison.Ordinal)) return 1;
+            if (n.IndexOf("Bloom", StringComparison.Ordinal) >= 0) return 2;
+            return 0;
+        }
+        internal static void WrapFilters()
+        {
+            if (harmony == null || (!NoFilters && !NoBloom)) return;
+            try
+            {
+                int added = 0; var sw = Stopwatch.StartNew();
+                foreach (var cam in UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    foreach (var mb in cam.GetComponents<MonoBehaviour>())
+                    {
+                        if (mb == null) continue;
+                        var t = mb.GetType();
+                        int k = Kind(t);
+                        if (k == 0 || (k == 1 && !NoFilters) || (k == 2 && !NoBloom) || wrapped.Contains(t)) continue;
+                        var m = AccessTools.DeclaredMethod(t, "OnRenderImage", new[] { typeof(RenderTexture), typeof(RenderTexture) });
+                        wrapped.Add(t);
+                        if (m == null) continue;
+                        harmony.Patch(m, prefix: new HarmonyMethod(typeof(LowEnd), k == 1 ? nameof(FilterPrefix) : nameof(BloomPrefix)));
+                        added++;
+                    }
+                }
+                if (added > 0) Main.Entry.Logger.Log("[저사양] 필터·블룸 " + added + "종 감쌈 (" + sw.ElapsedMilliseconds + "ms)");
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[저사양] 필터 감싸기 실패: " + ex.Message); }
+        }
+
         internal static void Install(Harmony h)
         {
             if (installed) return;
             installed = true;
+            harmony = h;
             try
             {
                 var tu = AccessTools.Method(typeof(scrVolumeTrackerFloat), "Update");
@@ -153,6 +210,7 @@ namespace StutterFix
         {
             ApplyPriority();
             ApplyThrottle();
+            WrapFilters();
         }
 
         // 모드를 끄거나 다시 불러올 때 원래대로
@@ -187,10 +245,10 @@ namespace StutterFix
 
         internal static string Summary()
         {
-            if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100) return "";
+            if (!NoFft && !Priority && !NoThrottle && !NoFilters && !NoBloom && RenderScalePct >= 100) return "";
             string rt = ""; try { var cam = scrCamera.instance; var t = cam == null ? null : camRTRef(cam); if (t != null) rt = ", 게임 화면 " + t.width + "x" + t.height; } catch { }
-            return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}",
-                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt);
+            return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}, 필터 건너뜀 {6}번, 블룸 건너뜀 {7}번",
+                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, FilterSkips, BloomSkips);
         }
     }
 }
