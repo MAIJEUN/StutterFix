@@ -143,11 +143,11 @@ namespace StutterFix
         }
 
         // 게임을 끄고 다시 켠다
-        internal static void Restart()
+        internal static void Restart(bool reopen)
         {
             var block = Blocked();
             if (block != null) { LastBlock = block; LastBlockAt = Time.realtimeSinceStartup; Main.Entry.Logger.Log("[재시작] 하지 않음: " + block); return; }
-            try { Main.Config.ReopenLevel = ReopenTarget(); } catch { }
+            try { Main.Config.ReopenLevel = reopen ? ReopenTarget() : ""; } catch { }
             try
             {
                 var me = Process.GetCurrentProcess();

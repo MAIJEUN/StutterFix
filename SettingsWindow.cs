@@ -161,6 +161,8 @@ namespace StutterFix
         private Texture2D[] icons;
         private GUIStyle sTip, sTipLeft;
         private float restartArmedUntil;
+        private float homeArmUntil; private int homeArmChoice;   // 홈 화면 재시작 버튼 확인
+        private Rect restartMenuRect;   // 재시작 고르기 상자 (지난 프레임 자리, 바깥 클릭·입력 막기용)
 
         private string[] PageNames()
         {
@@ -231,9 +233,10 @@ namespace StutterFix
                 else
                 {
                     var blk = panelT > 0f ? Union(dock, rect) : dock;
+                    if (restartMenuRect.width > 0f) blk = Union(blk, restartMenuRect);
                     UiInputBlock.Place(this, new Rect(blk.x * scale, blk.y * scale, blk.width * scale, blk.height * scale));
                     var ev = Event.current;
-                    if (ev.type == EventType.MouseDown && !dock.Contains(ev.mousePosition) && !(panelT > 0f && rect.Contains(ev.mousePosition)))
+                    if (ev.type == EventType.MouseDown && !dock.Contains(ev.mousePosition) && !(panelT > 0f && rect.Contains(ev.mousePosition)) && !restartMenuRect.Contains(ev.mousePosition))
                         SetOpen(false);
                 }
 
@@ -299,17 +302,41 @@ namespace StutterFix
                 GUI.color = c;
                 if (why.Count > 0) Fill(new Rect(rr.xMax - 13, rr.y + 5, 8, 8), new Color(1f, 0.62f, 0.2f, c.a), 4);
             }
+            // 누르면 왼쪽에 고르기 상자: "게임 재시작"(처음 화면으로) / "이 맵으로 재시작"(에디터에서 연 맵이 있을 때). 고르는 것이 곧 확인이다.
             if (GUI.Button(rr, GUIContent.none, GUIStyle.none))
+                restartArmedUntil = armed ? 0f : Time.realtimeSinceStartup + 4f;
+            restartMenuRect = Rect.zero;
+            if (armed)
             {
-                if (armed) { restartArmedUntil = 0; RestartAdvisor.Restart(); }
-                else restartArmedUntil = Time.realtimeSinceStartup + 3f;
+                bool canReopen = RestartAdvisor.WillReopen();
+                var blk = RestartAdvisor.RecentBlock();
+                const float bw = 200f, bh = 34f;
+                int n = canReopen ? 2 : 1;
+                float ph = n * (bh + 6f) + 10f + (blk != null ? 26f : 0f);
+                var pr = new Rect(d.x - 10 - bw - 16, rr.center.y - ph / 2f, bw + 16, ph);
+                restartMenuRect = pr;
+                if (pr.Contains(m)) restartArmedUntil = Time.realtimeSinceStartup + 4f;   // 고르는 동안은 닫히지 않게
+                Fill(pr, new Color(0.06f, 0.065f, 0.08f, 0.92f), 9);
+                float by = pr.y + 8;
+                if (blk != null) { GUI.Label(new Rect(pr.x + 8, by, bw, 22), blk, sTipLeft); by += 26; }
+                for (int i = 0; i < n; i++)
+                {
+                    var b = new Rect(pr.x + 8, by + i * (bh + 6f), bw, bh);
+                    bool reopen = canReopen && i == 1;
+                    Fill(b, b.Contains(m) ? new Color(0.92f, 0.32f, 0.30f, 0.75f) : new Color(1, 1, 1, 0.08f), 7);
+                    GUI.Label(b, reopen ? T("이 맵으로 재시작", "Restart into this level") : T("게임 재시작", "Restart game"), sTip);
+                    if (GUI.Button(b, GUIContent.none, GUIStyle.none))
+                    {
+                        RestartAdvisor.Restart(reopen);
+                        if (RestartAdvisor.RecentBlock() == null) restartArmedUntil = 0f;
+                    }
+                }
             }
-            if (rhov && panelT <= 0f)
+            else if (rhov && panelT <= 0f)
             {
                 var lines = new List<string>();
-                var blk = RestartAdvisor.RecentBlock();
-                lines.Add(blk ?? (armed ? T("한 번 더 누르면 게임을 다시 켭니다", "Click again to restart the game") : T("게임 재시작", "Restart game")));
-                if (blk == null && RestartAdvisor.WillReopen()) lines.Add(T("다시 켠 뒤 에디터에서 지금 맵을 다시 엽니다", "Reopens this level in the editor after restart"));
+                lines.Add(T("게임 재시작", "Restart game"));
+                if (RestartAdvisor.WillReopen()) lines.Add(T("에디터에서 연 맵으로 바로 다시 켤 수도 있습니다", "Can also restart straight into the level open in the editor"));
                 if (why.Count > 0) { lines.Add(T("지금 재시작하면 좋은 이유:", "Good time to restart:")); foreach (var s in why) lines.Add("· " + s); }
                 float w = 0; foreach (var s in lines) w = Mathf.Max(w, sTip.CalcSize(new GUIContent(s)).x);
                 w += 22; float h = lines.Count * 22 + 8;
@@ -496,17 +523,24 @@ namespace StutterFix
             if (why.Count > 0)
             {
                 InfoCard(new[] { T("재시작 권장", "Restart suggested"), string.Join("\n", why.ToArray()) });
+                // 버튼마다 한 번 더 눌러야 재시작 (실수 방지). 에디터에서 연 맵이 있으면 "이 맵으로 재시작" 도.
                 GUILayout.BeginHorizontal();
-                bool armed = Time.realtimeSinceStartup < restartArmedUntil;
-                if (GUILayout.Button(armed ? T("한 번 더 누르면 재시작", "Click again to restart") : T("지금 재시작", "Restart now"), sPrimary, GUILayout.Width(190), GUILayout.Height(38)))
+                bool homeArmed = Time.realtimeSinceStartup < homeArmUntil;
+                for (int i = 0; i < (RestartAdvisor.WillReopen() ? 2 : 1); i++)
                 {
-                    if (armed) { restartArmedUntil = 0; RestartAdvisor.Restart(); }
-                    else restartArmedUntil = Time.realtimeSinceStartup + 3f;
+                    bool reopen = i == 1, me = homeArmed && homeArmChoice == i;
+                    string label = me ? T("한 번 더 누르면 재시작", "Click again to restart")
+                                      : reopen ? T("이 맵으로 재시작", "Restart into this level") : T("게임 재시작", "Restart game");
+                    if (GUILayout.Button(label, sPrimary, GUILayout.Width(190), GUILayout.Height(38)))
+                    {
+                        if (me) { homeArmUntil = 0; RestartAdvisor.Restart(reopen); }
+                        else { homeArmUntil = Time.realtimeSinceStartup + 3f; homeArmChoice = i; }
+                    }
+                    GUILayout.Space(8);
                 }
                 GUILayout.EndHorizontal();
                 var hb = RestartAdvisor.RecentBlock();
                 if (hb != null) { GUILayout.Space(6); GUILayout.Label(hb, sSub); }
-                else if (RestartAdvisor.WillReopen()) { GUILayout.Space(6); GUILayout.Label(T("다시 켠 뒤 에디터에서 지금 맵을 다시 엽니다", "Reopens this level in the editor after restart"), sSub); }
                 GUILayout.Space(14);
             }
 
