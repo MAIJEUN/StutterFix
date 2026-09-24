@@ -172,7 +172,7 @@ namespace StutterFix
             {
                 string s = Describe(total);
                 if (total > worstMs) { worstMs = total; worst = s; }
-                if (logged < 12) { logged++; Main.Entry.Logger.Log("[장식 이동 쪼개기] " + Time.frameCount + "프레임: " + s); }
+                if (logged < 40) { logged++; Main.Entry.Logger.Log("[장식 이동 쪼개기] " + Time.frameCount + "프레임: " + s); }
             }
             cur.Clear(); ClearSub();
         }
@@ -215,6 +215,7 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrDecoration, Color> colRef = AccessTools.FieldRefAccess<scrDecoration, Color>("color");
         private static readonly AccessTools.FieldRef<scrDecoration, float> opaRef = AccessTools.FieldRefAccess<scrDecoration, float>("opacity");
 
+        private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> srBench = AccessTools.FieldRefAccess<scrVisualDecoration, SpriteRenderer>("spriteRenderer");
         internal static void BenchTick()
         {
             if (!Enabled || benchDone || !Hitch.Playing) return;
@@ -260,6 +261,41 @@ namespace StutterFix
             sb.AppendFormat(", 같은 색 조건 전체 {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
             t = TS(); for (int r = 0; r < R; r++) { seen.Clear(); foreach (var d in decs) if (seen.Add(d)) sink++; }
             sb.AppendFormat(", 중복 거르기(기본 비교) {0:F0}", (TS() - t) * TickMs * 1e6 / n - loop);
+            // SetSprite 뒷부분(같은 이미지여도 매번 함): renderer.material, 점 샘플링 키워드, 텍스처 wrapMode. 어느 것이 비싼가.
+            // 이미 복사본 재질(Instance)을 가진 장식만, 지금 값을 그대로 다시 넣는다 (상태가 바뀌지 않게).
+            try
+            {
+                var srs = new List<SpriteRenderer>();
+                foreach (var d in all)
+                {
+                    var v = d as scrVisualDecoration; if ((object)v == null) continue;
+                    var r = srBench(v); if (r == null || r.sprite == null) continue;
+                    var sm = r.sharedMaterial; if (sm == null || !sm.name.EndsWith("(Instance)")) continue;
+                    srs.Add(r); if (srs.Count >= 2000) break;
+                }
+                if (srs.Count >= 50)
+                {
+                    int m2 = srs.Count * R; var sb2 = new System.Text.StringBuilder();
+                    t = TS(); for (int r = 0; r < R; r++) foreach (var s in srs) { }
+                    double l2 = (TS() - t) * TickMs * 1e6 / m2;
+                    t = TS(); for (int r = 0; r < R; r++) foreach (var s in srs) if (s.sharedMaterial != null) sink++;
+                    sb2.AppendFormat("sharedMaterial 읽기 {0:F0}", (TS() - t) * TickMs * 1e6 / m2 - l2);
+                    t = TS(); for (int r = 0; r < R; r++) foreach (var s in srs) if (s.material != null) sink++;
+                    sb2.AppendFormat(", material 읽기 {0:F0}", (TS() - t) * TickMs * 1e6 / m2 - l2);
+                    var mats = new List<Material>(); var kw = new List<bool>(); var tex = new List<Texture2D>();
+                    foreach (var s in srs) { var mm = s.sharedMaterial; mats.Add(mm); kw.Add(mm.IsKeywordEnabled("USE_POINT_SAMPLING")); tex.Add(s.sprite.texture); }
+                    t = TS(); for (int r = 0; r < R; r++) for (int i = 0; i < mats.Count; i++) if (mats[i].IsKeywordEnabled("USE_POINT_SAMPLING")) sink++;
+                    sb2.AppendFormat(", 키워드 읽기 {0:F0}", (TS() - t) * TickMs * 1e6 / m2 - l2);
+                    t = TS(); for (int r = 0; r < R; r++) for (int i = 0; i < mats.Count; i++) { if (kw[i]) mats[i].EnableKeyword("USE_POINT_SAMPLING"); else mats[i].DisableKeyword("USE_POINT_SAMPLING"); }
+                    sb2.AppendFormat(", 키워드 같은 값 넣기 {0:F0}", (TS() - t) * TickMs * 1e6 / m2 - l2);
+                    t = TS(); for (int r = 0; r < R; r++) for (int i = 0; i < tex.Count; i++) if (tex[i].wrapMode == TextureWrapMode.Repeat) sink++;
+                    sb2.AppendFormat(", wrapMode 읽기 {0:F0}", (TS() - t) * TickMs * 1e6 / m2 - l2);
+                    t = TS(); for (int r = 0; r < R; r++) for (int i = 0; i < tex.Count; i++) { var w = tex[i].wrapMode; tex[i].wrapMode = w; }
+                    sb2.AppendFormat(", wrapMode 같은 값 넣기 {0:F0}", (TS() - t) * TickMs * 1e6 / m2 - l2);
+                    Main.Entry.Logger.Log("[기본 동작 비용] SetSprite 뒷부분, 장식 " + srs.Count + "개 x " + R + "번, 한 번당 ns: " + sb2 + " (sink " + sink + ")");
+                }
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[기본 동작 비용] SetSprite 측정 실패: " + ex.Message); }
             Array.Clear(InvisibleSkip.LazyNo, 0, InvisibleSkip.LazyNo.Length);
             Main.Entry.Logger.Log("[기본 동작 비용] 투명 장식 " + decs.Count + "개 x " + R + "번, 한 번당 ns: " + sb + " (sink " + sink + ")");
         }

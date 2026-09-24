@@ -377,7 +377,7 @@ namespace StutterFix
 
             if (Edition.Dev)
             {
-                RenderWatch.Tick(dt); Tk(8, ref q);
+                RenderWatch.Tick(dt); SlowScan.Tick(); Tk(8, ref q);
                 ModWatch.Tick(dt); Tk(9, ref q);
                 AllocScan.Tick(dt); Tk(10, ref q);
                 AbTest.Tick(dt); Tk(11, ref q);

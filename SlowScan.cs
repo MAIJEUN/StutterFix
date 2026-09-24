@@ -39,6 +39,70 @@ namespace StutterFix
         internal static bool Enabled = Edition.Dev;   // 개발자용은 켜 둔다 (원인 추적용, 곡 시작이 몇 초 느려짐)
         internal static bool Installed;
 
+        // 곡 도중에 새로 켜진 컴포넌트(필터, 곡 중간에 생기는 물체 등)도 잰다. 곡 시작 때 한 번만 감싸면
+        // 풀버전 Arche 260초 구간에서 Update 8.3ms 중 5ms 가 어디에도 안 잡혔다.
+        // 5초마다 켜진 컴포넌트를 훑어 처음 보는 타입의 Update/LateUpdate/OnRenderImage 를 감싼다 (개발자용, 감쌀 때 잠깐 멈춤).
+        private static float rescanAt;
+        private static readonly HashSet<Type> seenTypes = new HashSet<Type>();
+        // 곡 중 타입별로 켜진 컴포넌트 수의 최대값 (Update 를 가진 컴포넌트가 수천 개면 부르는 비용만으로 ms 가 든다)
+        private static readonly Dictionary<Type, int> maxCount = new Dictionary<Type, int>();
+        private static readonly Dictionary<Type, float> maxAt = new Dictionary<Type, float>();
+        private static float songClock;
+        private static string CountText()
+        {
+            var l = new List<KeyValuePair<Type, int>>(maxCount);
+            l.Sort((a, b) => b.Value.CompareTo(a.Value));
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < l.Count && i < 15; i++)
+            {
+                var t = l[i].Key;
+                bool u = AccessTools.Method(t, "Update") != null, lu = AccessTools.Method(t, "LateUpdate") != null;
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(t.Name).Append(' ').Append(l[i].Value).Append("개(").Append(maxAt[t].ToString("F0")).Append("초").Append(u ? ", Update" : "").Append(lu ? ", LateUpdate" : "").Append(')');
+            }
+            return sb.ToString();
+        }
+        internal static void Tick()
+        {
+            if (!Installed || harmony == null || !Hitch.Playing) return;
+            if (Time.realtimeSinceStartup < rescanAt) return;
+            songClock += 5f;
+            rescanAt = Time.realtimeSinceStartup + 5f;
+            try
+            {
+                int added = 0;
+                var names = new List<string>();
+                var cnt = new Dictionary<Type, int>();
+                foreach (var mb in UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+                {
+                    if (mb == null || !mb.isActiveAndEnabled) continue;
+                    var t = mb.GetType();
+                    int c0; cnt.TryGetValue(t, out c0); cnt[t] = c0 + 1;
+                    if (!seenTypes.Add(t)) continue;
+                    foreach (var name in new[] { "Update", "LateUpdate", "OnRenderImage" })
+                    {
+                        try
+                        {
+                            var m = AccessTools.Method(t, name);
+                            if (m == null || m.IsAbstract || m.ContainsGenericParameters || m.DeclaringType.IsGenericType) continue;
+                            if (slots.ContainsKey(m)) continue;
+                            string asm = m.DeclaringType.Assembly.GetName().Name;
+                            var slot = new Slot { Name = m.DeclaringType.Name + "." + name + (asm == "Assembly-CSharp" ? "" : " [" + asm + "]") + " (곡 중 추가)", Asm = asm, Bucket = new long[PerfOverlay.MaxBuckets] };
+                            slots[m] = slot;
+                            all.Add(slot);
+                            harmony.Patch(m, prefix: new HarmonyMethod(typeof(SlowScan), nameof(Pre)), postfix: new HarmonyMethod(typeof(SlowScan), nameof(Post)));
+                            added++;
+                            if (names.Count < 12) names.Add(slot.Name);
+                        }
+                        catch { }
+                    }
+                }
+                foreach (var kv in cnt) { int mx; maxCount.TryGetValue(kv.Key, out mx); if (kv.Value > mx) { maxCount[kv.Key] = kv.Value; maxAt[kv.Key] = songClock; } }
+                if (added > 0) Main.Entry.Logger.Log("[느린함수] 곡 중 새로 감쌈 " + added + "개: " + string.Join(", ", names.ToArray()));
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[느린함수] 곡 중 훑기 실패: " + ex.Message); }
+        }
+
         // 곡이 시작될 때 한 번만 감싼다. 맵마다 등장하는 컴포넌트가 다르다.
         internal static void InstallOnce()
         {
@@ -53,13 +117,13 @@ namespace StutterFix
                 foreach (var mb in UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
                 {
                     if (mb == null || !mb.isActiveAndEnabled) continue;
-                    types.Add(mb.GetType());
+                    types.Add(mb.GetType()); seenTypes.Add(mb.GetType());
                 }
 
                 int count = 0;
                 foreach (var t in types)
                 {
-                    foreach (var name in new[] { "Update", "LateUpdate" })
+                    foreach (var name in new[] { "Update", "LateUpdate", "OnRenderImage" })
                     {
                         try
                         {
@@ -193,6 +257,7 @@ namespace StutterFix
         {
             for (int i = 0; i < all.Count; i++) { all[i].SongTicks = 0; all[i].SongCalls = 0; System.Array.Clear(all[i].Bucket, 0, all[i].Bucket.Length); }
             Main.UpdateTicks = 0; System.Array.Clear(Main.TickCost, 0, Main.TickCost.Length);
+            maxCount.Clear(); maxAt.Clear(); songClock = 0f;
         }
 
         // 곡이 끝나면 "평소 프레임 하나에 어느 함수가 얼마나 드나" 를 남긴다. 곡 전체 평균과, 가장 가벼운 10초 구간.
@@ -203,6 +268,7 @@ namespace StutterFix
             int frames = PerfOverlay.SongFrameCount;
             if (frames < 30) return;
             Main.Entry.Logger.Log("[프레임 비용] 곡 평균, 프레임당: " + Rank(s => s.SongTicks, frames, s => s.SongCalls, 40));
+            Main.Entry.Logger.Log("[프레임 비용] 곡 중 켜진 컴포넌트 수 최대 (타입별, 5초마다 셈): " + CountText());
             Main.Entry.Logger.Log("[프레임 비용] DLL별 합계, 프레임당: " + ByAsm(frames) + " (감싼 함수 " + all.Count + "개) | StutterFix OnUpdate " + (Main.UpdateTicks * 1000.0 / Stopwatch.Frequency / frames).ToString("F3") + "ms [" + TickText(frames) + "]");
             int best, bestFrames;
             if (PerfOverlay.BestBucket(out best, out bestFrames))

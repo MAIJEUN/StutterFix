@@ -154,7 +154,7 @@ namespace StutterFix
             }
             return idx >= 0;
         }
-        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets], bucketRender = new double[MaxBuckets], bucketWait = new double[MaxBuckets];
+        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets], bucketRender = new double[MaxBuckets], bucketWait = new double[MaxBuckets], bucketGpu = new double[MaxBuckets], bucketAwake = new double[MaxBuckets], bucketAnim = new double[MaxBuckets];
         private readonly int[] bucketFrames = new int[MaxBuckets];
 
         private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod, IsLoading; public string Cause, Detail, Title, Short; public Color Tone; }
@@ -305,14 +305,14 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { Main.Entry.Logger.Log("[곡 시작] " + ScreenState()); songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; System.Array.Clear(top, 0, TopN); fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); }
+            if (playing && !wasPlaying) { Main.Entry.Logger.Log("[곡 시작] " + ScreenState()); songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; System.Array.Clear(top, 0, TopN); fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); System.Array.Clear(bucketGpu, 0, MaxBuckets); System.Array.Clear(bucketAwake, 0, MaxBuckets); System.Array.Clear(bucketAnim, 0, MaxBuckets); }
             wasPlaying = playing;
             if (!playing) SongBucket = -1;
             if (playing && ms < 1500f)
             {
                 int b = (int)(songMs / (BucketSec * 1000.0));
                 SongBucket = b < MaxBuckets ? b : -1;
-                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; }
+                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; bucketGpu[b] += lastGpu; bucketAwake[b] += Dormancy.LastAwake; bucketAnim[b] += DecoAnim.LastFrameMs; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
                 // 효과가 가장 무거운 프레임 (GPU 가 튄 프레임 같은 것에 가려지지 않게 따로 남긴다)
                 if (!InStartWindow)
@@ -488,8 +488,8 @@ namespace StutterFix
         // 곡이 끝나면 그 곡의 평균을 한 줄 남긴다. 끊김이 없는데도 프레임이 낮은 맵을 가려내려면
         // 평균 FPS 와 GPU/CPU 어느 쪽이 큰지가 필요하다(모니터가 꺼져 있으면 GPU/CPU 는 비어 있다).
         // ── 곡에서 가장 무거운 프레임 5개 (곡 시간, 효과, 애니메이션 갱신, 장식 갱신) ──
-        private struct TopFrame { public float Ms, T, Fx, Move, Anim, Tw, Upd, Late, TwSet; public int N, TwN; public string Ph; }
-        private const int TopN = 5;
+        private struct TopFrame { public float Ms, T, Fx, Move, Anim, Tw, Upd, Late, TwSet; public int N, TwN; public string Ph, Nm; }
+        private const int TopN = 8;
         private readonly TopFrame[] top = new TopFrame[TopN];
         private void AddTop(float ms)
         {
@@ -501,7 +501,7 @@ namespace StutterFix
                 Fx = (float)(last ? EffectScan.LastFrameEffectMs : EffectScan.FrameEffectMs), Move = (float)(last ? EffectScan.LastFrameMoveMs : EffectScan.FrameMoveMs), Anim = (float)(last ? EffectScan.LastFrameAnimMs : EffectScan.FrameAnimMs),
                 N = last ? EffectScan.LastFrameN : EffectScan.FrameN,
                 Tw = (float)(last ? FrameParts.LastTween : FrameParts.Tween), Upd = (float)(last ? FrameParts.LastDecoUpdate : FrameParts.DecoUpdate),
-                Late = (float)(last ? FrameParts.LastDecoLate : FrameParts.DecoLate), TwSet = (float)(last ? FrameParts.LastTweenSet : FrameParts.TweenSet), TwN = last ? FrameParts.LastTweenSetN : FrameParts.TweenSetN, Ph = PhaseWatch.Installed ? PhaseWatch.TopOfLastFrame(4) : "" };
+                Late = (float)(last ? FrameParts.LastDecoLate : FrameParts.DecoLate), TwSet = (float)(last ? FrameParts.LastTweenSet : FrameParts.TweenSet), TwN = last ? FrameParts.LastTweenSetN : FrameParts.TweenSetN, Ph = PhaseWatch.Installed ? PhaseWatch.TopOfLastFrame(4) : "", Nm = last ? EffectScan.LastNames : EffectScan.CurNames() };
             int i = TopN - 1;
             while (i > 0 && top[i - 1].Ms < ms) { top[i] = top[i - 1]; i--; }
             top[i] = f;
@@ -512,8 +512,8 @@ namespace StutterFix
             for (int i = 0; i < TopN; i++)
             {
                 var f = top[i]; if (f.Ms <= 0) break;
-                sb.AppendFormat(" [{0:F0}ms @{1:F1}초: 효과 {2}개 {3:F1}(장식 이동 {4:F1}, 그중 길이 있는 것 {11:F1}), 애니메이션 갱신 {5:F1}{10}, 장식 갱신 {6:F1}+{7:F1}, 나머지 {8:F1}{9}]",
-                    f.Ms, f.T, f.N, f.Fx, f.Move, f.Tw, f.Upd, f.Late, f.Ms - f.Fx - f.Tw - f.Upd - f.Late, string.IsNullOrEmpty(f.Ph) ? "" : " / 엔진 단계: " + f.Ph, f.TwN > 0 ? string.Format("(그중 장식 설정 함수 {0}번 {1:F1})", f.TwN, f.TwSet) : "", f.Anim);
+                sb.AppendFormat(" [{0:F0}ms @{1:F1}초: 효과 {2}개 {3:F1}(장식 이동 {4:F1}, 그중 길이 있는 것 {11:F1}), 애니메이션 갱신 {5:F1}{10}, 장식 갱신 {6:F1}+{7:F1}, 나머지 {8:F1}{9}{12}]",
+                    f.Ms, f.T, f.N, f.Fx, f.Move, f.Tw, f.Upd, f.Late, f.Ms - f.Fx - f.Tw - f.Upd - f.Late, string.IsNullOrEmpty(f.Ph) ? "" : " / 엔진 단계: " + f.Ph, f.TwN > 0 ? string.Format("(그중 장식 설정 함수 {0}번 {1:F1})", f.TwN, f.TwSet) : "", f.Anim, string.IsNullOrEmpty(f.Nm) ? "" : " / 효과 종류: " + f.Nm);
             }
             return sb.ToString();
         }
@@ -542,7 +542,7 @@ namespace StutterFix
             if (o.songWorstPlay > 0) s += string.Format(" | 그 프레임: 게임 효과 {0}개 {1:F1}ms (그중 장식 이동 {2:F1}ms), 나머지 {3:F1}ms", o.wpN, o.wpFx, o.wpMove, o.songWorstPlay - o.wpFx);
             if (o.fxWorstFx > 0) s += string.Format(" | 효과가 가장 무거운 프레임 {0:F0}ms: 게임 효과 {1:F1}ms (그중 장식 이동 {2:F1}ms)", o.fxWorst, o.fxWorstFx, o.fxWorstMove);
             s += string.Format(" | 모드가 쓴 시간 평균 {0:F2}ms/프레임", o.songMod / o.songFrames);
-            s += " | 가장 무거운 프레임 5개:" + o.TopText();
+            s += " | 가장 무거운 프레임 8개:" + o.TopText();
             s += " | " + ScreenState();
             if (Edition.Dev && IconN > 0)
                 s += string.Format("\n[곡] 모니터(개발자용): OnGUI 그리기 {0}번 평균 {1:F3}ms, 그 밖의 호출 {2}번 평균 {3:F3}ms | 아이콘 그리기 평균: 판 {4:F3} / FPS 글자 {5:F3} / 항목 글자 {6:F3} / 막대 {7:F3} / 나머지 {8:F3} ms",
@@ -557,7 +557,7 @@ namespace StutterFix
                 if (o.bucketFrames[i] < 10) continue;
                 double fps = 1000.0 * o.bucketFrames[i] / o.bucketMs[i];
                 int n = o.bucketFrames[i];
-                sb.AppendFormat(" {0}s {1:F0}({2:F1}/{3:F1}/{4:F1})", i * BucketSec, fps, o.bucketCpu[i] / n, o.bucketRender[i] / n, o.bucketWait[i] / n);
+                sb.AppendFormat(" {0}s {1:F0}({2:F1}/{3:F1}/{4:F1}/{5:F1}/{7:F1}, {6:F0}개)", i * BucketSec, fps, o.bucketCpu[i] / n, o.bucketRender[i] / n, o.bucketWait[i] / n, o.bucketGpu[i] / n, o.bucketAwake[i] / n, o.bucketAnim[i] / n);
                 if (fps > bestFps) { bestFps = fps; best = i; }
             }
             if (best >= 0) sb.AppendFormat(" | 가장 높은 구간 {0}s {1:F0} FPS", best * BucketSec, bestFps);

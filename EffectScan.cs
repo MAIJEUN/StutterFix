@@ -17,7 +17,7 @@ namespace StutterFix
     // 이름과 걸린 시간, 몇 번째 사용인지까지 남긴다.
     public static class EffectScan
     {
-        internal static bool Enabled = Edition.Dev;   // 통계/로그. 효과 나누기는 이 값과 상관없이 돈다
+        internal static bool Enabled = Edition.Dev || Main.MeasureBuild;   // 통계/로그 (측정용 플레이어 빌드도). 효과 나누기는 이 값과 상관없이 돈다
         internal static float LogOverMs = 3f;
 
         internal static int StartedThisFrame;
@@ -181,6 +181,8 @@ namespace StutterFix
         private static readonly System.Collections.Generic.Dictionary<string, NameStat> namesThisFrame
             = new System.Collections.Generic.Dictionary<string, NameStat>();
 
+        internal static string LastNames = "";
+        internal static string CurNames() { return FrameEffectMs >= 4 ? NamesByCost() : ""; }
         private static string NamesByCost()
         {
             var list = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, NameStat>>();
@@ -223,6 +225,8 @@ namespace StutterFix
 
         internal static void ResetFrame()
         {
+            // (측정용) 효과가 무거웠던 프레임은 효과 종류별 시간을 남겨 둔다 (가장 무거운 프레임 목록에 붙임)
+            if (Edition.Dev || Main.MeasureBuild) LastNames = FrameEffectMs >= 4 ? NamesByCost() : "";
             LastFrameEffectMs = FrameEffectMs; LastFrameMoveMs = FrameMoveMs; LastFrameN = FrameN; LastFrameAnimMs = FrameAnimMs; FrameAnimMs = 0;
             FrameParts.ResetFrame();
             FrameMoveMs = 0; FrameN = 0;

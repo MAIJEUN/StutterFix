@@ -50,7 +50,7 @@ namespace StutterFix
         private static float nextAudit;
 
         internal static long Rebuilds, Slept, Wakes, Missed, Audits, AwakeFrames, AwakeTotal;
-        internal static int AllCount;
+        internal static int AllCount, LastAwake;   // LastAwake: 이번 프레임 깨어 있어 훑은 장식 수
 
         internal static void Install(Harmony h)
         {
@@ -96,7 +96,7 @@ namespace StutterFix
             prepared = true;
             try { Prepare(all); }
             catch (Exception ex) { broken = true; Main.Entry.Logger.Log("[잠든 장식] 오류로 끔: " + ex.Message); ResetState(); return all; }
-            AwakeFrames++; AwakeTotal += awake.Count; AllCount = all.Count;
+            AwakeFrames++; AwakeTotal += awake.Count; AllCount = all.Count; LastAwake = awake.Count;
             return awake;
         }
 

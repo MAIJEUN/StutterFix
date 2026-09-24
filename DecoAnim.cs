@@ -34,6 +34,12 @@ namespace StutterFix
         internal static bool Enabled = true;
         internal static bool Installed;
         internal static long Created, Completed, Killed, Dropped, Frames, VerifyN, VerifySteps, VerifyMismatch, Errors;
+        // (측정용) 매 프레임 DOTween 갱신 앞에서 가장 먼저 돌아서 다른 측정(함수별, 애니메이션 갱신)에 안 잡혔다. 따로 잰다.
+        internal static readonly bool Prof = Edition.Dev || Main.MeasureBuild;
+        private static long profN;
+        internal static readonly long[] ProfN = new long[16], ProfApply = new long[16], ProfSet = new long[16];
+        internal static long Steps;
+        internal static double LastFrameMs;   // 이번 프레임 모드 애니메이션 갱신 시간
         internal static int Peak;
         internal static double UpdateMs;
         internal static readonly long[] MismatchByKey = new long[16];
@@ -200,6 +206,7 @@ namespace StutterFix
                 case 10: setOpa(r.D, r.FLast); break;
             }
         }
+
         private static void OnComplete(Rec r)
         {
             switch (r.Key)
@@ -219,8 +226,9 @@ namespace StutterFix
             if (to >= r.Dur) { to = r.Dur; done = true; }
             r.Pos = to;
             r.Stepped = true;
-            Apply(r, to);
-            OnUpdate(r);
+            if (Prof && (++profN & 15) == 0) { long a0 = System.Diagnostics.Stopwatch.GetTimestamp(); Apply(r, to); long a1 = System.Diagnostics.Stopwatch.GetTimestamp(); OnUpdate(r); long a2 = System.Diagnostics.Stopwatch.GetTimestamp(); int k = r.Key & 15; ProfN[k]++; ProfApply[k] += a1 - a0; ProfSet[k] += a2 - a1; }
+            else { Apply(r, to);
+            OnUpdate(r); }
             if (done) { r.Running = false; Completed++; OnComplete(r); }
         }
         // Kill(true) / KillAll(true): 끝 위치로 한 번 (시작 전이면 시작 처리부터)
@@ -247,7 +255,7 @@ namespace StutterFix
         }
         public static void KillAllPrefix(bool complete)
         {
-            if (recs.Count == 0) return;
+            if (recs.Count == 0) { LastFrameMs = 0; return; }
             var copy = recs.ToArray();
             foreach (var r in copy)
             {
@@ -260,7 +268,7 @@ namespace StutterFix
         // DOTweenComponent.Update 앞: DOTween 과 같은 dt 로, 만든 순서대로 진행
         public static void UpdatePrefix()
         {
-            if (recs.Count == 0) return;
+            if (recs.Count == 0) { LastFrameMs = 0; return; }
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             float dt = (DOTween.useSmoothDeltaTime ? Time.smoothDeltaTime : Time.deltaTime) * DOTween.timeScale;
             float td = dt * 1f;   // 애니메이션마다의 timeScale 은 1
@@ -271,12 +279,14 @@ namespace StutterFix
                 {
                     var r = recs[i];
                     if (!r.Running) continue;
+                    Steps++;
                     try { Step(r, td); }
                     catch (Exception ex) { r.Running = false; Error(ex); }   // DOTween 안전 모드: 예외가 나면 그 애니메이션을 끝냄
                 }
             }
             if (!Edition.Dev) Compact();
-            UpdateMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            LastFrameMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            UpdateMs += LastFrameMs;
         }
 
         // 개발자용: DOTween 이 짝을 갱신한 뒤 비교
@@ -334,8 +344,15 @@ namespace StutterFix
                 Created, Peak, Completed, Killed, Dropped, UpdateMs, Frames, Errors > 0 ? ", 예외 " + Errors : "");
             if (Edition.Dev) s += " (검증: 진짜 DOTween 과 나란히 " + VerifyN + "개, 프레임 " + VerifySteps + "번 중 다름 " + VerifyMismatch + " [위치X " + MismatchByKey[1] + ", 위치Y " + MismatchByKey[2] + ", 회전 " + MismatchByKey[5] + ", 크기X " + MismatchByKey[7] + ", 크기Y " + MismatchByKey[8] + ", 색 " + MismatchByKey[9] + ", 불투명도 " + MismatchByKey[10] + "]" + First + ")";
             else if (First.Length > 0) s += First;
+            if (Prof && Steps > 0)
+            {
+                double us = UpdateMs * 1000.0 / Steps, tk = System.Diagnostics.Stopwatch.Frequency / 1e6;
+                s += string.Format(" | 애니메이션 한 번 진행 평균 {0:F2}us (진행 {1}번, 프레임당 {2:F0}번)", us, Steps, Frames > 0 ? (double)Steps / Frames : 0);
+                string[] nm = { "", "위치X", "위치Y", "", "", "회전", "", "크기X", "크기Y", "색", "불투명도" };
+                for (int k = 1; k <= 10; k++) if (ProfN[k] > 0) s += string.Format(", {0} 계산 {1:F2}+설정 {2:F2}us", nm[k], ProfApply[k] / tk / ProfN[k], ProfSet[k] / tk / ProfN[k]);
+            }
             return s;
         }
-        internal static void ResetStats() { Array.Clear(MismatchByKey, 0, 16); Created = Completed = Killed = Dropped = Frames = VerifyN = VerifySteps = VerifyMismatch = Errors = 0; Peak = 0; UpdateMs = 0; First = ""; }
+        internal static void ResetStats() { Array.Clear(MismatchByKey, 0, 16); Created = Completed = Killed = Dropped = Frames = VerifyN = VerifySteps = VerifyMismatch = Errors = 0; Peak = 0; UpdateMs = 0; First = ""; Steps = 0; Array.Clear(ProfN, 0, 16); Array.Clear(ProfApply, 0, 16); Array.Clear(ProfSet, 0, 16); }
     }
 }
