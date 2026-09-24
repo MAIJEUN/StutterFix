@@ -31,7 +31,7 @@ namespace StutterFix
         {
             if (!Edition.Dev) return;
             var lu = AccessTools.Method(typeof(scrCamera), "LateUpdate");
-            if (lu != null) h.Patch(lu, postfix: new HarmonyMethod(typeof(RenderVerify), nameof(LatePostfix)) { priority = Priority.Last - 1 });   // HalfRender 결정 뒤
+            if (lu != null) h.Patch(lu, postfix: new HarmonyMethod(typeof(RenderVerify), nameof(LatePostfix)) { priority = Priority.Last });   // HalfRender 결정 뒤 (같은 우선순위면 먼저 등록된 HalfRender 가 먼저. -1 은 Harmony 에서 "지정 안 함" 이라 쓰면 안 됨)
         }
 
         public static void LatePostfix(scrCamera __instance)
