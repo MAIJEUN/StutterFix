@@ -836,14 +836,22 @@ namespace StutterFix
                 T("게임은 매 프레임 음악 주파수를 분석하는데, 이 값을 쓰는 곳은 타일 색 방식 'Volume' 뿐입니다. 그 방식을 쓰는 타일이 없으면 분석을 건너뜁니다. 곡 도중 타일이 Volume 으로 바뀌면 바로 다시 켜며, 그 첫 한 프레임만 색이 한 프레임 늦을 수 있습니다.",
                   "The game analyses the music spectrum every frame, but only 'Volume' track colours use it. Skips it when no tile uses that mode; turns back on immediately if a tile switches to Volume (that first frame may lag by one frame)."),
                 T("게임", "Game"));
+            Section(T("그래픽카드 쪽", "Graphics card"));
+            GUILayout.Label(T("게임 화면 해상도", "Game view resolution"), sBody);
+            GUILayout.Label(T("플레이 중 게임 화면(타일, 장식, 배경, 필터)을 이 배율로 작게 그린 뒤 늘려서 보여 줍니다. 그래픽카드가 약할수록 효과가 가장 큽니다(50% 면 그릴 픽셀이 4분의 1). 게임 화면이 흐려지고, 픽셀 크기를 쓰는 일부 필터는 모양이 조금 달라질 수 있습니다. HUD·설정 창 글자는 선명하게 남습니다. 바로 적용됩니다.",
+                "Draws the game view (tiles, decorations, background, filters) at this scale during play and stretches it to the screen. Biggest win on weak graphics cards (50% = a quarter of the pixels). The game view gets softer and some pixel-based filters may look slightly different. HUD and this window stay sharp. Applies immediately."), sDim);
+            GUILayout.Space(6);
+            int rs = c.LowRenderScale >= 100 ? 0 : c.LowRenderScale >= 75 ? 1 : 2;
+            if (Segment("lowscale", ref rs, new[] { "100%", "75%", "50%" })) { c.LowRenderScale = rs == 0 ? 100 : rs == 1 ? 75 : 50; ch = true; }
+            if (!LowEnd.RenderScaleReady) GUILayout.Label(T("이 게임 버전에서는 쓸 수 없습니다 (게임 코드 모양이 다름)", "Not available in this game version"), sSub);
             if (ch) Save();
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("모두 켜기", "Turn all on"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = false; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = false; c.LowRenderScale = 100; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]

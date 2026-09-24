@@ -91,6 +91,44 @@ namespace StutterFix
             catch { return true; }
         }
 
+        // ── 4. 게임 화면 해상도 낮추기 ──
+        // 플레이 중 게임은 카메라 3개(정적 배경, 움직이는 배경, 본 화면)를 화면 크기 텍스처(scrCamera.camRT) 한 장에 그린 뒤
+        // 사각형(quad)에 붙여 화면에 낸다(scnGame.Play 가 항상 SetupRTCam(true), IL 확인). 이 텍스처를 배율만큼 작게 만들면
+        // 게임 화면만 낮은 해상도로 그리고 늘려서 보여 준다. UI(HUD, 설정 창)는 화면에 직접 그려지므로 선명하게 남는다.
+        // 게임 코드: Update 가 camRTNeedsRecreation(크기가 Screen 과 다르면 true)일 때 new RenderTexture(Screen.width, Screen.height, 24).
+        // 두 곳에서 Screen 크기 대신 배율을 곱한 크기를 쓰게 한다. 배율 100% 면 원래와 똑같다.
+        internal static int RenderScalePct = 100;
+        private static readonly AccessTools.FieldRef<scrCamera, RenderTexture> camRTRef = AccessTools.FieldRefAccess<scrCamera, RenderTexture>("camRT");
+        public static int RTWidth() { return RenderScalePct >= 100 ? Screen.width : Mathf.Max(64, Mathf.RoundToInt(Screen.width * RenderScalePct / 100f)); }
+        public static int RTHeight() { return RenderScalePct >= 100 ? Screen.height : Mathf.Max(64, Mathf.RoundToInt(Screen.height * RenderScalePct / 100f)); }
+        public static bool NeedsRecreationPrefix(scrCamera __instance, ref bool __result)
+        {
+            var rt = camRTRef(__instance);
+            __result = rt == null || rt.width != RTWidth() || rt.height != RTHeight();
+            return false;
+        }
+        // Update 안 new RenderTexture(Screen.width, Screen.height, 24) 의 두 크기만 바꾼다 (quad 비율 계산에 쓰는 Screen 크기는 그대로)
+        public static System.Collections.Generic.IEnumerable<CodeInstruction> CamUpdateTranspiler(System.Collections.Generic.IEnumerable<CodeInstruction> ins)
+        {
+            var list = new System.Collections.Generic.List<CodeInstruction>(ins);
+            var gw = AccessTools.PropertyGetter(typeof(Screen), "width");
+            var gh = AccessTools.PropertyGetter(typeof(Screen), "height");
+            var ctor = AccessTools.Constructor(typeof(RenderTexture), new[] { typeof(int), typeof(int), typeof(int) });
+            var at = new System.Collections.Generic.List<int>();
+            for (int i = 0; i + 3 < list.Count; i++)
+                if (list[i].Calls(gw) && list[i + 1].Calls(gh) && list[i + 3].opcode == System.Reflection.Emit.OpCodes.Newobj && Equals(list[i + 3].operand, ctor)) at.Add(i);
+            int done = at.Count;
+            if (done == 1)   // 정확히 한 곳일 때만 바꾼다 (모양이 다르면 아무것도 안 건드림)
+            {
+                list[at[0]].operand = AccessTools.Method(typeof(LowEnd), nameof(RTWidth));
+                list[at[0] + 1].operand = AccessTools.Method(typeof(LowEnd), nameof(RTHeight));
+            }
+            RenderScaleReady = done == 1;
+            if (done != 1) Main.Entry.Logger.Log("[저사양] 게임 화면 해상도: 게임 코드 모양이 예상과 달라 적용하지 않음 (찾은 곳 " + done + ")");
+            return list;
+        }
+        internal static bool RenderScaleReady;
+
         internal static void Install(Harmony h)
         {
             if (installed) return;
@@ -102,7 +140,11 @@ namespace StutterFix
                 foreach (var m in typeof(scrFloor).GetMethods(AccessTools.all))
                     if (m.Name == "ColorFloor" && m.GetParameters().Length > 0 && m.GetParameters()[0].ParameterType == typeof(TrackColorType))
                         h.Patch(m, prefix: new HarmonyMethod(typeof(LowEnd), nameof(ColorFloorPrefix)));
-                Main.Entry.Logger.Log("[저사양] 설치");
+                var cu = AccessTools.Method(typeof(scrCamera), "Update");
+                if (cu != null) h.Patch(cu, transpiler: new HarmonyMethod(typeof(LowEnd), nameof(CamUpdateTranspiler)));
+                var nr = AccessTools.PropertyGetter(typeof(scrCamera), "camRTNeedsRecreation");
+                if (nr != null && RenderScaleReady) h.Patch(nr, prefix: new HarmonyMethod(typeof(LowEnd), nameof(NeedsRecreationPrefix)));
+                Main.Entry.Logger.Log("[저사양] 설치 (게임 화면 해상도 " + (RenderScaleReady ? "사용 가능" : "사용 불가") + ")");
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[저사양] 설치 실패: " + ex.Message); }
         }
@@ -145,9 +187,10 @@ namespace StutterFix
 
         internal static string Summary()
         {
-            if (!NoFft && !Priority && !NoThrottle) return "";
-            return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번)",
-                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun);
+            if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100) return "";
+            string rt = ""; try { var cam = scrCamera.instance; var t = cam == null ? null : camRTRef(cam); if (t != null) rt = ", 게임 화면 " + t.width + "x" + t.height; } catch { }
+            return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}",
+                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt);
         }
     }
 }
