@@ -111,6 +111,7 @@ namespace StutterFix
                 FastMove.Install(harmony);
                 Precheck.Install(harmony);
                 DecoAnim.Install(harmony);
+                LowEnd.Install(harmony);
                 FrameParts.Install(harmony);
                 UiProf.Install(harmony);
                 MoveApply.Install(harmony);
@@ -290,6 +291,7 @@ namespace StutterFix
             if (!installed) return;
             installed = false;
             Try(GcControl.Shutdown);
+            Try(LowEnd.Shutdown);
             Try(RenderWatch.Shutdown);
             Try(PhaseWatch.Uninstall);
             Try(LoopProfiler.Shutdown);
@@ -447,6 +449,7 @@ namespace StutterFix
             Precheck.Enabled = Config.Precheck; Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
             if (!Config.DecoAnim && global::StutterFix.DecoAnim.Enabled) global::StutterFix.DecoAnim.FinishAll();   // 끄면 진행 중인 것은 끝값으로 (Kill(true) 와 같음)
             global::StutterFix.DecoAnim.Enabled = Config.DecoAnim;
+            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
@@ -638,6 +641,10 @@ namespace StutterFix
         public bool FastLoop = true;       // 길이 0 장식 이동 효과를 게임 코드 대신 모드 루프로
         public bool Precheck = true;       // 곧 발동할 무거운 장식 이동이 아무것도 안 바꾸는지 미리 확인해 두고 건너뛰기
         public bool DecoAnim = true;       // 길이 있는 장식 이동의 애니메이션을 DOTween 대신 모드가 돌림
+        // 저사양 (화면·동작이 아주 조금 달라질 수 있어 기본 꺼짐)
+        public bool LowPriority = false;    // 게임 우선순위 높음
+        public bool LowNoThrottle = false;  // 윈도우 절전 제한 끄기 + 타이머 1ms
+        public bool LowNoFft = false;       // Volume 타일이 없으면 음악 주파수 분석 건너뛰기
         public string ReopenLevel = "";     // 재시작 버튼으로 껐을 때 다시 켠 뒤 에디터로 열 맵 (한 번 쓰고 비움)
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기

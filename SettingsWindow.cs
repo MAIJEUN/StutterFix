@@ -166,12 +166,12 @@ namespace StutterFix
 
         private string[] PageNames()
         {
-            return new[] { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("모니터", "Monitor"), T("정보", "About") };
+            return new[] { T("홈", "Home"), T("플레이", "Gameplay"), T("맵 불러오기", "Level loading"), T("그래픽", "Graphics"), T("모니터", "Monitor"), T("저사양", "Low-end PC"), T("정보", "About") };
         }
 
         private Rect DockRect(float sw, float sh, float e)
         {
-            float h = 7 * IconS + 6 * IconGap + 20 + 10;   // 기능 6개 + 구분선 + 재시작
+            float h = 8 * IconS + 7 * IconGap + 20 + 10;   // 기능 7개 + 구분선 + 재시작
             return new Rect(sw - DockW - 12 + (1 - e) * (DockW + 24), (sh - h) / 2f, DockW, h);   // 오른쪽 밖에서 미끄러져 들어온다
         }
 
@@ -294,11 +294,11 @@ namespace StutterFix
             var why = RestartAdvisor.Reasons();
             if (armed) Fill(rr, new Color(0.92f, 0.32f, 0.30f, 0.55f), 12);
             else if (rhov) Fill(rr, new Color(1, 1, 1, 0.09f), 12);
-            if (Event.current.type == EventType.Repaint && icons != null && icons.Length > 6)
+            if (Event.current.type == EventType.Repaint && icons != null && icons.Length > 7)
             {
                 var c = GUI.color;
                 GUI.color = new Color(1, 1, 1, c.a * (armed || rhov ? 1f : 0.72f));
-                GUI.DrawTexture(new Rect(rr.x + 10, rr.y + 10, IconS - 20, IconS - 20), icons[6]);
+                GUI.DrawTexture(new Rect(rr.x + 10, rr.y + 10, IconS - 20, IconS - 20), icons[7]);
                 GUI.color = c;
                 if (why.Count > 0) Fill(new Rect(rr.xMax - 13, rr.y + 5, 8, 8), new Color(1f, 0.62f, 0.2f, c.a), 4);
             }
@@ -388,7 +388,7 @@ namespace StutterFix
             // ── 제목줄: 로고, 이름, 지금 보고 있는 기능
             GUI.DrawTexture(new Rect(24, 22, 24, 24), tMark);
             GUI.Label(new Rect(58, 14, 300, 24), "Stutter Fix", sTitle);
-            GUI.Label(new Rect(58, 37, 400, 18), PageNames()[Mathf.Clamp(page, 0, 5)] + "  ·  v" + Main.Entry.Info.Version, sSub);
+            GUI.Label(new Rect(58, 37, 400, 18), PageNames()[Mathf.Clamp(page, 0, 6)] + "  ·  v" + Main.Entry.Info.Version, sSub);
 
             // 언어: 글자 탭 + 선택된 쪽 아래 짧은 검정 선
             float tx = pw - 222;
@@ -421,6 +421,7 @@ namespace StutterFix
                 case 2: PageLoad(); break;
                 case 3: PageGraphics(); break;
                 case 4: PageMonitor(); break;
+                case 5: PageLowEnd(); break;
                 default: PageAbout(); break;
             }
             GUILayout.Space(Gutter);
@@ -480,6 +481,16 @@ namespace StutterFix
                                 || InTri(x, y, 0.16f, 0.74f, 0.44f, 0.40f, 0.72f, 0.74f) || InCircle(x, y, 0.68f, 0.40f, 0.08f)),
                 // 모니터: 막대그래프
                 MakeIcon((x, y) => InBox(x, y, 0.12f, 0.56f, 0.30f, 0.90f) || InBox(x, y, 0.41f, 0.34f, 0.59f, 0.90f) || InBox(x, y, 0.70f, 0.12f, 0.88f, 0.90f)),
+                // 저사양: 속도계 (반원 테두리 + 바늘)
+                MakeIcon((x, y) =>
+                {
+                    float dx = x - 0.5f, dy = y - 0.62f; float dd = Mathf.Sqrt(dx * dx + dy * dy);
+                    bool arc = dy <= 0.02f && dd >= 0.30f && dd <= 0.41f;
+                    float t = Mathf.Clamp01(((x - 0.5f) * 0.55f + (0.62f - y) * 0.83f) / 0.38f);   // 바늘: 가운데에서 오른쪽 위로
+                    float px = 0.5f + 0.55f * 0.38f * t, py = 0.62f - 0.83f * 0.38f * t;
+                    bool needle = (x - px) * (x - px) + (y - py) * (y - py) <= 0.055f * 0.055f;
+                    return arc || needle || InCircle(x, y, 0.5f, 0.62f, 0.09f);
+                }),
                 // 정보: 동그라미 안에 i
                 MakeIcon((x, y) =>
                 {
@@ -802,6 +813,45 @@ namespace StutterFix
             if (BootConfig.Status.Contains("다음 실행")) { rows.Add(T("적용", "Pending")); rows.Add(T("게임을 다시 켜면 적용됩니다", "Applies after restart")); }
             if (Main.LaunchWarning.Length > 0) { rows.Add(T("주의", "Warning")); rows.Add(Main.LaunchWarning.Trim()); }
             InfoCard(rows.ToArray());
+        }
+
+        // 저사양: 화면·동작이 아주 조금 달라지는 것을 감수하고 약한 컴퓨터에서 프레임을 짜내는 기능들 (전부 기본 꺼짐)
+        private void PageLowEnd()
+        {
+            var c = Main.Config;
+            Heading(T("저사양", "Low-end PC"), T("약한 컴퓨터를 위한 기능입니다. 다른 기능과 달리 게임 밖 설정을 바꾸거나 아주 작은 차이를 감수하므로 기본으로 꺼져 있습니다. 필요한 것만 켜세요.",
+                "For weak PCs. Unlike the other features, these change settings outside the game or accept tiny differences, so they are off by default."));
+            bool ch = false;
+            Section(T("컴퓨터 쪽", "System"));
+            ch |= Option("lowprio", ref c.LowPriority, T("게임 우선순위 높이기", "Higher game priority"),
+                T("브라우저, 방송 프로그램, 업데이트 같은 다른 프로그램이 CPU 를 쓸 때 게임이 먼저 돌게 합니다. 백그라운드 때문에 끊기는 컴퓨터에 효과가 있습니다. 게임을 끄거나 이 기능을 끄면 원래대로 돌아갑니다.",
+                  "Lets the game run ahead of browsers, streaming and updates when they compete for the CPU. Reverts when the game or this option is turned off."),
+                T("컴퓨터", "System"));
+            ch |= Option("lowthrottle", ref c.LowNoThrottle, T("윈도우 절전 제한 끄기", "No Windows power throttling"),
+                T("윈도우 11 이 게임을 '효율 모드'로 느린 코어에 몰아넣지 않게 하고, 타이머 정밀도를 1ms 로 올려 프레임 간격이 덜 흔들리게 합니다. 노트북에 효과가 큽니다. 전기를 조금 더 씁니다.",
+                  "Keeps Windows 11 from putting the game in efficiency mode and raises the timer resolution to 1 ms for steadier frame pacing. Helps laptops most; uses slightly more power."),
+                T("컴퓨터", "System"));
+            Section(T("게임 쪽", "Game"));
+            ch |= Option("lowfft", ref c.LowNoFft, T("음악 반응 계산 끄기", "Skip music spectrum analysis"),
+                T("게임은 매 프레임 음악 주파수를 분석하는데, 이 값을 쓰는 곳은 타일 색 방식 'Volume' 뿐입니다. 그 방식을 쓰는 타일이 없으면 분석을 건너뜁니다. 곡 도중 타일이 Volume 으로 바뀌면 바로 다시 켜며, 그 첫 한 프레임만 색이 한 프레임 늦을 수 있습니다.",
+                  "The game analyses the music spectrum every frame, but only 'Volume' track colours use it. Skips it when no tile uses that mode; turns back on immediately if a tile switches to Volume (that first frame may lag by one frame)."),
+                T("게임", "Game"));
+            if (ch) Save();
+            GUILayout.Space(10);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(T("모두 켜기", "Turn all on"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; Save(); }
+            GUILayout.Space(8);
+            if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = false; Save(); }
+            GUILayout.EndHorizontal();
+            GUILayout.Space(14);
+            InfoCard(new[]
+            {
+                T("게임 설정에서 더 할 수 있는 것", "More in the game's own settings"),
+                T("해상도를 낮추기, 판정 오차 막대 끄기, 필터·그림자 효과를 줄이는 게임 옵션이 그래픽카드가 약한 컴퓨터에 가장 효과가 큽니다. 키뷰어 같은 다른 모드의 화면 표시도 매 프레임 비용이 듭니다.",
+                  "Lower resolution, turning off the hit error meter and reducing filter effects in the game's options help weak graphics the most. On-screen overlays from other mods (e.g. key viewers) also cost time every frame."),
+            });
         }
 
         private void PageMonitor()

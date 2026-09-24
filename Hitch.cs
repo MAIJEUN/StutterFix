@@ -183,6 +183,7 @@ namespace StutterFix
             EffectBudget.Suspend(3f);
             ShaderWarm.MaybeRun();
             if (Edition.Dev) BlendProbe.Report();
+            LowEnd.SongStarted(); LowEnd.LogRenderOnce();
         }
 
         // 곡이 끝났다고 밀린 효과를 버리면 안 된다. 마지막 타일은 효과가 한꺼번에 몰려 나눠 두는 곳이라,
@@ -204,7 +205,7 @@ namespace StutterFix
                 {
                     endLogged = true;
                     string perf = PerfOverlay.SongSummary();
-                    if (perf != null) Main.Entry.Logger.Log("[곡] " + perf + " | 같은 그림자 색 건너뛰기 " + TextFix.SkippedSameShadow + "회");
+                    if (perf != null) Main.Entry.Logger.Log("[곡] " + perf + " | 같은 그림자 색 건너뛰기 " + TextFix.SkippedSameShadow + "회" + LowEnd.Summary());
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary() + EffectBudget.Summary());
                     { var mp = MoveProf.SongSummary(); if (mp.Length > 0) Main.Entry.Logger.Log(mp); }
                     EffectBudget.ResetLate();
