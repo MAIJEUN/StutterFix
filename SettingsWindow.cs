@@ -862,6 +862,19 @@ namespace StutterFix
             GUILayout.Space(6);
             int ic = c.LowImageCap >= 1024 ? 1 : c.LowImageCap > 0 ? 2 : 0;
             if (Segment("lowimg", ref ic, new[] { T("그대로", "Unchanged"), "1024", "512" })) { c.LowImageCap = ic == 1 ? 1024 : ic == 2 ? 512 : 0; ch = true; }
+            Section(T("실험적 기능", "Experimental"));
+            GUILayout.Label(T("아직 다듬는 중인 기능입니다. 화면이 마음에 들지 않으면 끄세요.", "Still being tuned. Turn off if you don't like how it looks."), sDim);
+            GUILayout.Space(4);
+            ch |= Option("lowsharpen", ref c.LowSharpen, T("늘린 화면 선명도 보정", "Sharpen the upscaled view"),
+                T("게임 화면 해상도를 낮췄을 때 늘린 화면이 흐려 보이는 것을 선명도 보정으로 덜어 줍니다(FSR 1 의 선명도 단계를 흉내). 게임에 들어 있는 Sharpen 필터 셰이더를 빌려 화면 해상도에서 한 번 겁니다. UI 는 그대로입니다. 해상도가 100% 면 동작하지 않습니다.",
+                  "Reduces the blur of a lowered game-view resolution with a sharpening pass (like FSR 1's sharpening step), using the game's built-in Sharpen filter shader at screen resolution. UI is unaffected. Does nothing at 100%."),
+                T("실험", "Experimental"));
+            if (c.LowSharpen)
+            {
+                float sv = c.LowSharpenValue;
+                if (Slider("lowsharpv", ref sv, 0.25f, 4f, T("세기", "Strength"), sv.ToString("F2"))) { c.LowSharpenValue = Mathf.Round(sv * 20f) / 20f; ch = true; }
+                if (!LowEnd.SharpenReady) GUILayout.Label(T("셰이더를 찾지 못해 쓸 수 없습니다", "Shader not found; unavailable"), sSub);
+            }
             if (ch) Save();
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
@@ -869,7 +882,7 @@ namespace StutterFix
             { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = false; c.LowRenderScale = 100; c.LowImageCap = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowSharpen = false; c.LowRenderScale = 100; c.LowImageCap = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]

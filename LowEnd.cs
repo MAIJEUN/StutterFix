@@ -75,7 +75,7 @@ namespace StutterFix
             return false;
         }
         public static void ColorFloorPrefix(TrackColorType __0) { if (__0 == TrackColorType.Volume) volumeSeen = true; }
-        internal static void SongStarted() { volumeSeen = false; scanFrame = -1000; }   // 맵마다 새로 본다
+        internal static void SongStarted() { volumeSeen = false; scanFrame = -1000; EnsureSharpen(); }   // 맵마다 새로 본다
 
         private static readonly AccessTools.FieldRef<scrFloor, TrackColorType> colorTypeRef = AccessTools.FieldRefAccess<scrFloor, TrackColorType>("specialColorType");
         private static bool AnyVolumeFloor()
@@ -148,6 +148,40 @@ namespace StutterFix
         }
 
 
+        // ── 실험: 늘린 화면 선명도 보정 ──
+        // FSR 1 은 "가장자리를 살려 늘리기(EASU) + 선명도 보정(RCAS)" 두 단계다. 새 셰이더는 유니티 에디터로 번들을 만들어야 해서,
+        // 게임에 이미 들어 있는 Sharpen 필터 셰이더(CameraFilterPack/Sharpen_Sharpen, SetFilter 의 Sharpen)를 빌려
+        // 늘린 뒤의 화면(OverlayCam 출력)에 한 번 건다. UI 는 카메라 뒤에 그려지므로 영향이 없다.
+        // 셰이더 값: _Value(필터 기본 4), _Value2(기본 1), _ScreenResolution(가로, 세로). 필터 컴포넌트 코드(IL)와 같은 값을 넣는다.
+        internal static bool Sharpen;
+        internal static float SharpenValue = 1f;   // _Value (0.5~4)
+        internal static bool SharpenReady;
+        internal static Material SharpenMat;
+        private static bool sharpenTried;
+        private static readonly AccessTools.FieldRef<scrCamera, Camera> overlayRef = AccessTools.FieldRefAccess<scrCamera, Camera>("Overlaycam");
+        internal static void EnsureSharpen()
+        {
+            try
+            {
+                if (!sharpenTried)
+                {
+                    sharpenTried = true;
+                    var sh = Shader.Find("CameraFilterPack/Sharpen_Sharpen");
+                    if (sh != null) { SharpenMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave }; SharpenReady = true; }
+                    Main.Entry.Logger.Log("[저사양] 선명도 보정 셰이더 " + (SharpenReady ? "찾음" : "없음 (사용 불가)"));
+                }
+                var cam = scrCamera.instance;
+                var oc = cam == null ? null : overlayRef(cam);
+                if (oc == null) return;
+                var comp = oc.GetComponent<UpscaleSharpen>();
+                bool want = Sharpen && SharpenReady && RenderScalePct < 100;
+                if (comp == null) { if (!want) return; comp = oc.gameObject.AddComponent<UpscaleSharpen>(); }
+                if (comp.enabled != want) comp.enabled = want;
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[저사양] 선명도 보정 붙이기 실패: " + ex.Message); }
+        }
+        internal static long SharpenFrames;
+
         internal static void Install(Harmony h)
         {
             if (installed) return;
@@ -172,12 +206,14 @@ namespace StutterFix
         {
             ApplyPriority();
             ApplyThrottle();
+            EnsureSharpen();
         }
 
         // 모드를 끄거나 다시 불러올 때 원래대로
         internal static void Shutdown()
         {
-            bool p = Priority, t = NoThrottle;
+            bool p = Priority, t = NoThrottle, s = Sharpen;
+            Sharpen = false; EnsureSharpen(); Sharpen = s;
             Priority = false; NoThrottle = false;
             ApplyPriority(); ApplyThrottle();
             Priority = p; NoThrottle = t;
@@ -208,8 +244,27 @@ namespace StutterFix
         {
             if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100) return "";
             string rt = ""; try { var cam = scrCamera.instance; var t = cam == null ? null : camRTRef(cam); if (t != null) rt = ", 게임 화면 " + t.width + "x" + t.height; } catch { }
-            return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}",
-                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt);
+            return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}, 선명도 보정 {6}프레임",
+                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames);
+        }
+    }
+}
+
+namespace StutterFix
+{
+    // OverlayCam(낮은 해상도 게임 화면을 늘려 그리는 카메라)에 붙는 선명도 보정. 켜져 있을 때만 enabled.
+    internal class UpscaleSharpen : MonoBehaviour
+    {
+        private void OnRenderImage(RenderTexture src, RenderTexture dst)
+        {
+            var m = LowEnd.SharpenMat;
+            if (m == null) { Graphics.Blit(src, dst); return; }
+            m.SetFloat("_TimeX", 1f);
+            m.SetVector("_ScreenResolution", new Vector4(src.width, src.height, 0f, 0f));
+            m.SetFloat("_Value", LowEnd.SharpenValue);
+            m.SetFloat("_Value2", 1f);
+            Graphics.Blit(src, dst, m);
+            LowEnd.SharpenFrames++;
         }
     }
 }
