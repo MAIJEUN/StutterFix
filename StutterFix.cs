@@ -112,6 +112,7 @@ namespace StutterFix
                 Precheck.Install(harmony);
                 DecoAnim.Install(harmony);
                 FrameParts.Install(harmony);
+                UiProf.Install(harmony);
                 MoveApply.Install(harmony);
                 Dormancy.Install(harmony);
                 ImagePrefetch.Install(harmony);
@@ -121,6 +122,7 @@ namespace StutterFix
                 GcControl.Install();
                 SettingsWindow.Create();
                 RestartAdvisor.Init();
+                RestartAdvisor.StartReopen();
                 PerfOverlay.Create();
                 Try(() => PerfOverlay.Install(harmony));
 
@@ -353,6 +355,7 @@ namespace StutterFix
             if (!installed) return;   // 꺼져 있으면 아무 일도 하지 않는다
 
             GcControl.Tick(dt);
+            RestartAdvisor.Tick();
             EffectBudget.Tick();
             RecolorSplit.Tick();
             FastBlend.Tick();
@@ -623,6 +626,7 @@ namespace StutterFix
         public bool FastLoop = true;       // 길이 0 장식 이동 효과를 게임 코드 대신 모드 루프로
         public bool Precheck = true;       // 곧 발동할 무거운 장식 이동이 아무것도 안 바꾸는지 미리 확인해 두고 건너뛰기
         public bool DecoAnim = true;       // 길이 있는 장식 이동의 애니메이션을 DOTween 대신 모드가 돌림
+        public string ReopenLevel = "";     // 재시작 버튼으로 껐을 때 다시 켠 뒤 에디터로 열 맵 (한 번 쓰고 비움)
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
         public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)

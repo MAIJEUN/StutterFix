@@ -30,6 +30,7 @@
     <Compile Include="SystemMonitor.cs" />
     <Compile Include="UiInputBlock.cs" />
     <Compile Include="ModCost.cs" />
+    <Compile Include="UiProf.cs" />
     <Compile Include="WarmChars.cs" />
     <Compile Include="Profiler.cs" />
     <Compile Include="SceneScan.cs" />

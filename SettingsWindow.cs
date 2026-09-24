@@ -307,7 +307,9 @@ namespace StutterFix
             if (rhov && panelT <= 0f)
             {
                 var lines = new List<string>();
-                lines.Add(armed ? T("한 번 더 누르면 게임을 다시 켭니다", "Click again to restart the game") : T("게임 재시작", "Restart game"));
+                var blk = RestartAdvisor.RecentBlock();
+                lines.Add(blk ?? (armed ? T("한 번 더 누르면 게임을 다시 켭니다", "Click again to restart the game") : T("게임 재시작", "Restart game")));
+                if (blk == null && RestartAdvisor.WillReopen()) lines.Add(T("다시 켠 뒤 에디터에서 지금 맵을 다시 엽니다", "Reopens this level in the editor after restart"));
                 if (why.Count > 0) { lines.Add(T("지금 재시작하면 좋은 이유:", "Good time to restart:")); foreach (var s in why) lines.Add("· " + s); }
                 float w = 0; foreach (var s in lines) w = Mathf.Max(w, sTip.CalcSize(new GUIContent(s)).x);
                 w += 22; float h = lines.Count * 22 + 8;
@@ -502,6 +504,9 @@ namespace StutterFix
                     else restartArmedUntil = Time.realtimeSinceStartup + 3f;
                 }
                 GUILayout.EndHorizontal();
+                var hb = RestartAdvisor.RecentBlock();
+                if (hb != null) { GUILayout.Space(6); GUILayout.Label(hb, sSub); }
+                else if (RestartAdvisor.WillReopen()) { GUILayout.Space(6); GUILayout.Label(T("다시 켠 뒤 에디터에서 지금 맵을 다시 엽니다", "Reopens this level in the editor after restart"), sSub); }
                 GUILayout.Space(14);
             }
 
