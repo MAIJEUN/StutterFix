@@ -142,6 +142,16 @@ namespace StutterFix
             catch (Exception ex) { reopenStep = 0; Main.Entry.Logger.Log("[재시작] 맵 다시 열기 실패: " + (ex.InnerException ?? ex).Message); }
         }
 
+        // 게임 종료 (저장 안 된 편집이 있으면 하지 않는다)
+        internal static void Quit()
+        {
+            var block = Blocked();
+            if (block != null) { LastBlock = block.Replace("재시작하세요", "종료하세요").Replace("then restart", "then quit"); LastBlockAt = Time.realtimeSinceStartup; Main.Entry.Logger.Log("[종료] 하지 않음: " + block); return; }
+            Main.Entry.Logger.Log("[종료] 게임을 끕니다");
+            try { Main.Config.ReopenLevel = ""; Main.Config.Save(Main.Entry); } catch { }
+            Application.Quit();
+        }
+
         // 게임을 끄고 다시 켠다
         internal static void Restart(bool reopen)
         {

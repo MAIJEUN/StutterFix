@@ -34,6 +34,7 @@
     <Compile Include="LowEnd.cs" />
     <Compile Include="HalfRender.cs" />
     <Compile Include="Fsr.cs" />
+    <Compile Include="Updater.cs" />
     <EmbeddedResource Include="fsr/stutterfix_fsr" LogicalName="StutterFix.fsr" />
     <Compile Include="RenderVerify.cs" />
     <Compile Include="WarmChars.cs" />
@@ -95,6 +96,10 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GameManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(GameManaged)\UnityEngine.UnityWebRequestModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule">

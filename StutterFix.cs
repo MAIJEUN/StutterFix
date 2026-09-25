@@ -373,7 +373,7 @@ namespace StutterFix
 
             long q = System.Diagnostics.Stopwatch.GetTimestamp();
             GcControl.Tick(dt); Tk(0, ref q);
-            RestartAdvisor.Tick(); LowEnd.AutoTick(); Tk(1, ref q);
+            RestartAdvisor.Tick(); LowEnd.AutoTick(); Updater.Tick(); Tk(1, ref q);
             EffectBudget.Tick(); Tk(2, ref q);
             RecolorSplit.Tick(); Tk(3, ref q);
             FastBlend.Tick(); Tk(4, ref q);
@@ -633,6 +633,7 @@ namespace StutterFix
         public bool LegacyGfxJobs = true;   // boot.config 로 그래픽 작업 분산(legacy)을 켠다
 
         // 기능별 켜기/끄기 (플레이어용 설정 화면에서 바꾸고 저장된다)
+        public bool CheckUpdates = true;    // 게임을 켜면 GitHub 에서 새 버전이 있는지 한 번 확인
         public bool GcPause = true;
         public bool EffectSplit = true;
         public bool RecolorSplit = true;

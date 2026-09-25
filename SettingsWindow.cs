@@ -202,7 +202,7 @@ namespace StutterFix
 
         private void OnGUI()
         {
-            if (!Open) { PreWarm(); return; }
+            if (!Open) { PreWarm(); Updater.DrawNotice(false); return; }
             if (!built) Build();
             CaptureKey();
 
@@ -280,6 +280,7 @@ namespace StutterFix
                     GUI.color = new Color(1, 1, 1, c.a * (on || hov ? 1f : 0.72f));
                     GUI.DrawTexture(new Rect(r.x + 10, r.y + 10, IconS - 20, IconS - 20), icons[i]);
                     GUI.color = c;
+                    if (i == 0 && Updater.Available) Fill(new Rect(r.xMax - 13, r.y + 5, 8, 8), new Color(0.3f, 0.75f, 1f, c.a), 4);   // 새 버전 있음
                 }
                 if (GUI.Button(r, GUIContent.none, GUIStyle.none)) TogglePanel(i);
                 y += IconS + IconGap;
@@ -311,7 +312,7 @@ namespace StutterFix
                 bool canReopen = RestartAdvisor.WillReopen();
                 var blk = RestartAdvisor.RecentBlock();
                 const float bw = 200f, bh = 34f;
-                int n = canReopen ? 2 : 1;
+                int n = (canReopen ? 2 : 1) + 1;   // 마지막 칸은 게임 종료
                 float ph = n * (bh + 6f) + 10f + (blk != null ? 26f : 0f);
                 var pr = new Rect(d.x - 10 - bw - 16, rr.center.y - ph / 2f, bw + 16, ph);
                 restartMenuRect = pr;
@@ -322,12 +323,13 @@ namespace StutterFix
                 for (int i = 0; i < n; i++)
                 {
                     var b = new Rect(pr.x + 8, by + i * (bh + 6f), bw, bh);
-                    bool reopen = canReopen && i == 1;
+                    bool quit = i == n - 1;
+                    bool reopen = !quit && canReopen && i == 1;
                     Fill(b, b.Contains(m) ? new Color(0.92f, 0.32f, 0.30f, 0.75f) : new Color(1, 1, 1, 0.08f), 7);
-                    GUI.Label(b, reopen ? T("이 맵으로 재시작", "Restart into this level") : T("게임 재시작", "Restart game"), sTip);
+                    GUI.Label(b, quit ? T("게임 종료", "Quit game") : reopen ? T("이 맵으로 재시작", "Restart into this level") : T("게임 재시작", "Restart game"), sTip);
                     if (GUI.Button(b, GUIContent.none, GUIStyle.none))
                     {
-                        RestartAdvisor.Restart(reopen);
+                        if (quit) RestartAdvisor.Quit(); else RestartAdvisor.Restart(reopen);
                         if (RestartAdvisor.RecentBlock() == null) restartArmedUntil = 0f;
                     }
                 }
@@ -335,7 +337,7 @@ namespace StutterFix
             else if (rhov && panelT <= 0f)
             {
                 var lines = new List<string>();
-                lines.Add(T("게임 재시작", "Restart game"));
+                lines.Add(T("게임 재시작 · 종료", "Restart / quit game"));
                 if (RestartAdvisor.WillReopen()) lines.Add(T("에디터에서 연 맵으로 바로 다시 켤 수도 있습니다", "Can also restart straight into the level open in the editor"));
                 if (why.Count > 0) { lines.Add(T("지금 재시작하면 좋은 이유:", "Good time to restart:")); foreach (var s in why) lines.Add("· " + s); }
                 float w = 0; foreach (var s in lines) w = Mathf.Max(w, sTip.CalcSize(new GUIContent(s)).x);
@@ -528,6 +530,9 @@ namespace StutterFix
             Stat(jobs ? T("켜짐", "On") : T("꺼짐", "Off"), T("멀티스레드 그리기", "Multithreaded rendering"), false);
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
+
+            // 새 버전 (GitHub 최신 릴리스)
+            if (Updater.Available || Updater.Installed) UpdateCard();
 
             // 지금 재시작하면 좋은 때 (메모리가 쌓임, 멀티스레드 그리기 변경, 모드 업데이트 등)
             var why = RestartAdvisor.Reasons();
@@ -1073,8 +1078,35 @@ namespace StutterFix
                     "Scenes stacking many full-screen filters are limited by the GPU, and background apps can cause occasional hitches."),
                 T("소스", "Source"), "github.com/pding4569/StutterFix",
             });
-            GUILayout.Space(14);
+            GUILayout.Space(4);
+            UpdateCard();
             ReportCard();
+        }
+
+        // 업데이트: 상태, 받기 / 지금 확인 버튼, 자동 확인 켜기
+        private void UpdateCard()
+        {
+            var c = Main.Config;
+            string st = Updater.Status.Length > 0 ? Updater.Status : string.Format(T("지금 v{0}", "Current v{0}"), Main.Entry.Info.Version);
+            InfoCard(new[] { T("업데이트", "Updates"), st });
+            GUILayout.BeginHorizontal();
+            GUI.enabled = !Updater.Busy;
+            if (Updater.Available)
+            {
+                if (GUILayout.Button(string.Format(T("v{0} 받기", "Get v{0}"), Updater.Latest), sPrimary, GUILayout.Width(170), GUILayout.Height(38))) Updater.Download();
+                GUILayout.Space(8);
+                if (GUILayout.Button(T("바뀐 점 보기", "What's new"), sPrimary, GUILayout.Width(150), GUILayout.Height(38))) Application.OpenURL(Updater.NotesUrl);
+            }
+            else if (!Updater.Installed)
+            {
+                if (GUILayout.Button(T("지금 확인", "Check now"), sPrimary, GUILayout.Width(150), GUILayout.Height(38))) Updater.Check();
+            }
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10);
+            if (Option("autoupdate", ref c.CheckUpdates, T("켤 때 새 버전 확인", "Check for updates on launch"),
+                T("게임을 켜면 GitHub 에서 새 버전이 있는지 한 번 확인하고, 있으면 첫 화면과 이 창에 알려 줍니다. 받는 것은 버튼을 눌렀을 때만 합니다.",
+                  "On launch, checks GitHub once for a newer version and shows a notice. Nothing is downloaded until you press the button."), null)) Save();
         }
 
         private static string LoadSummary()
