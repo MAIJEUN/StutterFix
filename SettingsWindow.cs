@@ -359,6 +359,12 @@ namespace StutterFix
             }
         }
 
+        // 에디터 안이면 "이 맵으로", 밖이면(메인 메뉴 등) 에디터에서 마지막으로 연 맵으로
+        private static string ReopenLabel()
+        {
+            return RestartAdvisor.InEditor() ? T("이 맵으로 재시작", "Restart into this level") : T("마지막 맵으로 재시작", "Restart into last level");
+        }
+
         private void TogglePanel(int i)
         {
             if (panelOpen && page == i) { panelOpen = false; return; }
