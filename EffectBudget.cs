@@ -57,7 +57,9 @@ namespace StutterFix
 
         internal static bool ShouldRun(object instance, MethodBase method, object[] args)
         {
-            if (!Enabled || replaying || RecolorSplit.Replaying) return true;   // 색 바꾸기 조각은 이미 나눠진 것이다
+            if (replaying || RecolorSplit.Replaying) return true;   // 색 바꾸기 조각은 이미 나눠진 것이다
+            // 꺼졌는데 밀린 것이 남아 있으면, 새 효과보다 먼저 모두 실행해 순서를 지킨다
+            if (!Enabled) { if (queue.Count > 0 && depth == 0) DrainAll(); return true; }
             if (InGrace) return true;
 
             if (Time.frameCount != frame)
@@ -68,12 +70,54 @@ namespace StutterFix
             }
 
             if (depth > 0) return true;        // 이미 시작한 효과의 내부 호출
+            // 화면에만 영향을 주는 효과만 미룬다. 소리(ffxPlaySound 는 오디오 시계로 예약하는데 늦게 부르면 그 시각이 지나 늦게 울린다),
+            // 판정·진행(ffxKillPlayer, ffxCheckpoint, ffxSetOffset, ffxSpeed, ffxSetInputEventPlus ...), 프레임 제한 같은 것은
+            // 원래 프레임에 그대로 실행한다. 밀린 것보다 먼저 실행되지만, 화면 효과와 서로 값을 주고받지 않는다.
+            if (!Deferrable(instance)) return true;
             // 앞에 밀린 것이 남아 있으면 순서를 지키려고 새 효과도 그 뒤에 선다
             if (queue.Count == 0 && usedMs < BudgetMs) return true;
 
             queue.Add(new Pending { Instance = instance, Method = method, Args = args, Time = UnityEngine.Time.realtimeSinceStartup, Frame = UnityEngine.Time.frameCount });
             DeferredTotal++;
             return false;
+        }
+
+        // 미뤄도 되는 효과 = 화면에만 영향을 주는 효과 (게임 코드로 확인한 이름만. 모르는 효과는 미루지 않는다)
+        private static readonly HashSet<string> visualOnly = new HashSet<string>
+        {
+            "ffxMoveDecorationsPlus", "ffxRecolorFloorPlus", "ffxMoveFloorPlus", "ffxFlashPlus", "ffxSetFilterPlus", "ffxSetFilterAdvancedPlus",
+            "ffxBloomPlus", "ffxCameraPlus", "ffxCustomBackgroundPlus", "ffxHallOfMirrorsPlus", "ffxScreenTilePlus", "ffxScreenScrollPlus",
+            "ffxShakeScreenPlus", "ffxSetTextPlus", "ffxSetObjectPlus", "ffxSetParticlePlus", "ffxEmitParticlePlus",
+            "ffxFloorAppearPlus", "ffxFloorDisappearPlus", "ffxTweenBlizzardPlus",
+        };
+        private static readonly Dictionary<Type, bool> deferrable = new Dictionary<Type, bool>();
+        private static bool Deferrable(object instance)
+        {
+            if (instance == null) return false;
+            var t = instance.GetType();
+            bool ok;
+            if (!deferrable.TryGetValue(t, out ok)) { ok = visualOnly.Contains(t.Name); deferrable[t] = ok; }
+            if (!ok) return false;
+            // 히트박스 장식이 있는 맵에서는 장식 이동을 미루면 히트박스(판정) 위치가 늦게 바뀐다
+            if (instance is ffxMoveDecorationsPlus && MapHasHitbox()) return false;
+            return true;
+        }
+        private static List<scrDecoration> hbList; private static int hbCount = -1; private static bool hbAny; private static int hbFrame = -1000;
+        private static readonly AccessTools.FieldRef<scrDecorationManager, List<scrDecoration>> allDecoRef = AccessTools.FieldRefAccess<scrDecorationManager, List<scrDecoration>>("allDecorations");
+        private static bool MapHasHitbox()
+        {
+            try
+            {
+                var mgr = scrDecorationManager.instance;
+                var all = (object)mgr != null ? allDecoRef(mgr) : null;
+                if (all == null) return false;
+                // 히트박스 값은 장식 생성·Setup 때만 바뀐다. 목록이 같으면 1초(60프레임)에 한 번만 다시 센다
+                if (ReferenceEquals(all, hbList) && all.Count == hbCount && Time.frameCount - hbFrame < 60) return hbAny;
+                hbList = all; hbCount = all.Count; hbFrame = Time.frameCount; hbAny = false;
+                for (int i = 0; i < all.Count; i++) { var d = all[i]; if ((object)d != null && d.hitbox != 0) { hbAny = true; break; } }
+                return hbAny;
+            }
+            catch { return true; }   // 모르면 미루지 않는다
         }
 
         // 1.3.7 에서 "효과 비용 예측"(대상 장식 수 x 학습한 장식당 비용으로 무거운 효과를 다음 프레임으로 미루기)을 넣었다가 뺐다.
@@ -129,7 +173,7 @@ namespace StutterFix
                     float late = (UnityEngine.Time.realtimeSinceStartup - p.Time) * 1000f; int lateF = UnityEngine.Time.frameCount - p.Frame;
                     LateN++; LateSumMs += late; if (late > LateMaxMs) LateMaxMs = late; if (lateF > LateMaxFrames) LateMaxFrames = lateF;
                     long t0 = Stopwatch.GetTimestamp();
-                    try { p.Method.Invoke(p.Instance, p.Args); }
+                    try { Invoker(p.Method)(p.Instance, p.Args); }
                     catch { failed++; }
                     double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
 
@@ -153,16 +197,44 @@ namespace StutterFix
                     done, total, BudgetMs, failed, worstName, worst, queue.Count));
         }
 
+        // 밀린 효과를 MethodBase.Invoke 로 부르면 호출마다 인자 검사와 리플렉션 경로를 탄다. 효과 종류(StartEffect 수십 개)마다
+        // 한 번 IL 로 만든 호출기를 쓴다. 가상 호출(callvirt)이라 Invoke 와 같은 함수에 간다(밀리는 것은 가장 바깥 호출뿐).
+        private static readonly Dictionary<MethodBase, FastInvokeHandler> invokers = new Dictionary<MethodBase, FastInvokeHandler>();
+        private static FastInvokeHandler Invoker(MethodBase m)
+        {
+            FastInvokeHandler h;
+            if (invokers.TryGetValue(m, out h)) return h;
+            var mi = m as MethodInfo;
+            try { h = mi != null ? MethodInvoker.GetHandler(mi) : null; } catch { h = null; }
+            if (h == null) h = (inst, args) => m.Invoke(inst, args);
+            invokers[m] = h;
+            return h;
+        }
+
         // 효과가 하나도 시작되지 않는 프레임에도 밀린 것을 비워야 한다.
+        // 기능을 꺼도 이미 밀어 둔 것은 끝까지 실행한다 (예전에는 꺼진 뒤 대기열이 영영 안 돌아 그 효과들이 빠졌다).
         internal static void Tick()
         {
-            if (!Enabled) return;
+            if (!Enabled && queue.Count == 0) return;
             if (Time.frameCount != frame)
             {
                 frame = Time.frameCount;
                 usedMs = 0;
             }
             Drain();
+        }
+
+        // 모드를 내릴 때: 밀린 효과와 타일 색 조각을 버리지 않고 지금 한꺼번에 실행한다 (원래 게임은 이미 다 실행했을 것들)
+        internal static void FlushAll()
+        {
+            DrainAll();
+            RecolorSplit.FlushAll();
+        }
+        private static void DrainAll()
+        {
+            float saved = BudgetMs;
+            try { BudgetMs = float.MaxValue; usedMs = 0; Drain(); }
+            finally { BudgetMs = saved; }
         }
 
         internal static void Reset()

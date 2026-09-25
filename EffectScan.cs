@@ -45,9 +45,11 @@ namespace StutterFix
                         if (m.IsAbstract || m.ContainsGenericParameters) continue;
                         try
                         {
+                            // Post 는 finalizer 로 건다: 효과가 예외를 던져도 반드시 돌아야 효과 나누기의 중첩 수(depth)가 맞는다.
+                            // (postfix 였을 때는 예외 한 번이면 depth 가 남아, 다음 재시작까지 모든 효과가 "내부 호출" 로 보였다)
                             harmony.Patch(m,
                                 prefix: new HarmonyMethod(typeof(EffectScan), nameof(Pre)),
-                                postfix: new HarmonyMethod(typeof(EffectScan), nameof(Post)));
+                                finalizer: new HarmonyMethod(typeof(EffectScan), nameof(Post)));
                             count++;
                         }
                         catch { }
@@ -126,6 +128,11 @@ namespace StutterFix
             // 이미 잰 값을 더하기만 하므로 비용은 없다.
             if (EffectBudget.OuterCall) { FrameEffectMs += ms; FrameN++; var mv = __instance as ffxMoveDecorationsPlus; if ((object)mv != null) { FrameMoveMs += ms; if (durRef(mv) > 0f) FrameAnimMs += ms; } }
             if (!Enabled) return;
+            try { Record(__instance, ms); } catch { }   // finalizer 안이라 여기서 예외가 나면 안 된다
+        }
+
+        private static void Record(object __instance, double ms)
+        {
 
             string name = __instance != null ? __instance.GetType().Name : "?";
 

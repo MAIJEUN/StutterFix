@@ -286,7 +286,7 @@ namespace StutterFix
                 List<scrDecoration> l;
                 if (!dict.TryGetValue(tag, out l)) { list.Clear(); src = list; return true; }
                 if (l == null) return No(5);
-                if (Clean(l)) { src = l; return true; }
+                if (Clean(l)) { src = l; return ParallaxOk(fx) || No(0); }
             }
             serial++;
             list.Clear();
@@ -308,7 +308,7 @@ namespace StutterFix
                 }
             }
             src = list;
-            return true;
+            return ParallaxOk(fx) || No(0);   // 시차 부품 없는 장식이 섞인 시차 배율 애니메이션은 원래대로
         }
 
         private static List<scrDecoration> src;
@@ -484,12 +484,21 @@ namespace StutterFix
         private static bool CanAnim(ffxMoveDecorationsPlus fx)
         {
             if (!DecoAnim.Active || EffectBudget.InGrace) return false;
+            if (DecoAnim.CanPivotParallax) return true;   // 피벗·시차 오프셋·시차 배율도 모드 애니메이터가 맡는다 (시차 부품 확인은 대상 목록을 만든 뒤 ParallaxOk)
             if (parUsed(fx)) return false;
             if (!fdt(fx))
             {
                 var a = tParOff(fx); if (parOffUsed(fx) && (!float.IsNaN(a.x) || !float.IsNaN(a.y))) return false;
                 var b = tPiv(fx); if (pivUsed(fx) && (!float.IsNaN(b.x) || !float.IsNaN(b.y))) return false;
             }
+            return true;
+        }
+        // 시차 배율 블록은 만들 때 dec.parallax.multiplier 를 읽는다. 시차 부품이 없는 장식이 섞이면 원래 코드는 그 자리에서 예외가 나므로
+        // (뒤 장식은 처리 안 됨) 똑같이 흉내 낼 수 없다. 그런 효과는 원래대로 둔다.
+        private static bool ParallaxOk(ffxMoveDecorationsPlus fx)
+        {
+            if (!(durRef(fx) > 0f) || !parUsed(fx)) return true;
+            for (int i = 0; i < src.Count; i++) if (!DecoAnim.HasParallax(src[i])) return false;
             return true;
         }
         private static readonly AccessTools.FieldRef<ffxMoveDecorationsPlus, float> tRot = AccessTools.FieldRefAccess<ffxMoveDecorationsPlus, float>("targetRot");
@@ -536,7 +545,7 @@ namespace StutterFix
                     var d = tweensRef(dec);
                     if (anim)
                     {
-                        // 원래 블록 순서: 배치 -> 위치X/Y -> 회전 -> 크기X/Y -> 색 -> 불투명도 -> 보이기 -> 깊이 (피벗·시차는 CanAnim 에서 뺐다)
+                        // 원래 블록 순서: 배치 -> 위치X/Y -> 시차 오프셋X/Y -> 피벗X/Y -> 회전 -> 크기X/Y -> 색 -> 불투명도 -> 시차 배율 -> 보이기 -> 깊이
                         if (Precheck.Active != 0) InvisibleSkip.TouchDeco(dec, "애니메이션 시작");   // 애니메이션 칸이 살아 있게 된다
                         if (placement) setPlacement(dec, mt);
                         if (pos)
@@ -545,10 +554,13 @@ namespace StutterFix
                             if (px) DecoAnim.Pos(dec, d, 1, sp.x, tp.x, dur, ease);
                             if (py) DecoAnim.Pos(dec, d, 2, sp.y, tp.y, dur, ease);
                         }
+                        if (parOff) { if (pox) DecoAnim.ParOff(dec, d, 12, tpo.x, dur, ease); if (poy) DecoAnim.ParOff(dec, d, 13, tpo.y, dur, ease); }
+                        if (piv) { if (pvx) DecoAnim.Piv(dec, d, 3, tpv.x, dur, ease); if (pvy) DecoAnim.Piv(dec, d, 4, tpv.y, dur, ease); }
                         if (rot) DecoAnim.Rot(dec, d, tRot(fx), dur, ease);
                         if (scale) { if (sx) DecoAnim.Scale(dec, d, 7, sc, dur, ease); if (sy) DecoAnim.Scale(dec, d, 8, sc, dur, ease); }
                         if (col) DecoAnim.Col(dec, d, tCol(fx), dur, ease);
                         if (opa) DecoAnim.Opa(dec, d, tOpa(fx), dur, ease);
+                        if (par) DecoAnim.Par(dec, d, parTarget, dur, ease);
                         if (vis) setVisible(dec, visV ? !forceHideRef(dec) : false);
                         if (dep) setDepth(dec, depth);
                         if (img) ImageBlock(fx, dec);   // 깊이 다음: 이미지·원래 크기·부드럽게·마스크

@@ -193,7 +193,7 @@ namespace StutterFix
 
         public static bool LazyPrefix(scrDecoration __instance, Vector2 pivotPos, Vector2 pivotOffset)
         {
-            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return true;   // 편집기에서는 선택 테두리가 이 위치를 쓴다
+            if (!LazyMove || !Enabled || applyingAll || SceneReset.Resetting || !Hitch.Playing) return true;   // 편집기에서는 선택 테두리가 이 위치를 쓴다
             // 보이는 장식은 필드 하나만 읽고 바로 원래대로 간다 (SetPosition 은 곡 하나에 500만 번 넘게 불린다)
             if (colorRef(__instance).a > 0f) return true;
             var v = __instance as scrVisualDecoration;
@@ -217,7 +217,7 @@ namespace StutterFix
         // Arche 효과 몰림의 1만 4천 개 장식 이동이 거의 전부 이 경우였고, 함수 사슬(SetPositionX -> WithX -> SetPosition 감싸기 -> 앞 패치)만 7ms 넘게 썼다.
         internal static bool LazyCan(scrDecoration d)
         {
-            if (!LazyMove || !Enabled || applyingAll || !Hitch.Playing) return No(0);
+            if (!LazyMove || !Enabled || applyingAll || SceneReset.Resetting || !Hitch.Playing) return No(0);
             if (colorRef(d).a > 0f) return No(1);
             var v = d as scrVisualDecoration;
             if ((object)v == null) return No(2);
@@ -388,9 +388,14 @@ namespace StutterFix
         private static bool comparing;
         internal static int Compares, ComparesDiffer;
 
+        // 기본으로 꺼 둔다. 비교 한 번에 화면을 두 번 더 그리고 200만 픽셀을 읽어 곡 중 20초마다 약 230ms 멈췄고,
+        // 카메라를 한 번 더 그리면 시간으로 움직이는 필터(OnRenderImage 에서 TimeX += deltaTime)가 한 번 더 진행해 연출이 튀었다.
+        // 지금까지 매번 차이 0 이었다. 셰이더 목록을 바꾸는 등 다시 확인할 때만 켠다.
+        internal static bool PixelCompare = false;
+
         internal static void DevTick()
         {
-            if (!Enabled || comparing || !Hitch.Playing || hidden.Count == 0) return;
+            if (!PixelCompare || !Enabled || comparing || !Hitch.Playing || hidden.Count == 0) return;
             if (Time.realtimeSinceStartup < nextCompare) return;
             nextCompare = Time.realtimeSinceStartup + 20f;
             if (PerfOverlay.Instance != null) PerfOverlay.Instance.StartCoroutine(CompareRun());

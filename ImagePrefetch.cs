@@ -481,6 +481,7 @@ namespace StutterFix
             // 곡 시작 전 편집 화면에서 끊김으로 잡혔는데 맵 불러오기의 끝부분이므로 불러오기로 적는다.
             AfterLoadLogAt = Time.realtimeSinceStartup + 3f;   // 게임이 이전 맵 이미지를 치운 뒤(ReloadAssets 끝)에 남은 양을 적는다
             ShaderWarm.LevelChanged = true;   // 새 장식/이벤트가 올라왔다: 다음 곡 시작 때 필터 셰이더를 다시 본다
+            ShaderWarm.AfterLoad();           // 필터 셰이더는 곡 시작이 아니라 지금(불러오기 끝) 데운다
             PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load"));
             return __exception;
         }

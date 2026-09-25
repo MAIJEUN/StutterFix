@@ -83,6 +83,8 @@
     <Compile Include="ZeroTween.cs" />
     <Compile Include="MoveApply.cs" />
     <Compile Include="BootConfig.cs" />
+    <Compile Include="SceneReset.cs" />
+    <Compile Include="ParticleSkip.cs" />
   </ItemGroup>
 
   <PropertyGroup>

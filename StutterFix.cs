@@ -121,7 +121,9 @@ namespace StutterFix
                 ImagePrefetch.Install(harmony);
                 FastBlend.Install(harmony);
                 InvisibleSkip.Install(harmony);
+                ParticleSkip.Install(harmony);
                 TweenFix.Install(harmony);
+                SceneReset.Install(harmony);
                 GcControl.Install();
                 SettingsWindow.Create();
                 RestartAdvisor.Init();
@@ -303,6 +305,9 @@ namespace StutterFix
             Try(Profiler.Stop);
             Try(ModWatch.Shutdown);
             Try(SamplerWatch.Shutdown);
+            // 곡 중에 내리면 원래 게임이 이미 끝냈을 일을 마저 한다: 밀린 효과·타일 색 조각 실행, 모드 애니메이션은 끝값으로(Kill(true) 와 같음)
+            if (Hitch.Playing) Try(EffectBudget.FlushAll);
+            Try(global::StutterFix.DecoAnim.FinishAll);
             Try(EffectBudget.Reset);       // 색 나누기 대기열도 같이 비운다
             Try(ImagePrefetch.Stop);       // 이미지 작업 스레드와 풀어 둔 메모리
             Try(() => SystemMonitor.Keep = false);
@@ -551,7 +556,9 @@ namespace StutterFix
             GUILayout.Label("    " + Hitch.Summary);
             GUILayout.Label("    모드별 사용량: " + ModWatch.Summary);
             SlowScan.Enabled = GUILayout.Toggle(SlowScan.Enabled,
-                "  끊길 때 어느 게임 함수가 느렸는지도 찍는다 (곡 시작이 4초 느려집니다)");
+                "  끊길 때 어느 게임 함수가 느렸는지도 찍는다 (곡 시작이 4초 느려지고, 곡 중 5초마다 멈춥니다)");
+            InvisibleSkip.PixelCompare = GUILayout.Toggle(InvisibleSkip.PixelCompare,
+                "  20초마다 투명 장식을 빼고/넣고 화면을 두 번 그려 픽셀을 비교한다 (그때마다 200ms 멈추고, 시간으로 움직이는 필터가 한 번 튄다)");
 
             GUILayout.Space(10);
             GUILayout.Label("── 애니메이션 목록 재정렬 막기 (핵심) ──");

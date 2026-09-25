@@ -46,18 +46,18 @@ namespace StutterFix
         internal static long SkippedSameText;
 
         private static System.Reflection.FieldInfo textField;
-        private static System.Reflection.PropertyInfo textProp;
+        private static readonly AccessTools.FieldRef<scrTextDecoration, UnityEngine.UI.Text> textRef = AccessTools.FieldRefAccess<scrTextDecoration, UnityEngine.UI.Text>("text");
 
-        public static bool SetTextPrefix(object __instance, string __0)
+        // 재생 중에만 건너뛴다. 건너뛰면 SetCollider(에디터 선택 테두리·클릭 영역 크기)도 안 도는데, 에디터에서는
+        // 글꼴을 바꾼 뒤 Setup 이 같은 글자로 SetText 를 불러 테두리 크기를 새 글꼴로 다시 잰다. 그걸 막으면 테두리가 옛 크기로 남는다.
+        public static bool SetTextPrefix(scrTextDecoration __instance, string __0)
         {
-            if (!SkipSameText) return true;
+            if (!SkipSameText || !Hitch.Playing) return true;
             try
             {
-                var comp = textField.GetValue(__instance);
-                if (comp == null) return true;
-                if (textProp == null) textProp = AccessTools.Property(comp.GetType(), "text");
-                var current = textProp.GetValue(comp, null) as string;
-                if (!string.Equals(current, __0, StringComparison.Ordinal)) return true;
+                var t = textRef(__instance);
+                if ((object)t == null || t == null) return true;
+                if (!string.Equals(t.text, __0, StringComparison.Ordinal)) return true;
                 SkippedSameText++;
                 return false;
             }

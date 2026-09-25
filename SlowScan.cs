@@ -36,7 +36,9 @@ namespace StutterFix
 
         // 기본으로 꺼 둔다. 곡이 시작될 때 함수 134개를 감싸는 데 4초가 걸려서,
         // 그 자체가 맵 초반의 가장 큰 끊김이었다. 원인을 찾을 때만 켠다.
-        internal static bool Enabled = Edition.Dev;   // 개발자용은 켜 둔다 (원인 추적용, 곡 시작이 몇 초 느려짐)
+        // 개발자용도 기본은 끈다. 곡 시작 때 2~4초 멈추고, 곡 중에는 5초마다 장면의 컴포넌트 전부(Hello (BPM) 2026 에서 10만 개 가까이)를
+        // 훑고 새 타입을 감싸서 그 자체가 끊김이었다(한 판 끊김 147번). 함수별 원인을 볼 때만 설정에서 켠다.
+        internal static bool Enabled = false;
         internal static bool Installed;
 
         // 곡 도중에 새로 켜진 컴포넌트(필터, 곡 중간에 생기는 물체 등)도 잰다. 곡 시작 때 한 번만 감싸면

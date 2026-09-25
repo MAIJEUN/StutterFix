@@ -149,6 +149,7 @@ namespace StutterFix
         {
             endedByHook = true;
             Hitch.Report();
+            EffectBudget.Reset();   // 이전 씬의 밀린 효과는 버린다
             PerfOverlay.MarkLoading(SettingsWindow.T("화면 전환", "Scene change"));
             Resume("씬 바뀜");
         }
@@ -162,7 +163,7 @@ namespace StutterFix
             patched = false;   // 다시 켜면 다시 건다
         }
 
-        public static void AfterLoad() { endedByHook = false; PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); PerfOverlay.LevelActivity(); Resume("맵 로딩"); }
+        public static void AfterLoad() { endedByHook = false; EffectBudget.Reset(); PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); PerfOverlay.LevelActivity(); Resume("맵 로딩"); }
 
         public static void OnSongEnd(MethodBase __originalMethod)
         {

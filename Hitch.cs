@@ -178,8 +178,11 @@ namespace StutterFix
             endLogged = false;
             RestartAdvisor.SongStarted();
             InvisibleSkip.ResetPeak();
+            ParticleSkip.ResetStats();
             PerfOverlay.BeginStartPhase();   // 첫 타일 전(최대 5초)의 시작 연출 멈춤은 끊김으로 세지 않는다
-            EffectBudget.Reset();
+            // 밀린 효과를 여기서 비우면 안 된다. 곡 중 일시정지(ESC) 뒤 다시 할 때도 "곡 시작" 으로 들어와서,
+            // 효과 몰림 직후에 멈췄다 풀면 아직 못 돈 화면 효과·타일 색 조각이 버려져 원래와 다른 화면으로 남았다.
+            // 비우는 것은 진짜 새로 시작하는 곳(재시작·재생 훅, 장면 정리, 씬 전환, 맵 불러오기)에서 한다.
             EffectBudget.Suspend(3f);
             ShaderWarm.MaybeRun();
             if (Edition.Dev) BlendProbe.Report();
@@ -209,7 +212,7 @@ namespace StutterFix
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary() + EffectBudget.Summary());
                     { var mp = MoveProf.SongSummary(); if (mp.Length > 0) Main.Entry.Logger.Log(mp); }
                     EffectBudget.ResetLate();
-                    if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary());
+                    if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary() + ParticleSkip.Summary());
                 }
                 ZeroTween.Reset(); MoveApply.Reset();
             }

@@ -217,6 +217,12 @@ namespace StutterFix
             return defaultArgs;
         }
 
+        // 모드를 내릴 때: 남은 조각을 모두 칠한다
+        internal static void FlushAll()
+        {
+            while (pending.Count > 0) { var p = pending[0]; pending.RemoveAt(0); Run(p); }
+        }
+
         // 곡이 끝나거나 다시 시작하면 밀린 것을 버린다.
         internal static void Reset() { pending.Clear(); replay = null; loopOwner = null; }
 

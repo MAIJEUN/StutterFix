@@ -210,6 +210,8 @@ namespace StutterFix
             LastOffscreen = n;
         }
 
+        // r148: scrController.disableV15Features 는 생성자에서 true 로 정해지고 게임 어디서도 바꾸지 않는다(IL 전체 검색).
+        // 맵 파일의 disableV15Features 값과 상관없이 장식 순회는 늘 이 조건(disableShader == true)으로 돈다.
         internal static bool IsDormant(scrDecoration d, bool disableShader)
         {
             return disableShader && d.hitbox == 0 && d.GetType() == typeof(scrVisualDecoration)

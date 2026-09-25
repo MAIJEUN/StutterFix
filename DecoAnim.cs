@@ -55,7 +55,9 @@ namespace StutterFix
             public Vector2 VStart, VEnd, VChange, VLast;        // 7 크기X  8 크기Y
             // 개발자용 짝 (진짜 DOTween)
             public Tween Shadow; public float SF; public Color SC; public Vector2 SV; public bool SDone, SStepped;
+            public bool InList;   // recs 목록에 들어 있음 (다시 쓰면 두 번 진행되므로 목록에서 빠진 것만 다시 쓴다)
         }
+        internal static long Reused;
 
         private static readonly List<Rec> recs = new List<Rec>();
         private static readonly AccessTools.FieldRef<scrDecoration, Vector2> pivotPosRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("pivotPosVec");
@@ -69,6 +71,11 @@ namespace StutterFix
         private static Action<scrDecoration, float> setRot, setOpa;
         private static Action<scrDecoration, Color> setCol;
         private static Action<scrDecoration, Vector2> setScale;
+        // 피벗·시차 (원래 블록도 회전과 같은 모양: 시작값 = 만들 때 값, OnUpdate/OnComplete = 설정 함수)
+        private static readonly AccessTools.FieldRef<scrDecoration, Vector2> parOffRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("parallaxOffset");
+        private static readonly AccessTools.FieldRef<scrDecoration, scrParallax> parallaxRef = AccessTools.FieldRefAccess<scrDecoration, scrParallax>("parallax");
+        private static Action<scrDecoration, float> setPivX, setPivY, setParOffX, setParOffY;
+        internal static bool CanPivotParallax;
 
         internal static void Install(Harmony h)
         {
@@ -82,6 +89,15 @@ namespace StutterFix
                 setOpa = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetOpacity", new[] { typeof(float) }));
                 setCol = AccessTools.MethodDelegate<Action<scrDecoration, Color>>(AccessTools.Method(d, "SetColor", new[] { typeof(Color) }));
                 setScale = AccessTools.MethodDelegate<Action<scrDecoration, Vector2>>(AccessTools.Method(d, "SetScale", new[] { typeof(Vector2) }));
+                try
+                {
+                    setPivX = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetPivotX", new[] { typeof(float) }));
+                    setPivY = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetPivotY", new[] { typeof(float) }));
+                    setParOffX = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetParallaxOffsetX", new[] { typeof(float) }));
+                    setParOffY = AccessTools.MethodDelegate<Action<scrDecoration, float>>(AccessTools.Method(d, "SetParallaxOffsetY", new[] { typeof(float) }));
+                    CanPivotParallax = setPivX != null && setPivY != null && setParOffX != null && setParOffY != null;
+                }
+                catch (Exception ex) { CanPivotParallax = false; Main.Entry.Logger.Log("[장식 애니메이션] 피벗·시차 함수를 못 찾아 그 효과는 원래대로: " + ex.Message); }
                 var kill = AccessTools.Method(typeof(TweenExtensions), "Kill", new[] { typeof(Tween), typeof(bool) });
                 h.Patch(kill, prefix: new HarmonyMethod(typeof(DecoAnim), nameof(KillPrefix)) { priority = Priority.First });
                 foreach (var m in typeof(DOTween).GetMethods(AccessTools.all))
@@ -121,15 +137,24 @@ namespace StutterFix
         }
         private static Rec NewRec(scrDecoration dec, Dictionary<global::TweenType, Tween> d, int key, float dur, Ease ease)
         {
-            var r = new Rec { D = dec, Key = key, Dur = dur, E = ease };
-            ZeroTween.EaseParams(ease, out r.Over, out r.Period);
             // 같은 칸에 끝난 표가 있으면 다시 쓴다 (그 칸만 이 표를 가리키고, 방금 끊었다). 없으면 새 꺼진 객체 (active = false)
-            Tween old; Rec oldR;
-            if (d.TryGetValue((global::TweenType)key, out old) && (object)old != null && (oldR = old.id as Rec) != null && !oldR.Running && (!Edition.Dev || oldR.Shadow == null)) r.Proxy = old;
-            else r.Proxy = AccessTools.CreateInstance<TweenerCore<float, float, FloatOptions>>();
+            // 표 안의 기록(Rec)도 목록에서 빠졌으면 같이 다시 쓴다. 한 판에 수십만 개가 생기던 것이라(곡 중엔 GC 를 멈춰 두어 그대로 쌓였다)
+            // 같은 장식·같은 속성을 계속 옮기는 맵에서는 대부분 새로 만들지 않는다.
+            Tween old; Rec oldR = null; Rec r;
+            bool reuseProxy = d.TryGetValue((global::TweenType)key, out old) && (object)old != null && (oldR = old.id as Rec) != null && !oldR.Running && (!Edition.Dev || oldR.Shadow == null);
+            if (reuseProxy && !oldR.InList && ReferenceEquals(oldR.D, dec) && oldR.Key == key)
+            {
+                r = oldR; Reused++;
+                r.Pos = 0f; r.Started = false; r.Running = true; r.Stepped = false;
+                r.Shadow = null; r.SDone = false; r.SStepped = false;
+                r.Dur = dur; r.E = ease;
+            }
+            else r = new Rec { D = dec, Key = key, Dur = dur, E = ease };
+            ZeroTween.EaseParams(ease, out r.Over, out r.Period);
+            r.Proxy = reuseProxy ? old : AccessTools.CreateInstance<TweenerCore<float, float, FloatOptions>>();
             r.Proxy.id = r;
             d[(global::TweenType)key] = r.Proxy;
-            recs.Add(r); Created++;
+            recs.Add(r); r.InList = true; Created++;
             if (recs.Count > Peak) Peak = recs.Count;
             return r;
         }
@@ -175,6 +200,36 @@ namespace StutterFix
                 r.Shadow = DOTween.To(() => r.Started ? r.VStart : scaleRef(r.D), v => { r.SV = v; r.SStepped = true; }, r.VEnd, r.Dur).SetEase(ease)
                     .SetOptions(key == 7 ? AxisConstraint.X : AxisConstraint.Y).OnComplete(() => r.SDone = true);
         }
+        // 피벗 X/Y (키 3/4): 시작 = 만들 때 pivotOffsetVec 의 그 축, OnUpdate/OnComplete = SetPivotX/Y
+        internal static void Piv(scrDecoration dec, Dictionary<global::TweenType, Tween> d, int key, float target, float dur, Ease ease)
+        {
+            KillKey(d, key);
+            var po = pivotOffRef(dec);
+            var r = NewRec(dec, d, key, dur, ease);
+            r.FStart = key == 3 ? po.x : po.y; r.FEnd = target;
+            MaybeShadowF(r);
+        }
+        // 시차 오프셋 X/Y (키 12/13): 시작 = 만들 때 parallaxOffset 의 그 축, OnUpdate/OnComplete = SetParallaxOffsetX/Y
+        internal static void ParOff(scrDecoration dec, Dictionary<global::TweenType, Tween> d, int key, float target, float dur, Ease ease)
+        {
+            KillKey(d, key);
+            var po = parOffRef(dec);
+            var r = NewRec(dec, d, key, dur, ease);
+            r.FStart = key == 12 ? po.x : po.y; r.FEnd = target;
+            MaybeShadowF(r);
+        }
+        // 시차 배율 (키 11): getter 는 만들 때 담은 값(바뀌지 않음), setter = parallax.multiplier 에 바로 씀, 축 제한 없음, 콜백 없음
+        internal static void Par(scrDecoration dec, Dictionary<global::TweenType, Tween> d, Vector2 target, float dur, Ease ease)
+        {
+            KillKey(d, 11);
+            var start = parallaxRef(dec).multiplier;   // 원래 코드도 여기서 읽는다 (시차 부품이 없으면 원래도 예외 -> CanAnim 에서 거른다)
+            var r = NewRec(dec, d, 11, dur, ease);
+            r.VStart = start; r.VEnd = target;
+            if (Sample())
+                r.Shadow = DOTween.To(() => r.VStart, v => { r.SV = v; r.SStepped = true; }, r.VEnd, r.Dur).SetEase(ease).OnComplete(() => r.SDone = true);
+        }
+        internal static bool HasParallax(scrDecoration dec) { return parallaxRef(dec) != null; }
+
         private static long sampleCounter;
         private static bool Sample() { return Edition.Dev && (++sampleCounter & 63) == 0; }
         private static void MaybeShadowF(Rec r)
@@ -190,6 +245,7 @@ namespace StutterFix
             {
                 case 9: r.CChange = r.CEnd - r.CStart; break;
                 case 7: case 8: r.VStart = scaleRef(r.D); r.VChange = r.VEnd - r.VStart; break;
+                case 11: r.VChange = r.VEnd - r.VStart; break;   // 시작값은 만들 때 담았다
                 default: r.FChange = r.FEnd - r.FStart; break;
             }
         }
@@ -203,6 +259,8 @@ namespace StutterFix
                 case 9: { var c = r.CStart; c.r += r.CChange.r * e; c.g += r.CChange.g * e; c.b += r.CChange.b * e; c.a += r.CChange.a * e; r.CLast = c; break; }
                 case 7: { var v = scaleRef(r.D); v.x = r.VStart.x + r.VChange.x * e; r.VLast = v; setScale(r.D, v); break; }
                 case 8: { var v = scaleRef(r.D); v.y = r.VStart.y + r.VChange.y * e; r.VLast = v; setScale(r.D, v); break; }
+                // DOTween Vector2Plugin (축 제한 없음) 과 같은 모양: 성분마다 "시작 += 변화 x 이징" 후 setter
+                case 11: { var v = r.VStart; v.x += r.VChange.x * e; v.y += r.VChange.y * e; r.VLast = v; parallaxRef(r.D).multiplier = v; break; }
                 default: r.FLast = r.FStart + r.FChange * e; break;
             }
         }
@@ -212,7 +270,11 @@ namespace StutterFix
             {
                 case 1: setPosX(r.D, r.FLast, pivotOffRef(r.D)); break;
                 case 2: setPosY(r.D, r.FLast, pivotOffRef(r.D)); break;
+                case 3: setPivX(r.D, r.FLast); break;
+                case 4: setPivY(r.D, r.FLast); break;
                 case 5: setRot(r.D, r.FLast); break;
+                case 12: setParOffX(r.D, r.FLast); break;
+                case 13: setParOffY(r.D, r.FLast); break;
                 case 9: setCol(r.D, r.CLast); break;
                 case 10: setOpa(r.D, r.FLast); break;
             }
@@ -224,7 +286,11 @@ namespace StutterFix
             {
                 case 1: setPosX(r.D, r.FEnd, pivotOffRef(r.D)); break;
                 case 2: setPosY(r.D, r.FEnd, pivotOffRef(r.D)); break;
+                case 3: setPivX(r.D, r.FEnd); break;
+                case 4: setPivY(r.D, r.FEnd); break;
                 case 5: setRot(r.D, r.FEnd); break;
+                case 12: setParOffX(r.D, r.FEnd); break;
+                case 13: setParOffY(r.D, r.FEnd); break;
                 case 9: setCol(r.D, r.CEnd); break;
                 case 10: setOpa(r.D, r.FEnd); break;
             }
@@ -300,11 +366,16 @@ namespace StutterFix
             {
                 if (complete) Complete(r);
                 else if (r.Running) { r.Running = false; Dropped++; }
+                r.InList = false;
             }
             recs.Clear();
         }
 
-        // DOTweenComponent.Update 앞: DOTween 과 같은 dt 로, 만든 순서대로 진행
+        // scnGame.ResetScene 앞(SceneReset): 게임이 재생 중인 DOTween 을 Kill() (완료 없이) 하는 것과 같이, 진행 중인 표를 그 자리에서 버린다.
+        // 모드 표는 꺼진 객체라 게임이 받는 DOTween.PlayingTweens 목록에 없어서, 안 버리면 에디터에서도 계속 돌며 장식을 곡 중 값으로 되돌렸다.
+        internal static void DropAll() { KillAllPrefix(false); }
+
+        // DOTweenComponent.Update 앞:DOTween 과 같은 dt 로, 만든 순서대로 진행
         public static void UpdatePrefix()
         {
             if (recs.Count == 0) { LastFrameMs = 0; return; }
@@ -344,6 +415,7 @@ namespace StutterFix
                     else if (r.Key == 9) { if (!C4(r.CLast, r.SC)) diff = "색 " + r.CLast.ToString("R") + " / " + r.SC.ToString("R"); }
                     else if (r.Key == 7) { if (B(r.VLast.x) != B(r.SV.x)) diff = "크기X " + r.VLast.x.ToString("R") + " / " + r.SV.x.ToString("R"); }
                     else if (r.Key == 8) { if (B(r.VLast.y) != B(r.SV.y)) diff = "크기Y " + r.VLast.y.ToString("R") + " / " + r.SV.y.ToString("R"); }
+                    else if (r.Key == 11) { if (B(r.VLast.x) != B(r.SV.x) || B(r.VLast.y) != B(r.SV.y)) diff = "시차배율 " + r.VLast.ToString("R") + " / " + r.SV.ToString("R"); }
                     else if (B(r.FLast) != B(r.SF)) diff = "키 " + r.Key + " " + r.FLast.ToString("R") + " / " + r.SF.ToString("R");
                     if (diff == null && (!r.Running) != r.SDone) diff = "끝난 프레임이 다름 (모드 " + (!r.Running) + ", DOTween " + r.SDone + ")";
                     if (diff != null) { VerifyMismatch++; MismatchByKey[r.Key]++; if (First.Length < 600) First += " [" + diff + ", 위치 " + r.Pos.ToString("R") + "/" + r.Dur.ToString("R") + "]"; }
@@ -363,6 +435,7 @@ namespace StutterFix
             {
                 var r = recs[i];
                 if (r.Running || (Edition.Dev && r.Shadow != null)) recs[w++] = r;
+                else r.InList = false;
             }
             if (w < recs.Count) recs.RemoveRange(w, recs.Count - w);
         }
@@ -379,19 +452,19 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Created == 0) return "";
-            string s = string.Format(" | 장식 애니메이션 직접 처리: 만든 것 {0}개(동시 최대 {1}개), 끝까지 감 {2}, 끊겨서 완료 {3}, 버림 {4}, 갱신에 쓴 시간 {5:F0}ms ({6}프레임), 게임이 멈출 때 넘겨준 것 {8}{7}",
-                Created, Peak, Completed, Killed, Dropped, UpdateMs, Frames, Errors > 0 ? ", 예외 " + Errors : "", Listed);
-            if (Edition.Dev) s += " (검증: 진짜 DOTween 과 나란히 " + VerifyN + "개, 프레임 " + VerifySteps + "번 중 다름 " + VerifyMismatch + " [위치X " + MismatchByKey[1] + ", 위치Y " + MismatchByKey[2] + ", 회전 " + MismatchByKey[5] + ", 크기X " + MismatchByKey[7] + ", 크기Y " + MismatchByKey[8] + ", 색 " + MismatchByKey[9] + ", 불투명도 " + MismatchByKey[10] + "]" + First + ")";
+            string s = string.Format(" | 장식 애니메이션 직접 처리: 만든 것 {0}개(동시 최대 {1}개), 끝까지 감 {2}, 끊겨서 완료 {3}, 버림 {4}, 기록 다시 씀 {8}, 갱신에 쓴 시간 {5:F0}ms ({6}프레임), 게임이 멈출 때 넘겨준 것 {9}{7}",
+                Created, Peak, Completed, Killed, Dropped, UpdateMs, Frames, Errors > 0 ? ", 예외 " + Errors : "", Reused, Listed);
+            if (Edition.Dev) s += " (검증: 진짜 DOTween 과 나란히 " + VerifyN + "개, 프레임 " + VerifySteps + "번 중 다름 " + VerifyMismatch + " [위치X " + MismatchByKey[1] + ", 위치Y " + MismatchByKey[2] + ", 회전 " + MismatchByKey[5] + ", 크기X " + MismatchByKey[7] + ", 크기Y " + MismatchByKey[8] + ", 색 " + MismatchByKey[9] + ", 불투명도 " + MismatchByKey[10] + ", 피벗 " + (MismatchByKey[3] + MismatchByKey[4]) + ", 시차배율 " + MismatchByKey[11] + ", 시차 " + (MismatchByKey[12] + MismatchByKey[13]) + "]" + First + ")";
             else if (First.Length > 0) s += First;
             if (Prof && Steps > 0)
             {
                 double us = UpdateMs * 1000.0 / Steps, tk = System.Diagnostics.Stopwatch.Frequency / 1e6;
                 s += string.Format(" | 애니메이션 한 번 진행 평균 {0:F2}us (진행 {1}번, 프레임당 {2:F0}번)", us, Steps, Frames > 0 ? (double)Steps / Frames : 0);
-                string[] nm = { "", "위치X", "위치Y", "", "", "회전", "", "크기X", "크기Y", "색", "불투명도" };
-                for (int k = 1; k <= 10; k++) if (ProfN[k] > 0) s += string.Format(", {0} 계산 {1:F2}+설정 {2:F2}us", nm[k], ProfApply[k] / tk / ProfN[k], ProfSet[k] / tk / ProfN[k]);
+                string[] nm = { "", "위치X", "위치Y", "피벗X", "피벗Y", "회전", "", "크기X", "크기Y", "색", "불투명도", "시차배율", "시차X", "시차Y" };
+                for (int k = 1; k <= 13; k++) if (ProfN[k] > 0) s += string.Format(", {0} 계산 {1:F2}+설정 {2:F2}us", nm[k], ProfApply[k] / tk / ProfN[k], ProfSet[k] / tk / ProfN[k]);
             }
             return s;
         }
-        internal static void ResetStats() { Array.Clear(MismatchByKey, 0, 16); Created = Completed = Killed = Dropped = Frames = VerifyN = VerifySteps = VerifyMismatch = Errors = 0; Peak = 0; UpdateMs = 0; First = ""; Steps = 0; Array.Clear(ProfN, 0, 16); Array.Clear(ProfApply, 0, 16); Array.Clear(ProfSet, 0, 16); }
+        internal static void ResetStats() { Array.Clear(MismatchByKey, 0, 16); Created = Completed = Killed = Dropped = Frames = VerifyN = VerifySteps = VerifyMismatch = Errors = 0; Peak = 0; UpdateMs = 0; First = ""; Reused = 0; Steps = 0; Array.Clear(ProfN, 0, 16); Array.Clear(ProfApply, 0, 16); Array.Clear(ProfSet, 0, 16); }
     }
 }

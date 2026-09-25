@@ -136,9 +136,11 @@ namespace StutterFix
         // 곡 하나에 SetPosition 이 약 500만 번 불리므로 이 검사만 몇 초가 된다. 그런데 곡이 도는 동안에는 편집기 UI 가 보이지 않는다.
         // 그래서 재생 중에는 편집기를 없는 것으로 보여 이 부분을 건너뛴다. 편집 화면으로 돌아가면 다시 원래대로 동작한다.
         internal static long EditorSkips;
+        // 에디터로 돌아가며 장식을 되돌리는 동안(SceneReset)은 곡 종료 감지가 한 프레임 늦어 아직 "재생 중" 이다.
+        // 그때 건너뛰면 되돌린 위치가 선택 테두리에 반영되지 않아 에디터에서 테두리가 곡 중 자리에 남는다. 그 동안은 원래대로 한다.
         public static scnEditor EditorOrNull()
         {
-            if (Enabled && Hitch.Playing) { EditorSkips++; return null; }
+            if (Enabled && Hitch.Playing && !SceneReset.Resetting) { EditorSkips++; return null; }
             return ADOBase.editor;
         }
 
@@ -146,7 +148,7 @@ namespace StutterFix
         // 두 호출을 하나로 합쳐 그 검사도 없앤다.
         public static bool EditorVisible()
         {
-            if (Enabled && Hitch.Playing) { EditorSkips++; return false; }
+            if (Enabled && Hitch.Playing && !SceneReset.Resetting) { EditorSkips++; return false; }
             return ADOBase.editor != null;
         }
 
@@ -234,7 +236,7 @@ namespace StutterFix
 
         private static bool SkipForLate(scrDecoration d)
         {
-            if (!LateSkip || !Enabled || (object)d == null || !Hitch.Playing) return false;
+            if (!LateSkip || !Enabled || (object)d == null || !Hitch.Playing || SceneReset.Resetting) return false;
             if (managerLateFrame != UnityEngine.Time.frameCount - 1) return false;   // 이번 프레임 LateUpdate 가 이미 시작됐거나, 지난 프레임에 안 돌았다
             if (d.hitbox != 0 || !d.GetVisible()) return false;
             if (lateSkippedSet.Add(d)) lateSkipped.Add(d);

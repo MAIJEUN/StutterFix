@@ -64,6 +64,12 @@ namespace StutterFix
         }
 
         // 밀어둔 효과를 다시 실행할 때도 같은 보호가 필요하다.
+        // DOTween.KillAll 이 isUpdateLoop 가 켜진 동안 불리면 DespawnAll 이 "_despawnAllCalledFromUpdateLoopCallback = true" 를 남기고,
+        // DOTween 의 다음 갱신이 그 표시를 보고 그 프레임의 정리(DespawnActiveTweens)를 한 번 건너뛴다(DOTween.dll IL 확인).
+        // 원래 게임에서는 효과 도중 isUpdateLoop 가 꺼져 있어 이 표시가 생기지 않으므로, 보호를 풀 때 우리가 만든 표시를 지운다.
+        private static FieldInfo despawnFlagField;
+        private static bool despawnFlagLooked;
+
         internal static bool Begin()
         {
             if (!ready || !Enabled) return false;
@@ -81,6 +87,12 @@ namespace StutterFix
         {
             if (!entered) return;
             try { isUpdateLoopField.SetValue(null, false); }
+            catch { }
+            try
+            {
+                if (!despawnFlagLooked) { despawnFlagLooked = true; despawnFlagField = AccessTools.Field(AccessTools.TypeByName("DG.Tweening.Core.TweenManager"), "_despawnAllCalledFromUpdateLoopCallback"); }
+                if (despawnFlagField != null && (bool)despawnFlagField.GetValue(null)) despawnFlagField.SetValue(null, false);
+            }
             catch { }
         }
 

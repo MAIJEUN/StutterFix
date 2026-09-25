@@ -32,9 +32,43 @@ namespace StutterFix
         // (객체 수천 개를 뒤져 40ms 안팎), 곡 시작 직후라 "게임 처리" 끊김으로 잡혔다. 새로 준비할 것이 없으니 건너뛴다.
         internal static bool LevelChanged = true;
 
+        // 곡 시작 때. 맵을 불러올 때(AfterLoad) 이미 다 했으면 새로 할 것이 없다.
+        // 에디터에서 필터 이벤트를 새로 넣은 경우만 여기서 그 필터를 데운다(맵 이벤트를 훑는 것뿐이라 가볍다).
         internal static void MaybeRun()
         {
-            if (!Enabled || !LevelChanged) return;
+            if (!Enabled) return;
+            if (LevelChanged) { Run("곡 시작"); return; }
+            long t0 = Stopwatch.GetTimestamp();
+            int n = 0;
+            try { n = WarmFilters(); } catch { }
+            if (n > 0) Main.Entry.Logger.Log(string.Format("[셰이더] 곡 시작: 새로 넣은 필터 셰이더 {0}개 미리 준비 {1:F0}ms", n, (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency));
+            ModCost.Add(SettingsWindow.T("셰이더 준비", "Shader warm-up"), (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency);
+        }
+
+        // 맵을 다 불러온 직후(ImagePrefetch.End). 곡 중이 아니라서 여기서 멈춰도 플레이·소리에 영향이 없다.
+        // 예전에는 전부 곡 시작 때 했다(곡 시작 첫 프레임이 400ms 가까이 늘었다).
+        // 이 자리(scnGame.UpdateDecorationObjects 끝)는 에디터에서 되돌리기·붙여넣기 같은 편집 때도 불린다.
+        // 셰이더 전체 목록 훑기와 WarmupAllShaders 는 맵이 바뀌었을 때만 하고, 편집 때는 새로 넣은 필터만 본다.
+        private static string lastLevel;
+        internal static void AfterLoad()
+        {
+            if (!Enabled || Hitch.Playing) return;
+            string level = null;
+            try { level = ADOBase.levelPath; } catch { }
+            if (level != null && string.Equals(level, lastLevel, StringComparison.OrdinalIgnoreCase))
+            {
+                LevelChanged = false;
+                int n = 0;
+                try { n = WarmFilters(); } catch { }
+                if (n > 0) Main.Entry.Logger.Log("[셰이더] 편집 뒤: 새로 넣은 필터 셰이더 " + n + "개 미리 준비");
+                return;
+            }
+            lastLevel = level;
+            Run("맵 불러온 뒤");
+        }
+
+        private static void Run(string where)
+        {
             LevelChanged = false;
             long t0 = Stopwatch.GetTimestamp();
             int filters = 0;
@@ -43,69 +77,88 @@ namespace StutterFix
             try
             {
                 int count = Resources.FindObjectsOfTypeAll<Shader>().Length;
-                if (count == lastCount && filters == 0)
+                if (count != lastCount || filters > 0)
                 {
-                    ModCost.Add(SettingsWindow.T("셰이더 준비", "Shader warm-up"), (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency);
-                    return;
+                    lastCount = count;
+                    Shader.WarmupAllShaders();
                 }
-                lastCount = count;
-
-                Shader.WarmupAllShaders();
                 double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
                 ModCost.Add(SettingsWindow.T("셰이더 준비", "Shader warm-up"), ms);
-                Last = "셰이더 " + count + "개, 새 필터 " + filters + "개 미리 준비 " + ms.ToString("F0") + "ms";
+                Last = where + ": 셰이더 " + count + "개, 새 필터 " + filters + "개(필터 텍스처 " + ResourcesLoaded + "개) 미리 준비 " + ms.ToString("F0") + "ms";
                 Main.Entry.Logger.Log("[셰이더] " + Last);
             }
             catch (Exception ex) { Main.Entry.Logger.Error("[셰이더] 미리 준비 실패: " + ex.Message); }
         }
 
         // ── 카메라 필터 ─────────────────────────────────────────────────
-        private static Type advType, plusType;
-        private static FieldInfo advName, advTypeField, plusFilter;
-        private static PropertyInfo plusMap;
-        private static bool looked;
+        // r148 에서 확인한 것 (IL):
+        //   고급 필터: ffxSetFilterAdvancedPlus.Setup 이 Type.GetType(filterName + ", Assembly-CSharp-firstpass") 로 클래스를 찾아
+        //     카메라에 꺼진 채 AddComponent 한다. 필터가 처음 켜질 때 Start 에서 Shader.Find("...") 로 셰이더를 부른다.
+        //     셰이더 이름은 클래스 이름과 다를 때가 있다(CameraFilterPack_AAA_SuperComputer -> "CameraFilterPack/AAA_Super_Computer").
+        //   일반 필터: scrVfxPlus.filterToComp 의 컴포넌트, 클래스는 CameraFilterPackLegacy_* 등(예전 코드는 "CameraFilterPack_" 로
+        //     시작하는 것만 봐서 일반 필터는 하나도 못 데웠다).
+        // 그래서 이름을 짐작하지 않고, 필터 클래스의 Start/Awake/OnEnable IL 에서 "문자열 -> Shader.Find" 를 읽어 그 셰이더를 데운다.
+        // 같은 자리에서 "문자열 -> Resources.Load" (필터가 처음 켜질 때 불러오는 텍스처)도 미리 불러 들고 있는다.
+        // 필터 목록은 맵 데이터(레벨 이벤트)에서 읽는다. 효과 객체를 찾지 않아서 언제 불러도 같은 결과다.
+        private static readonly HashSet<Type> seenTypes = new HashSet<Type>();
+        private static readonly List<UnityEngine.Object> keepLoaded = new List<UnityEngine.Object>();   // 미리 불러온 필터 텍스처 (치워지지 않게)
+        internal static int ResourcesLoaded;
 
-        private static void Look()
+        private static IEnumerable<Type> FilterTypes()
         {
-            if (looked) return;
-            looked = true;
-            advType = AccessTools.TypeByName("ffxSetFilterAdvancedPlus");
-            plusType = AccessTools.TypeByName("ffxSetFilterPlus");
-            if (advType != null) { advName = AccessTools.Field(advType, "filterName"); advTypeField = AccessTools.Field(advType, "filterType"); }
-            if (plusType != null) { plusFilter = AccessTools.Field(plusType, "filter"); plusMap = AccessTools.Property(plusType, "filterToComp"); }
+            var types = new List<Type>();
+            // 고급 필터: 맵의 이벤트에서 이름을 읽는다
+            var lvl = ADOBase.customLevel;
+            var data = (object)lvl != null && lvl != null ? lvl.levelData : null;
+            if (data != null && data.levelEvents != null)
+            {
+                var names = new HashSet<string>();
+                foreach (var ev in data.levelEvents)
+                {
+                    if (ev == null || ev.eventType != ADOFAI.LevelEventType.SetFilterAdvanced) continue;
+                    string name = null;
+                    try { name = ev.GetString("filter"); } catch { }
+                    if (string.IsNullOrEmpty(name) || !names.Add(name)) continue;
+                    Type t = null;
+                    try { t = Type.GetType(name + ", Assembly-CSharp-firstpass"); } catch { }
+                    if (t != null) types.Add(t);
+                }
+            }
+            // 일반 필터: 게임이 카메라에 붙여 둔 필터 컴포넌트 전부 (맵에서 쓰는 것만 고르지 않는다 - 수십 개뿐이고 한 번만 데운다)
+            try
+            {
+                var vfx = scrVfxPlus.instance;
+                if ((object)vfx != null && vfx != null && vfx.filterToComp != null)
+                    foreach (var c in vfx.filterToComp.Values) if ((object)c != null && c != null) types.Add(c.GetType());
+            }
+            catch { }
+            return types;
         }
 
         private static int WarmFilters()
         {
-            Look();
             var shaders = new Dictionary<string, Shader>();
-
-            // 고급 필터 이벤트: 필터 이름(=CameraFilterPack 클래스 이름)
-            if (advType != null)
-                foreach (var o in UnityEngine.Object.FindObjectsByType(advType, FindObjectsInactive.Include, FindObjectsSortMode.None))
-                {
-                    Type t = advTypeField != null ? advTypeField.GetValue(o) as Type : null;
-                    if (t == null && advName != null)
-                    {
-                        string n = advName.GetValue(o) as string;
-                        if (!string.IsNullOrEmpty(n)) t = AccessTools.TypeByName(n) ?? AccessTools.TypeByName("CameraFilterPack_" + n);
-                    }
-                    AddType(shaders, t, null);
-                }
-
-            // 일반 필터 이벤트: 게임이 필터 종류마다 카메라에 붙여 둔 컴포넌트
-            if (plusType != null && plusMap != null && plusFilter != null)
+            foreach (var t in FilterTypes())
             {
-                System.Collections.IDictionary map = null;
-                foreach (var o in UnityEngine.Object.FindObjectsByType(plusType, FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (t == null || !seenTypes.Add(t)) continue;
+                var shaderNames = new List<string>(); var resNames = new List<string>();
+                foreach (var mn in new[] { "Start", "Awake", "OnEnable" })
                 {
-                    if (map == null) { try { map = plusMap.GetValue(o, null) as System.Collections.IDictionary; } catch { } }
-                    if (map == null) break;
-                    var key = plusFilter.GetValue(o);
-                    var comp = key != null && map.Contains(key) ? map[key] as Component : null;
-                    if (comp != null) AddType(shaders, comp.GetType(), comp);
+                    var m = AccessTools.Method(t, mn, Type.EmptyTypes);
+                    if (m != null && m.DeclaringType == t) ScanStrings(m, shaderNames, resNames);
+                }
+                foreach (var sn in shaderNames)
+                {
+                    if (shaders.ContainsKey(sn) || warmedFilters.Contains(sn)) continue;
+                    var s = Shader.Find(sn);
+                    if (s != null) shaders[sn] = s;
+                }
+                foreach (var rn in resNames)
+                {
+                    try { var o = Resources.Load(rn); if (o != null) { keepLoaded.Add(o); ResourcesLoaded++; } } catch { }
                 }
             }
+            InstanceShaders(shaders);
 
             int warmed = 0;
             RenderTexture a = null, b = null;
@@ -130,28 +183,49 @@ namespace StutterFix
             return warmed;
         }
 
-        // 필터 클래스의 셰이더를 찾는다. CameraFilterPack_Glow_Glow -> "CameraFilterPack/Glow_Glow".
-        // 이름 규칙이 안 맞으면 컴포넌트의 Start 를 불러(셰이더를 찾는 일만 한다) SCShader 를 읽는다.
-        private static void AddType(Dictionary<string, Shader> shaders, Type t, Component inst)
+        // 일반 필터 컴포넌트에 직렬화로 들어 있는 셰이더 (CameraMotionBlur 처럼 Shader.Find 없이 필드로 들고 있는 것)
+        private static void InstanceShaders(Dictionary<string, Shader> shaders)
         {
-            if (t == null || !t.Name.StartsWith("CameraFilterPack_")) return;
-            string key = t.Name;
-            if (shaders.ContainsKey(key) || warmedFilters.Contains(key)) return;
-            Shader s = Shader.Find("CameraFilterPack/" + t.Name.Substring("CameraFilterPack_".Length));
-            if (s == null && inst != null)
+            try
             {
-                try
+                var vfx = scrVfxPlus.instance;
+                if ((object)vfx == null || vfx == null || vfx.filterToComp == null) return;
+                foreach (var c in vfx.filterToComp.Values)
                 {
-                    var f = AccessTools.Field(t, "SCShader");
-                    if (f != null)
+                    if ((object)c == null || c == null) continue;
+                    foreach (var f in c.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     {
-                        s = f.GetValue(inst) as Shader;
-                        if (s == null) { var start = AccessTools.Method(t, "Start"); if (start != null) start.Invoke(inst, null); s = f.GetValue(inst) as Shader; }
+                        if (f.FieldType != typeof(Shader)) continue;
+                        var s = f.GetValue(c) as Shader;
+                        if (s != null && !warmedFilters.Contains(s.name) && !shaders.ContainsKey(s.name)) shaders[s.name] = s;
                     }
                 }
-                catch { }
             }
-            if (s != null) shaders[key] = s;
+            catch { }
+        }
+
+        // 메서드 IL 에서 "ldstr 문자열" 바로 뒤가 Shader.Find / Resources.Load 호출인 것을 찾는다.
+        // 바이트를 한 칸씩 훑으므로 피연산자 안의 0x72 를 잘못 볼 수 있지만, 토큰이 문자열 표(0x70)이고 바로 뒤 호출 대상이
+        // 그 두 함수일 때만 쓰므로 잘못 잡을 일이 사실상 없고, 잘못 잡아도 없는 이름을 찾아보는 것뿐이다.
+        private static void ScanStrings(MethodInfo m, List<string> shaderNames, List<string> resNames)
+        {
+            byte[] il;
+            try { var body = m.GetMethodBody(); il = body != null ? body.GetILAsByteArray() : null; } catch { return; }
+            if (il == null) return;
+            var mod = m.Module;
+            for (int i = 0; i + 10 <= il.Length; i++)
+            {
+                if (il[i] != 0x72) continue;                      // ldstr
+                int tok = BitConverter.ToInt32(il, i + 1);
+                if ((tok >> 24) != 0x70) continue;
+                byte op = il[i + 5];
+                if (op != 0x28 && op != 0x6F) continue;           // call / callvirt
+                string s; MethodBase callee;
+                try { s = mod.ResolveString(tok); callee = mod.ResolveMethod(BitConverter.ToInt32(il, i + 6)); } catch { continue; }
+                if (callee == null || string.IsNullOrEmpty(s)) continue;
+                if (callee.DeclaringType == typeof(Shader) && callee.Name == "Find") shaderNames.Add(s);
+                else if (callee.DeclaringType == typeof(Resources) && callee.Name == "Load") resNames.Add(s);
+            }
         }
     }
 }
