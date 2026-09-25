@@ -87,6 +87,17 @@ namespace StutterFix
                 foreach (var m in typeof(DOTween).GetMethods(AccessTools.all))
                     if (m.Name == "KillAll" && m.GetParameters().Length >= 1 && m.GetParameters()[0].ParameterType == typeof(bool))
                         h.Patch(m, prefix: new HarmonyMethod(typeof(DecoAnim), nameof(KillAllPrefix)) { priority = Priority.First });
+                // 게임은 "재생 중인 애니메이션 목록"(DOTween.PlayingTweens)을 받아 끊거나 완료하는 곳이 두 군데 있다 (IL 전체 검색):
+                //   scnGame.ResetScene (편집기에서 플레이를 멈출 때 등): 목록의 것을 Kill(false)
+                //   scrController.WaitForStartCo (체크포인트에서 시작): 목록의 것을 Complete(true)
+                // 모드 표는 꺼진 객체라 이 목록에 없어서, 멈춘 뒤에도 모드 애니메이션이 계속 돌아 초기화된 장식(글자 등)을 다시 바꿔 놓았다.
+                // 진행 중인 모드 표를 목록 끝에 넣어 원래 DOTween 애니메이션과 똑같이 끊기거나 완료되게 한다.
+                var playing = AccessTools.Method(typeof(DOTween), "PlayingTweens");
+                if (playing != null) h.Patch(playing, postfix: new HarmonyMethod(typeof(DecoAnim), nameof(PlayingPostfix)));
+                else Main.Entry.Logger.Log("[장식 애니메이션] PlayingTweens 를 못 찾음");
+                foreach (var m in typeof(TweenExtensions).GetMethods(AccessTools.all))
+                    if (m.Name == "Complete" && m.GetParameters().Length >= 1 && m.GetParameters()[0].ParameterType == typeof(Tween))
+                        h.Patch(m, prefix: new HarmonyMethod(typeof(DecoAnim), nameof(CompletePrefix)) { priority = Priority.First });
                 var comp = AccessTools.TypeByName("DG.Tweening.Core.DOTweenComponent");
                 var upd = comp == null ? null : AccessTools.Method(comp, "Update");
                 if (upd == null) { Main.Entry.Logger.Log("[장식 애니메이션] DOTween 갱신 함수를 못 찾아 끔"); return; }
@@ -253,6 +264,33 @@ namespace StutterFix
             else if (r.Running) { r.Running = false; Dropped++; if (r.Shadow != null) r.Shadow.Kill(false); }
             return false;   // 표 자체는 꺼진 객체라 DOTween 에 넘길 것이 없다
         }
+        // Complete(t) / Complete(t, withCallbacks): 트위너는 어느 쪽이든 끝값 + OnComplete (DOTween 과 같음)
+        public static bool CompletePrefix(Tween t)
+        {
+            if ((object)t == null) return true;
+            var r = t.id as Rec;
+            if (r == null) return true;
+            if (r.Running) { Killed++; Complete(r); }
+            return false;
+        }
+        internal static long Listed;
+        public static void PlayingPostfix(List<Tween> __0, ref List<Tween> __result)
+        {
+            int n = 0;
+            for (int i = 0; i < recs.Count; i++) if (recs[i].Running) n++;
+            if (n == 0) return;
+            // 원래 DOTween 은 진행 중인 것이 없으면 null 을 돌려준다. 모드 표가 있으면 원래는 진행 중인 DOTween 애니메이션이었으므로 목록을 만든다.
+            // 게임은 넘긴 목록(ResetScene)이나 돌려받은 목록(WaitForStartCo) 중 하나를 쓴다. 둘 다 채운다 (같은 목록이면 한 번)
+            if (__0 != null) AddRunning(__0);
+            if (__result == null) __result = __0 ?? AddRunning(new List<Tween>(n));
+            else if (!ReferenceEquals(__result, __0)) AddRunning(__result);
+            Listed += n;
+        }
+        private static List<Tween> AddRunning(List<Tween> list)
+        {
+            for (int i = 0; i < recs.Count; i++) if (recs[i].Running) list.Add(recs[i].Proxy);
+            return list;
+        }
         public static void KillAllPrefix(bool complete)
         {
             if (recs.Count == 0) { LastFrameMs = 0; return; }
@@ -340,8 +378,8 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Created == 0) return "";
-            string s = string.Format(" | 장식 애니메이션 직접 처리: 만든 것 {0}개(동시 최대 {1}개), 끝까지 감 {2}, 끊겨서 완료 {3}, 버림 {4}, 갱신에 쓴 시간 {5:F0}ms ({6}프레임){7}",
-                Created, Peak, Completed, Killed, Dropped, UpdateMs, Frames, Errors > 0 ? ", 예외 " + Errors : "");
+            string s = string.Format(" | 장식 애니메이션 직접 처리: 만든 것 {0}개(동시 최대 {1}개), 끝까지 감 {2}, 끊겨서 완료 {3}, 버림 {4}, 갱신에 쓴 시간 {5:F0}ms ({6}프레임), 게임이 멈출 때 넘겨준 것 {8}{7}",
+                Created, Peak, Completed, Killed, Dropped, UpdateMs, Frames, Errors > 0 ? ", 예외 " + Errors : "", Listed);
             if (Edition.Dev) s += " (검증: 진짜 DOTween 과 나란히 " + VerifyN + "개, 프레임 " + VerifySteps + "번 중 다름 " + VerifyMismatch + " [위치X " + MismatchByKey[1] + ", 위치Y " + MismatchByKey[2] + ", 회전 " + MismatchByKey[5] + ", 크기X " + MismatchByKey[7] + ", 크기Y " + MismatchByKey[8] + ", 색 " + MismatchByKey[9] + ", 불투명도 " + MismatchByKey[10] + "]" + First + ")";
             else if (First.Length > 0) s += First;
             if (Prof && Steps > 0)

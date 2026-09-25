@@ -1,3 +1,5 @@
+// 게임과 같은 에디터(6000.3.10f1) 프로젝트의 Assets/Editor 에 넣고: unity run <프로젝트> --editor-version 6000.3.10f1 -- -executeMethod BuildFsr.Build
+// (더 새 에디터로 만든 번들은 게임이 "newer version of Unity" 로 거부한다)
 using System.IO;
 using System.Text;
 using UnityEditor;
