@@ -112,6 +112,8 @@ namespace StutterFix
                 Precheck.Install(harmony);
                 DecoAnim.Install(harmony);
                 LowEnd.Install(harmony);
+                ParticleFix.Install(harmony);
+                LeakGuard.Install(harmony);
                 HalfRender.Install(harmony);
                 RenderVerify.Install(harmony);
                 FrameParts.Install(harmony);
@@ -295,6 +297,7 @@ namespace StutterFix
             Try(GcControl.Shutdown);
             Try(LowEnd.Shutdown);
             Try(HalfRender.Shutdown);
+            Try(ParticleFix.Shutdown);
             Try(Fsr.Shutdown);
             Try(RenderWatch.Shutdown);
             Try(PhaseWatch.Uninstall);
@@ -373,7 +376,7 @@ namespace StutterFix
 
             long q = System.Diagnostics.Stopwatch.GetTimestamp();
             GcControl.Tick(dt); Tk(0, ref q);
-            RestartAdvisor.Tick(); LowEnd.AutoTick(); LowEnd.MenuCapTick(); Updater.Tick(); Tk(1, ref q);
+            RestartAdvisor.Tick(); LowEnd.AutoTick(); LowEnd.MenuCapTick(); Updater.Tick(); LeakGuard.Tick(); if (Time.realtimeSinceStartup > 30f) Compat.LogSharedPatches(); Tk(1, ref q);
             EffectBudget.Tick(); Tk(2, ref q);
             RecolorSplit.Tick(); Tk(3, ref q);
             FastBlend.Tick(); Tk(4, ref q);
@@ -459,6 +462,7 @@ namespace StutterFix
             Fsr.Apply();
             LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
+            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
@@ -630,6 +634,8 @@ namespace StutterFix
         public int TweenerCapacity = 40000;
         public int SequenceCapacity = 25000;
         public bool SkipAssetUnload = true;
+        public bool SkipIdleParticles = true;  // 파티클 장식이 매 프레임 같은 크기·속도를 다시 넣는 것 건너뛰기
+        public bool LeakFix = true;            // 게임 메모리 누수 막기 (사용자 지정 FPS 화면 버퍼)
         public bool LegacyGfxJobs = true;   // boot.config 로 그래픽 작업 분산(legacy)을 켠다
 
         // 기능별 켜기/끄기 (플레이어용 설정 화면에서 바꾸고 저장된다)
@@ -655,6 +661,7 @@ namespace StutterFix
         public bool LowNoThrottle = false;  // 윈도우 절전 제한 끄기 + 타이머 1ms
         public int LowMenuFps = 0;          // 플레이 중이 아닐 때(메뉴·에디터) FPS 제한 (0 끔, 30, 60)
         public bool LowNoFft = false;       // Volume 타일이 없으면 음악 주파수 분석 건너뛰기
+        public bool LowPauseParticles = false; // (저사양) 화면 밖 파티클 장식 시뮬레이션 멈추기
         public int LowRenderScale = 100;    // 게임 화면(카메라) 해상도 배율 % (10~100), 100 = 원래대로
         public bool LowSharpUpscale = false; // 작게 그린 게임 화면을 선명하게(도트처럼) 늘리기
         public bool LowFsr = false;         // 작게 그린 게임 화면을 AMD FSR 1 로 늘리기 (가장자리 살리기 + 선명도 보정)

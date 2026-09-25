@@ -524,12 +524,12 @@ namespace StutterFix
 
             var c = Main.Config;
             int on = (c.GcPause ? 1 : 0) + (c.EffectSplit ? 1 : 0) + (c.RecolorSplit ? 1 : 0) + (c.TweenGuard ? 1 : 0) + (c.SkipSameText ? 1 : 0)
-                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.SkipSame ? 1 : 0) + (c.FastLoop ? 1 : 0) + (c.Precheck ? 1 : 0) + (c.DecoAnim ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0);
+                   + (c.ShaderWarm ? 1 : 0) + (c.FastBlend ? 1 : 0) + (c.SkipInvisible ? 1 : 0) + (c.LazyHidden ? 1 : 0) + (c.ZeroTween ? 1 : 0) + (c.InstantDirect ? 1 : 0) + (c.SkipSame ? 1 : 0) + (c.FastLoop ? 1 : 0) + (c.Precheck ? 1 : 0) + (c.DecoAnim ? 1 : 0) + (c.MoveFinish ? 1 : 0) + (c.DormantSkip ? 1 : 0) + (c.ImagePrefetch ? 1 : 0) + (c.SkipAssetUnload ? 1 : 0) + (c.LegacyGfxJobs ? 1 : 0) + (c.SkipIdleParticles ? 1 : 0) + (c.LeakFix ? 1 : 0);
             string d = BootConfig.Describe();
             bool jobs = d.Contains("Jobified") || d.Contains("Split");
 
             GUILayout.BeginHorizontal();
-            Stat(on + " / 20", T("켜진 기능", "Features on"), true);
+            Stat(on + " / 22", T("켜진 기능", "Features on"), true);
             GUILayout.Space(14);
             Stat(GcControl.Paused ? T("미루는 중", "Deferred") : T("대기", "Idle"), T("메모리 정리", "Memory cleanup"), false);
             GUILayout.Space(14);
@@ -539,6 +539,9 @@ namespace StutterFix
 
             // 새 버전 (GitHub 최신 릴리스)
             if (Updater.Available || Updater.Installed) UpdateCard();
+            // 다른 모드(Quartz)와 겹치는 기능 안내
+            var overlaps = Compat.Notes();
+            if (overlaps.Count > 0) InfoCard(new[] { T("다른 모드와 겹치는 기능 (Quartz)", "Overlaps with other mods (Quartz)"), string.Join("\n\n", overlaps.ToArray()) });
 
             // 지금 재시작하면 좋은 때 (메모리가 쌓임, 멀티스레드 그리기 변경, 모드 업데이트 등)
             var why = RestartAdvisor.Reasons();
@@ -720,6 +723,10 @@ namespace StutterFix
                 T("게임은 매 프레임 장식 전부를 훑습니다. 안 보이고 바뀔 일이 없는 장식과, 히트박스가 없는 장식은 그 순회에서 빼 둡니다. 장식이 수만 개인 맵에서 평소 프레임이 크게 오릅니다(Arche 107 → 170 fps).",
                   "The game walks every decoration every frame. Idle invisible decorations and decorations without hitboxes are left out of those walks. Big everyday FPS gain on maps with tens of thousands of decorations (Arche 107 → 170 fps)."),
                 T("장식 많은 맵", "Decoration-heavy maps"));
+            ch |= Option("particleidle", ref c.SkipIdleParticles, T("변화 없는 파티클 갱신 건너뛰기", "Skip idle particle updates"),
+                T("파티클 장식은 값이 그대로여도 매 프레임 모양 크기와 속도를 게임 엔진에 다시 넣습니다. 넣을 값이 지난번과 같으면 건너뜁니다. 화면은 같습니다." + (Compat.QSkipIdleParticles ? " (지금은 Quartz 가 같은 일을 하고 있어 쉬는 중)" : ""),
+                  "Particle decorations re-send their shape scale and speed to the engine every frame even when unchanged. Skips the write when the value is the same. Looks identical." + (Compat.QSkipIdleParticles ? " (Idle now: Quartz is doing the same)" : "")),
+                T("파티클 많은 맵", "Particle-heavy maps"));
             if (ch) Save();
         }
 
@@ -770,6 +777,9 @@ namespace StutterFix
             ch |= Option("unload", ref c.SkipAssetUnload, T("불필요한 정리 건너뛰기", "Skip asset unload"),
                 T("맵을 열거나 편집으로 돌아올 때 게임이 하는 짧은 정리 작업을 건너뛰어 멈춤을 줄입니다.",
                   "Skips a short cleanup the game runs when opening a level or returning to the editor."), null);
+            ch |= Option("leakfix", ref c.LeakFix, T("게임 메모리 누수 막기", "Fix game memory leaks"),
+                T("게임의 사용자 지정 FPS 효과는 켤 때마다 화면 크기 버퍼(4K 급이면 약 40MB)를 새로 만들고 이전 것을 풀지 않으며, 재시작마다 게임 화면 버퍼를 괜히 다시 만듭니다. 이전 버퍼를 풀고 불필요한 재생성을 막습니다. 화면은 같습니다." + (Compat.QLeakGuard ? " (지금은 Quartz 의 누수 수정이 켜져 있어 쉬는 중)" : ""),
+                  "The game's custom frame-rate effect creates a new screen-sized buffer each time it turns on without freeing the old one (~40 MB at 4K), and needlessly recreates the game view buffer on every restart. Frees the old buffer and avoids the recreate. Looks identical." + (Compat.QLeakGuard ? " (Idle now: Quartz leak fix is on)" : "")), null);
 
             // 큰 이미지 줄이기 (화질을 조금 내주고 VRAM 을 아낀다)
             GUILayout.BeginVertical(sCard);
@@ -850,6 +860,10 @@ namespace StutterFix
             if (Segment("lowmenufps", ref mf, new[] { T("끔", "Off"), "30", "60" })) { c.LowMenuFps = mf == 2 ? 60 : mf == 1 ? 30 : 0; ch = true; }
             GUILayout.Space(12);
             Section(T("게임 쪽", "Game"));
+            ch |= Option("lowparticle", ref c.LowPauseParticles, T("화면 밖 파티클 멈추기", "Pause off-screen particles"),
+                T("파티클 장식이 화면 밖에 있는 동안 시뮬레이션을 멈춰 CPU 를 아낍니다. 파티클이 많은 맵에서 효과가 있습니다. 다시 화면에 들어오면 멈춘 곳부터 이어가서 원래와 모양·시점이 조금 달라질 수 있습니다." + (Compat.QPauseOffscreenParticles ? " (지금은 Quartz 가 같은 일을 하고 있어 쉬는 중)" : ""),
+                  "Stops simulating particle decorations while they are off-screen to save CPU on particle-heavy levels. When they come back on screen they resume where they stopped, so they may look slightly different from the original." + (Compat.QPauseOffscreenParticles ? " (Idle now: Quartz is doing the same)" : "")),
+                T("게임", "Game"));
             ch |= Option("lowfft", ref c.LowNoFft, T("음악 반응 계산 끄기", "Skip music spectrum analysis"),
                 T("게임은 매 프레임 음악 주파수를 분석하는데, 이 값을 쓰는 곳은 타일 색 방식 'Volume' 뿐입니다. 그 방식을 쓰는 타일이 없으면 분석을 건너뜁니다. 곡 도중 타일이 Volume 으로 바뀌면 바로 다시 켜며, 그 첫 한 프레임만 색이 한 프레임 늦을 수 있습니다.",
                   "The game analyses the music spectrum every frame, but only 'Volume' track colours use it. Skips it when no tile uses that mode; turns back on immediately if a tile switches to Volume (that first frame may lag by one frame)."),
@@ -935,7 +949,7 @@ namespace StutterFix
             { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; c.LowSplit = 1; c.LowMenuFps = 60; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; c.LowMenuFps = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = c.LowPauseParticles = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; c.LowMenuFps = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]
@@ -1323,7 +1337,7 @@ namespace StutterFix
         private void ResetDefaults()
         {
             var c = Main.Config;
-            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.SkipSame = c.FastLoop = c.Precheck = c.DecoAnim = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = true;
+            c.GcPause = c.EffectSplit = c.RecolorSplit = c.TweenGuard = c.SkipSameText = c.ShaderWarm = c.FastBlend = c.SkipInvisible = c.LazyHidden = c.ZeroTween = c.InstantDirect = c.SkipSame = c.FastLoop = c.Precheck = c.DecoAnim = c.MoveFinish = c.DormantSkip = c.ImagePrefetch = c.SkipAssetUnload = c.SkipIdleParticles = c.LeakFix = true;
             if (!c.LegacyGfxJobs) { c.LegacyGfxJobs = true; BootConfig.Apply(true); }
             Save();
         }

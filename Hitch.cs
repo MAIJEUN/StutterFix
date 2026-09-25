@@ -176,6 +176,12 @@ namespace StutterFix
         private static void SongStarted()
         {
             endLogged = false;
+            if (GcControl.RestartAt != 0)
+            {
+                double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - GcControl.RestartAt) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                GcControl.RestartAt = 0;
+                if (ms < 30000) Main.Entry.Logger.Log(string.Format("[재시작 시간] {0} → 곡 시작까지 {1:F0}ms", GcControl.RestartWhy, ms));
+            }
             RestartAdvisor.SongStarted();
             InvisibleSkip.ResetPeak();
             PerfOverlay.BeginStartPhase();   // 첫 타일 전(최대 5초)의 시작 연출 멈춤은 끊김으로 세지 않는다
@@ -183,7 +189,7 @@ namespace StutterFix
             EffectBudget.Suspend(3f);
             ShaderWarm.MaybeRun();
             if (Edition.Dev) BlendProbe.Report();
-            LowEnd.SongStarted(); LowEnd.LogRenderOnce();
+            LowEnd.SongStarted(); LowEnd.LogRenderOnce(); Compat.Refresh();
         }
 
         // 곡이 끝났다고 밀린 효과를 버리면 안 된다. 마지막 타일은 효과가 한꺼번에 몰려 나눠 두는 곳이라,
@@ -205,7 +211,7 @@ namespace StutterFix
                 {
                     endLogged = true;
                     string perf = PerfOverlay.SongSummary();
-                    if (perf != null) Main.Entry.Logger.Log("[곡] " + perf + " | 같은 그림자 색 건너뛰기 " + TextFix.SkippedSameShadow + "회" + LowEnd.Summary());
+                    if (perf != null) Main.Entry.Logger.Log("[곡] " + perf + " | 같은 그림자 색 건너뛰기 " + TextFix.SkippedSameShadow + "회" + ParticleFix.Summary() + LeakGuard.Summary() + LowEnd.Summary());
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary() + EffectBudget.Summary());
                     { var mp = MoveProf.SongSummary(); if (mp.Length > 0) Main.Entry.Logger.Log(mp); }
                     EffectBudget.ResetLate();

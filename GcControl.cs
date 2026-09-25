@@ -151,6 +151,7 @@ namespace StutterFix
             Hitch.Report();
             PerfOverlay.MarkLoading(SettingsWindow.T("화면 전환", "Scene change"));
             Resume("씬 바뀜");
+            LeakGuard.ScheduleCensus("장면 " + to.name, 2f);
         }
 
         // 모드를 다시 불러오기 전에 부른다. GC를 멈춘 채로 두고 내려가면 새 모드가 그 사실을 모른다.
@@ -162,7 +163,7 @@ namespace StutterFix
             patched = false;   // 다시 켜면 다시 건다
         }
 
-        public static void AfterLoad() { endedByHook = false; PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); PerfOverlay.LevelActivity(); Resume("맵 로딩"); }
+        public static void AfterLoad() { endedByHook = false; LeakGuard.ScheduleCensus("맵 불러온 뒤", 2f); PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); PerfOverlay.LevelActivity(); Resume("맵 로딩"); }
 
         public static void OnSongEnd(MethodBase __originalMethod)
         {
@@ -189,8 +190,13 @@ namespace StutterFix
             resumeReason = reason;
         }
 
+        // 재시작 시간: 재시작 함수가 불린 순간부터 곡이 다시 도는 첫 프레임까지 (Hitch.SongStarted 가 기록)
+        internal static long RestartAt;
+        internal static string RestartWhy = "";
+
         public static void OnSongRestart(MethodBase __originalMethod)
         {
+            RestartAt = System.Diagnostics.Stopwatch.GetTimestamp(); RestartWhy = __originalMethod.Name;
             Hitch.Report();
             PerfOverlay.MarkLoading(SettingsWindow.T("곡 준비", "Level start"));
             PerfOverlay.BeginStartPhase();
@@ -211,8 +217,27 @@ namespace StutterFix
         private static void Pause()
         {
             if (Paused) return;
+            if (lastCleanMB < 0) { try { lastCleanMB = GC.GetTotalMemory(false) / 1048576; } catch { } }   // 아직 치운 적이 없으면 곡 시작 때 힙이 기준
             try { GarbageCollector.GCMode = GarbageCollector.Mode.Disabled; Paused = true; }
             catch (Exception ex) { Main.Entry.Logger.Error("GC 멈춤 실패: " + ex.Message); }
+        }
+
+        // ── 재시작 때 정리 줄이기 ──
+        // 2.1.0 사용자 로그(에디터에서 짧은 맵 재시도 반복): 재시작마다 정리에 214~480ms 를 썼는데 줄어든 건 15~100MB 뿐이었다.
+        // Mono 의 정리 시간은 쌓인 쓰레기가 아니라 살아 있는 메모리(여기서 460MB)를 훑는 데 들어서, 조금만 쌓여도 매번 0.2초가 든다.
+        // 그래서 곡 사이 짧은 전환(재시작, 재생, 편집 복귀, 완주, 실패 뒤, 곡 종료)에서는 지난 정리 뒤로 쌓인 양이 충분할 때만 치우고,
+        // 아니면 GC 만 다시 켠다(다음 곡에서 또 멈추므로 쌓인 것은 몇 판 뒤 한 번에 치운다). 새 맵 불러오기·화면 전환은 어차피 멈추는
+        // 순간이라 전처럼 치운다. 다른 모드(Quartz 의 부드러운 GC 등)가 이미 치웠으면 쌓인 양이 적어 자연히 건너뛴다.
+        internal static int DebtMinMB = 192;
+        private static long lastCleanMB = -1;
+        internal static long SkippedCollects;
+        private static bool QuickTransition(string reason)
+        {
+            switch (reason)
+            {
+                case "ResetCustomLevel": case "Restart": case "Play": case "SwitchToEditMode": case "OnLandOnPortal": case "10초간 조용함": return true;
+            }
+            return reason.StartsWith("곡 종료", StringComparison.Ordinal) || reason.StartsWith("Fail", StringComparison.Ordinal);
         }
 
         internal static void Resume(string reason)
@@ -221,6 +246,22 @@ namespace StutterFix
             try
             {
                 holdAfterFail = false;
+                if (QuickTransition(reason))
+                {
+                    long heap = GC.GetTotalMemory(false) / 1048576;
+                    if (lastCleanMB < 0) lastCleanMB = heap;
+                    long debt = heap - lastCleanMB;
+                    long need = Math.Max(DebtMinMB, lastCleanMB * 35 / 100);
+                    if (debt < need)
+                    {
+                        GarbageCollector.GCMode = GarbageCollector.Mode.Enabled;
+                        Paused = false;
+                        resumeCountdown = -1f;
+                        SkippedCollects++;
+                        Main.Entry.Logger.Log(string.Format("GC 재개 ({0}) 정리 생략: 지난 정리 뒤 쌓인 것 {1}MB < {2}MB (힙 {3}MB)", reason, debt, need, heap));
+                        return;
+                    }
+                }
                 // 곡 밖에서 하는 정리는 곡 중 끊김이 아니다(곡 중에 날 정리를 미뤄 둔 것). 모니터에는 회색으로 따로 적는다.
                 // (재시작·맵 로딩처럼 이미 불러오기로 적힌 순간이면 그 이름을 그대로 둔다)
                 bool outside = false;
@@ -248,6 +289,7 @@ namespace StutterFix
                 }
 
                 sw.Stop();
+                lastCleanMB = GC.GetTotalMemory(false) / 1048576;
                 ModCost.Add(SettingsWindow.T("메모리 정리 (모드)", "Memory cleanup (mod)"), sw.Elapsed.TotalMilliseconds);
                 ForcedCollects++;
                 Main.Entry.Logger.Log(string.Format("GC 재개 및 정리 ({0}) {1}MB -> {2}MB, {3}ms",
