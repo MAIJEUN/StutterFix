@@ -14,7 +14,8 @@ namespace StutterFix
     {
         private static float next;
         private static int turn;
-        internal static long ScaleN, HalfN, HalfBetter;
+        internal static long ScaleN, HalfN, HalfBetter, VarN;
+        internal static readonly double[] VarSum = new double[16];
         internal static double ScaleDiffSum, HalfFixSum, HalfRawSum;
         internal static int ScaleMisaligned;
         private const int W = 192, H = 80;
@@ -120,8 +121,9 @@ namespace StutterFix
             if (camRT == null || q == null || qm == null) return;
             var t = q.transform;
             Vector3 p0 = t.localPosition, s0 = t.localScale; Quaternion r0 = t.localRotation;
-            // 옮겨 보여 줄 화면 (PreCull 과 같은 계산을 지금 적용)
+            Vector3 movePx; float dRot, zoom;
             HalfRender.ApplyNow(sc);
+            movePx = HalfRender.LastShiftPx; dRot = HalfRender.LastDRot; zoom = HalfRender.LastK;
             var fixedShot = OverlayShot(sc);
             HalfRender.ResetNow();
             var rawShot = OverlayShot(sc);   // 옮기지 않은 옛 그림
@@ -138,14 +140,15 @@ namespace StutterFix
             RenderTexture.ReleaseTemporary(truthShot); RenderTexture.ReleaseTemporary(fixedShot); RenderTexture.ReleaseTemporary(rawShot);
             double df = Diff(F, T, 0, 0), dr = Diff(R, T, 0, 0);
             HalfN++; HalfFixSum += df; HalfRawSum += dr; if (df <= dr) HalfBetter++;
-            Main.Entry.Logger.Log(string.Format("[저사양 검증] 반만 그리기: 진짜 화면과 평균 차이 - 옮긴 것 {0:F2}/255, 안 옮긴 것 {1:F2}/255", df, dr));
+            Main.Entry.Logger.Log(string.Format("[저사양 검증] 반만 그리기: 진짜 화면과 평균 차이 - 옮긴 것 {0:F2}/255, 안 옮긴 것 {1:F2}/255 | 카메라 이동 ({2:F0},{3:F0})px 회전 {4:F1}도 확대 {5:F3}",
+                df, dr, movePx.x, movePx.y, dRot, zoom));
         }
 
         internal static string Summary()
         {
             string s = "";
             if (ScaleN > 0) s += string.Format(" | 해상도 검증 {0}번: 평균 차이 {1:F2}/255, 어긋남 {2}번", ScaleN, ScaleDiffSum / ScaleN, ScaleMisaligned);
-            if (HalfN > 0) s += string.Format(" | 반만 그리기 검증 {0}번: 옮긴 것 평균 차이 {1:F2}, 안 옮긴 것 {2:F2}, 옮긴 쪽이 나은 경우 {3}번", HalfN, HalfFixSum / HalfN, HalfRawSum / HalfN, HalfBetter);
+            if (HalfN > 0) { s += string.Format(" | 반만 그리기 검증 {0}번: 옮긴 것 평균 차이 {1:F2}, 안 옮긴 것 {2:F2}, 옮긴 쪽이 나은 경우 {3}번 ", HalfN, HalfFixSum / HalfN, HalfRawSum / HalfN, HalfBetter); }
             return s;
         }
     }

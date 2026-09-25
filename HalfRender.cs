@@ -159,13 +159,20 @@ namespace StutterFix
         internal static bool SkippingNow { get { return skipping && haveState && quadT != null; } }
         internal static void ResetNow() { ResetQuad(); }
         // (개발자용 검증) 지금 카메라 기준으로 옮긴다: 보정 계산식이 맞는지 "지금 새로 그린 진짜 화면" 과 비교하려고
-        internal static void ApplyNow(scrCamera sc)
+        internal static void ApplyNow(scrCamera sc) { ApplyNow(sc, Variant); }
+        internal static void ApplyNow(scrCamera sc, int v)
         {
             var main = camRef(sc);
-            if (main != null) ApplyTo(sc, main.transform.position, main.transform.eulerAngles.z, main.orthographicSize);
+            if (main != null) ApplyVariant(sc, main.transform.position, main.transform.eulerAngles.z, main.orthographicSize, v);
         }
         // 옛 그림(pos0, rot0, size0 카메라로 그린 것)을 목표 카메라(pos1, rot1, size1)에서 본 것처럼 사각형을 옮긴다
-        private static void ApplyTo(scrCamera sc, Vector3 pos1, float rot1, float size1)
+        private static void ApplyTo(scrCamera sc, Vector3 pos1, float rot1, float size1) { ApplyVariant(sc, pos1, rot1, size1, Variant); }
+        // 공식 변형 (개발자용 검증이 16가지를 다 그려 보고 진짜 화면에 가장 가까운 것을 찾는다):
+        //   bit0 회전 합치는 순서(0: qRot*E, 1: E*qRot), bit1 회전 방향 반대, bit2 가로 이동 반대, bit3 세로 이동 반대
+        internal static int Variant = 0;   // 검증 결과 0 (16가지 중 평균 오차 가장 작음)
+        internal static long BigJumps;
+        internal static Vector3 LastShiftPx; internal static float LastDRot, LastK;
+        internal static void ApplyVariant(scrCamera sc, Vector3 pos1, float rot1, float size1, int v)
         {
             try
             {
@@ -179,8 +186,15 @@ namespace StutterFix
                 float H = cam.orthographicSize;   // OverlayCam 세로 절반 = 사각형 세로 절반
                 // 원래 값은 옮기기 바로 직전의 지금 값으로 기억한다(게임이 그사이 바꾼 값을 그대로 받음)
                 if (!quadMoved) { qPos = quadT.localPosition; qRot = quadT.localRotation; qScale = quadT.localScale; }
-                quadT.localPosition = mPos = qPos + new Vector3(shift.x * H, shift.y * H, 0f);
-                quadT.localRotation = mRot = qRot * Quaternion.Euler(0f, 0f, dRot);
+                // 카메라가 한 프레임에 크게 튀면(연출 전환 등) 옮기지 않는다. 검증: 105x88px 이동 + 7.3도 회전 + 6% 확대 장면에서
+                // 옮긴 것은 모든 공식이 오차 37/255, 안 옮긴 것은 3/255 (화면에 붙은 장식처럼 카메라를 따라가는 것은 옮기면 어긋남).
+                float movePx = shift.magnitude * Screen.height / 2f;
+                if (movePx > 48f || Mathf.Abs(dRot) > 3f || Mathf.Abs(k - 1f) > 0.03f) { BigJumps++; ResetQuad(); return; }
+                float dr = (v & 2) != 0 ? -dRot : dRot;
+                float sx = (v & 4) != 0 ? -shift.x : shift.x, sy = (v & 8) != 0 ? -shift.y : shift.y;
+                LastShiftPx = new Vector3(shift.x * Screen.height / 2f, shift.y * Screen.height / 2f, 0f); LastDRot = dRot; LastK = k;
+                quadT.localPosition = mPos = qPos + new Vector3(sx * H, sy * H, 0f);
+                quadT.localRotation = mRot = (v & 1) != 0 ? Quaternion.Euler(0f, 0f, dr) * qRot : qRot * Quaternion.Euler(0f, 0f, dr);
                 quadT.localScale = mScale = new Vector3(qScale.x * k, qScale.y * k, qScale.z);
                 quadMoved = true;
             }
@@ -207,7 +221,7 @@ namespace StutterFix
         internal static string Summary()
         {
             if (Rendered + Skipped == 0) return "";
-            return string.Format(", 반만 그리기: 그린 프레임 {0}, 건너뛴 프레임 {1} (실제로 안 그린 것 {2}, 건너뛰려다 그려진 것 {3}), 그리는 순서 {4}", Rendered, Skipped, ReallySkipped, NotSkipped, overlayFirst ? "화면 카메라 먼저" : "세 카메라 먼저");
+            return string.Format(", 반만 그리기: 그린 프레임 {0}, 건너뛴 프레임 {1} (실제로 안 그린 것 {2}, 건너뛰려다 그려진 것 {3}), 그리는 순서 {4}, 카메라가 크게 튀어 안 옮긴 것 {5}", Rendered, Skipped, ReallySkipped, NotSkipped, overlayFirst ? "화면 카메라 먼저" : "세 카메라 먼저", BigJumps);
         }
     }
 }
