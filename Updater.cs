@@ -105,12 +105,62 @@ namespace StutterFix
                 string u = m.Groups[1].Value;
                 if (u.StartsWith(DownloadPrefix, StringComparison.Ordinal) && u.EndsWith("/" + want, StringComparison.Ordinal)) { zipUrl = u; break; }
             }
+            Notes = CleanNotes(JsonString(json, "body"));
             Available = Newer(Latest, Current);
             Status = Available
                 ? string.Format(SettingsWindow.T("새 버전 v{0} 이 있습니다 (지금 v{1})", "New version v{0} available (you have v{1})"), Latest, Current)
                 : string.Format(SettingsWindow.T("최신 버전입니다 (v{0})", "Up to date (v{0})"), Current);
             if (Available && zipUrl.Length == 0) Status += SettingsWindow.T(" - 받을 파일이 없어 릴리스 페이지에서 직접 받아야 합니다", " - no download file; get it from the release page");
             Main.Entry.Logger.Log("[업데이트] 최신 v" + Latest + ", 지금 v" + Current + (Available ? " -> 새 버전 있음" : ""));
+        }
+
+        internal static string Notes = "";   // 패치노트 (릴리스 본문, 마크다운 기호를 걷어낸 것)
+
+        // JSON 안의 문자열 값 하나 (이스케이프 풀기)
+        private static string JsonString(string json, string key)
+        {
+            var m = Regex.Match(json, "\"" + key + "\"\\s*:\\s*\"");
+            if (!m.Success) return "";
+            var sb = new System.Text.StringBuilder();
+            for (int i = m.Index + m.Length; i < json.Length; i++)
+            {
+                char ch = json[i];
+                if (ch == '"') break;
+                if (ch != '\\' || i + 1 >= json.Length) { sb.Append(ch); continue; }
+                char e = json[++i];
+                switch (e)
+                {
+                    case 'n': sb.Append('\n'); break;
+                    case 'r': break;
+                    case 't': sb.Append("  "); break;
+                    case 'u':
+                        if (i + 4 < json.Length) { try { sb.Append((char)Convert.ToInt32(json.Substring(i + 1, 4), 16)); } catch { } i += 4; }
+                        break;
+                    default: sb.Append(e); break;   // \" \\ \/
+                }
+            }
+            return sb.ToString();
+        }
+
+        // 마크다운을 창에 보이기 좋게: 제목 #, 굵게 **, 코드 `, 링크 [글](주소) -> 글, 목록 - -> ·
+        private static string CleanNotes(string md)
+        {
+            if (string.IsNullOrEmpty(md)) return "";
+            var lines = md.Replace("\r", "").Split('\n');
+            var sb = new System.Text.StringBuilder();
+            foreach (var raw in lines)
+            {
+                string l = raw.TrimEnd();
+                l = Regex.Replace(l, "^#+\\s*", "");
+                l = Regex.Replace(l, "^(\\s*)[-*]\\s+", "$1· ");
+                l = Regex.Replace(l, "\\[([^\\]]+)\\]\\([^)]+\\)", "$1");
+                l = l.Replace("**", "").Replace("`", "");
+                if (l.Length == 0 && (sb.Length == 0 || sb.ToString().EndsWith("\n\n"))) continue;   // 빈 줄은 하나만
+                sb.Append(l).Append('\n');
+            }
+            string s = sb.ToString().Trim();
+            if (s.Length > 2500) s = s.Substring(0, 2500) + "\n…";
+            return s;
         }
 
         private static bool Newer(string a, string b)

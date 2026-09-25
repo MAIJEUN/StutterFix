@@ -842,6 +842,13 @@ namespace StutterFix
                 T("윈도우 11 이 게임을 '효율 모드'로 느린 코어에 몰아넣지 않게 하고, 타이머 정밀도를 1ms 로 올려 프레임 간격이 덜 흔들리게 합니다. 노트북에 효과가 큽니다. 전기를 조금 더 씁니다.",
                   "Keeps Windows 11 from putting the game in efficiency mode and raises the timer resolution to 1 ms for steadier frame pacing. Helps laptops most; uses slightly more power."),
                 T("컴퓨터", "System"));
+            GUILayout.Label(T("메뉴·에디터 FPS 제한", "Menu / editor FPS limit"), sBody);
+            GUILayout.Label(T("플레이 중이 아닐 때(메뉴, 에디터 편집, 맵 고르기) FPS 를 묶어 그래픽카드와 CPU 를 쉬게 합니다. 노트북은 발열이 줄어 플레이할 때 열 때문에 느려지는 일이 덜합니다. 곡을 시작하면 바로 원래 FPS 로 돌아가고, 맵을 불러오는 동안에는 묶지 않습니다. 수직동기가 켜져 있으면 적용되지 않습니다.",
+                "Caps FPS outside of play (menus, editing, level select) so the GPU and CPU can rest; laptops run cooler and throttle less during play. Returns to your FPS as soon as a song starts, and never caps while a level loads. Has no effect with VSync on."), sDim);
+            GUILayout.Space(6);
+            int mf = c.LowMenuFps >= 60 ? 2 : c.LowMenuFps > 0 ? 1 : 0;
+            if (Segment("lowmenufps", ref mf, new[] { T("끔", "Off"), "30", "60" })) { c.LowMenuFps = mf == 2 ? 60 : mf == 1 ? 30 : 0; ch = true; }
+            GUILayout.Space(12);
             Section(T("게임 쪽", "Game"));
             ch |= Option("lowfft", ref c.LowNoFft, T("음악 반응 계산 끄기", "Skip music spectrum analysis"),
                 T("게임은 매 프레임 음악 주파수를 분석하는데, 이 값을 쓰는 곳은 타일 색 방식 'Volume' 뿐입니다. 그 방식을 쓰는 타일이 없으면 분석을 건너뜁니다. 곡 도중 타일이 Volume 으로 바뀌면 바로 다시 켜며, 그 첫 한 프레임만 색이 한 프레임 늦을 수 있습니다.",
@@ -925,10 +932,10 @@ namespace StutterFix
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("모두 켜기", "Turn all on"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; c.LowSplit = 1; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; c.LowSplit = 1; c.LowMenuFps = 60; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; c.LowMenuFps = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]
@@ -1095,6 +1102,9 @@ namespace StutterFix
             var c = Main.Config;
             string st = Updater.Status.Length > 0 ? Updater.Status : string.Format(T("지금 v{0}", "Current v{0}"), Main.Entry.Info.Version);
             InfoCard(new[] { T("업데이트", "Updates"), st });
+            // 새 버전의 패치노트 (릴리스 설명)
+            if ((Updater.Available || Updater.Installed) && Updater.Notes.Length > 0)
+                InfoCard(new[] { string.Format(T("v{0} 에서 바뀐 점", "What's new in v{0}"), Updater.Latest), Updater.Notes });
             GUILayout.BeginHorizontal();
             GUI.enabled = !Updater.Busy;
             if (Updater.Available)

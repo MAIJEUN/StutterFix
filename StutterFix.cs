@@ -373,7 +373,7 @@ namespace StutterFix
 
             long q = System.Diagnostics.Stopwatch.GetTimestamp();
             GcControl.Tick(dt); Tk(0, ref q);
-            RestartAdvisor.Tick(); LowEnd.AutoTick(); Updater.Tick(); Tk(1, ref q);
+            RestartAdvisor.Tick(); LowEnd.AutoTick(); LowEnd.MenuCapTick(); Updater.Tick(); Tk(1, ref q);
             EffectBudget.Tick(); Tk(2, ref q);
             RecolorSplit.Tick(); Tk(3, ref q);
             FastBlend.Tick(); Tk(4, ref q);
@@ -453,7 +453,7 @@ namespace StutterFix
             Precheck.Enabled = Config.Precheck; Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
             if (!Config.DecoAnim && global::StutterFix.DecoAnim.Enabled) global::StutterFix.DecoAnim.FinishAll();   // 끄면 진행 중인 것은 끝값으로 (Kill(true) 와 같음)
             global::StutterFix.DecoAnim.Enabled = Config.DecoAnim;
-            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 10, 100); LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Sharpen = Config.LowSharpen; LowEnd.SharpenValue = Mathf.Clamp(Config.LowSharpenValue, 0.25f, 4f); HalfRender.Enabled = Config.LowHalfRender; LowEnd.AutoRes = Config.LowAutoRes; LowEnd.AutoTargetFps = Config.LowAutoFps; LowEnd.AutoMinPct = Mathf.Clamp(Config.LowAutoMin, 10, 100); Fsr.Enabled = Config.LowFsr && !Config.LowSharpUpscale;
+            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 10, 100); LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Sharpen = Config.LowSharpen; LowEnd.SharpenValue = Mathf.Clamp(Config.LowSharpenValue, 0.25f, 4f); HalfRender.Enabled = Config.LowHalfRender; LowEnd.AutoRes = Config.LowAutoRes; LowEnd.AutoTargetFps = Config.LowAutoFps; LowEnd.AutoMinPct = Mathf.Clamp(Config.LowAutoMin, 10, 100); LowEnd.MenuFps = Config.LowMenuFps; Fsr.Enabled = Config.LowFsr && !Config.LowSharpUpscale;
             EffectBudget.BudgetMs = Config.LowSplit >= 2 ? 3f : Config.LowSplit == 1 ? 5f : 10f;
             RecolorSplit.ChunkTiles = Config.LowSplit >= 2 ? 120 : Config.LowSplit == 1 ? 200 : 400;
             Fsr.Apply();
@@ -653,6 +653,7 @@ namespace StutterFix
         // 저사양 (화면·동작이 아주 조금 달라질 수 있어 기본 꺼짐)
         public bool LowPriority = false;    // 게임 우선순위 높음
         public bool LowNoThrottle = false;  // 윈도우 절전 제한 끄기 + 타이머 1ms
+        public int LowMenuFps = 0;          // 플레이 중이 아닐 때(메뉴·에디터) FPS 제한 (0 끔, 30, 60)
         public bool LowNoFft = false;       // Volume 타일이 없으면 음악 주파수 분석 건너뛰기
         public int LowRenderScale = 100;    // 게임 화면(카메라) 해상도 배율 % (10~100), 100 = 원래대로
         public bool LowSharpUpscale = false; // 작게 그린 게임 화면을 선명하게(도트처럼) 늘리기

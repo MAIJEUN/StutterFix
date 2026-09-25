@@ -229,6 +229,8 @@ namespace StutterFix
                 if (cu != null) h.Patch(cu, transpiler: new HarmonyMethod(typeof(LowEnd), nameof(CamUpdateTranspiler)), postfix: new HarmonyMethod(typeof(LowEnd), nameof(CamUpdatePostfix)));
                 var nr = AccessTools.PropertyGetter(typeof(scrCamera), "camRTNeedsRecreation");
                 if (nr != null && RenderScaleReady) h.Patch(nr, prefix: new HarmonyMethod(typeof(LowEnd), nameof(NeedsRecreationPrefix)));
+                var gf = AccessTools.PropertyGetter(typeof(RDUtils), "targetFrameRate");
+                if (gf != null) h.Patch(gf, postfix: new HarmonyMethod(typeof(LowEnd), nameof(GameFpsPostfix)));
                 Main.Entry.Logger.Log("[저사양] 설치 (게임 화면 해상도 " + (RenderScaleReady ? "사용 가능" : "사용 불가") + ")");
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[저사양] 설치 실패: " + ex.Message); }
@@ -241,9 +243,48 @@ namespace StutterFix
             EnsureSharpen();
         }
 
+        // ── 메뉴·에디터 FPS 제한 ──
+        // 플레이 중이 아닐 때(메뉴, 에디터 편집, 맵 고르기) Application.targetFrameRate 를 이 값으로 묶는다. 노트북 발열과 전기를 줄여
+        // 플레이할 때 열 때문에 느려지는 것(쓰로틀링)을 덜어 준다. 게임은 이 값을 켤 때와 설정 메뉴에서만 바꾼다(RDUtils.targetFrameRate, IL 확인).
+        // 게임이 읽는 값(RDUtils.targetFrameRate)은 묶기 전 값을 돌려줘 설정 메뉴가 원래 값을 보이고 저장하게 한다.
+        // 맵을 불러오는 중(장면이 바뀐 뒤 3초, 이미지 미리 풀기 중)에는 묶지 않는다. 수직동기가 켜져 있으면 유니티가 이 값을 쓰지 않는다.
+        internal static int MenuFps;          // 0 = 끔
+        private static bool fpsCapped;
+        private static int savedFps;
+        private static int lastScene = -1;
+        private static float sceneAt;
+        internal static void MenuCapTick()
+        {
+            if (MenuFps <= 0 && !fpsCapped) return;
+            try
+            {
+                int sc = UnityEngine.SceneManagement.SceneManager.GetActiveScene().handle;
+                float now = Time.realtimeSinceStartup;
+                if (sc != lastScene) { lastScene = sc; sceneAt = now; }
+                bool want = MenuFps > 0 && !Hitch.Playing && !ImagePrefetch.Running && now - sceneAt > 3f;
+                if (want)
+                {
+                    int cur = Application.targetFrameRate;
+                    if (!fpsCapped) { savedFps = cur; fpsCapped = true; }
+                    else if (cur != MenuFps) savedFps = cur;   // 그사이 게임(설정 메뉴)이 바꿨다
+                    bool lower = savedFps > 0 && savedFps <= MenuFps;   // 원래 더 낮으면 그대로 둔다
+                    int target = lower ? savedFps : MenuFps;
+                    if (cur != target) Application.targetFrameRate = target;
+                }
+                else if (fpsCapped)
+                {
+                    fpsCapped = false;
+                    if (Application.targetFrameRate != savedFps) Application.targetFrameRate = savedFps;
+                }
+            }
+            catch { }
+        }
+        public static void GameFpsPostfix(ref int __result) { if (fpsCapped) __result = savedFps; }
+
         // 모드를 끄거나 다시 불러올 때 원래대로
         internal static void Shutdown()
         {
+            if (fpsCapped) { fpsCapped = false; try { Application.targetFrameRate = savedFps; } catch { } }
             bool p = Priority, t = NoThrottle, s = Sharpen;
             Sharpen = false; EnsureSharpen(); Sharpen = s;
             Priority = false; NoThrottle = false;
