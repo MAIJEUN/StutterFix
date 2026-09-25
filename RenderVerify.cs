@@ -119,8 +119,9 @@ namespace StutterFix
                 fsrText));
         }
         internal static long FsrN;
-        private static readonly string[] VarName = { "보통", "EASU만", "RCAS0", "RCAS0.2", "RCAS0.5", "RCAS1", "RCAS2" };
-        private static readonly float[] VarSharp = { -9f, -1f, 0f, 0.2f, 0.5f, 1f, 2f };
+        // 7가지(EASU만, RCAS 0~2) 비교는 끝났다 (2026-09-25 Arche: 선명도 보통 74%, RCAS0.2 100% = 원래와 같음, 전체 차이는 모두 5% 안). 지금은 보통 vs 지금 설정만.
+        private static readonly string[] VarName = { "보통", "FSR" };
+        private static readonly float[] VarSharp = { -9f, -2f };
         internal static readonly double[] VAll = new double[7], VEdge = new double[7], VSharp = new double[7];
         private static string CompareUpscalers(scrCamera sc, RenderTexture full)
         {
@@ -144,7 +145,7 @@ namespace StutterFix
                 {
                     RenderTexture shot;
                     if (v == 0) { Fsr.Suppress = true; try { shot = OverlayShot(sc); } finally { Fsr.Suppress = false; } }
-                    else { Fsr.TestSharp = VarSharp[v]; try { shot = OverlayShot(sc); } finally { Fsr.TestSharp = -2f; } }
+                    else { Fsr.TestSharp = VarSharp[v] < -1.5f ? Fsr.Sharpness : VarSharp[v]; try { shot = OverlayShot(sc); } finally { Fsr.TestSharp = -2f; } }
                     var P = Read(shot);
                     RenderTexture.ReleaseTemporary(shot);
                     long all = 0, en = 0, es = 0; double grad = 0;
