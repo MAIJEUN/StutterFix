@@ -16,14 +16,18 @@ namespace StutterFix
     internal static unsafe class DxtEncoder
     {
         // layout: 0 = RGBA32 (R,G,B,A), 1 = ARGB32 (A,R,G,B), 2 = RGB24 (R,G,B)
-        internal static void Encode(byte* src, int w, int h, int layout, bool dxt5, byte* dst)
+        internal static void Encode(byte* src, int w, int h, int layout, bool dxt5, byte* dst) { EncodeRows(src, w, h, layout, dxt5, dst, 0, h / 4); }
+
+        // 블록 줄 by0 ~ by1-1 만 압축 (dst 는 전체 결과의 시작. 여러 작업 스레드가 한 이미지를 줄 묶음으로 나눠 압축한다)
+        internal static void EncodeRows(byte* src, int w, int h, int layout, bool dxt5, byte* dst, int by0, int by1)
         {
             int bpp = layout == 2 ? 3 : 4;
             int ro = layout == 1 ? 1 : 0, go = ro + 1, bo = ro + 2, ao = layout == 1 ? 0 : 3;
             byte* blk = stackalloc byte[64];   // 16픽셀 x RGBA
-            int bw = w / 4, bh = h / 4;
+            int bw = w / 4;
             long rowStride = (long)w * bpp;
-            for (int by = 0; by < bh; by++)
+            dst += (long)by0 * bw * (dxt5 ? 16 : 8);
+            for (int by = by0; by < by1; by++)
             {
                 for (int bx = 0; bx < bw; bx++)
                 {
