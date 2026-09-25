@@ -60,6 +60,30 @@ namespace StutterFix
         // ReadAllBytes 가 돌려준 "미리 풀어 둔 것" 표식. 이 배열 자체가 LoadImage 로 넘어온다.
         [ThreadStatic] private static Dictionary<byte[], Item> markers;
 
+        // libdeflate.dll 은 모드 DLL 안에 넣어 두었다(업데이트로 모드 DLL 만 바뀌어도 같이 온다).
+        // 모드 폴더에 같은 파일이 없거나 다르면 한 번 써 두고, 그 전체 경로로 불러온다. 이미 올라온 DLL 은 잠겨 있으므로
+        // 내용이 같으면 쓰지 않는다. 어떤 이유로든 못 불러오면 원래 zlib(DeflateStream) 길로 푼다.
+        private static void LoadNative()
+        {
+            try
+            {
+                string path = Path.Combine(Main.Entry.Path, "libdeflate.dll");
+                byte[] want;
+                using (var s = typeof(ImagePrefetch).Assembly.GetManifestResourceStream("StutterFix.libdeflate.dll"))
+                {
+                    if (s == null) { NativeInflate.Status = "모드 안에 DLL 없음"; return; }
+                    want = new byte[s.Length];
+                    int got = 0; while (got < want.Length) { int n = s.Read(want, got, want.Length - got); if (n <= 0) break; got += n; }
+                }
+                bool same = false;
+                try { if (File.Exists(path)) { var have = File.ReadAllBytes(path); same = have.Length == want.Length && System.Linq.Enumerable.SequenceEqual(have, want); } } catch { }
+                if (!same) { try { File.WriteAllBytes(path, want); } catch (Exception ex) { Main.Entry.Logger.Log("[이미지] libdeflate.dll 쓰기 실패 (" + ex.Message + ")"); } }
+                NativeInflate.Init(path);
+            }
+            catch (Exception ex) { NativeInflate.Status = "실패: " + ex.Message; }
+            Main.Entry.Logger.Log("[이미지] 빠른 압축 풀기(libdeflate): " + NativeInflate.Status);
+        }
+
         internal static void Install(Harmony harmony)
         {
             try
@@ -71,6 +95,7 @@ namespace StutterFix
                     prefix: new HarmonyMethod(typeof(ImagePrefetch), nameof(Begin)),
                     finalizer: new HarmonyMethod(typeof(ImagePrefetch), nameof(End)));
                 harmony.Patch(load, transpiler: new HarmonyMethod(typeof(ImagePrefetch), nameof(Transpiler)));
+                LoadNative();
 
                 // 게임 버그: 없는 이미지를 장식 여러 개가 쓰면, 두 번째 실패에서 오류 목록 Dictionary.Add 가
                 // "같은 키" 예외를 내고 장식 불러오기가 통째로 멈춘다(DDONGSSADA3302 의 nev_text_-.png, 322/2770 에서 중단).
@@ -217,6 +242,97 @@ namespace StutterFix
             return code;
         }
 
+        // ── 첫 판부터 VRAM 부족 막기 ───────────────────────────────────
+        // 예전에 "이미지 전체 크기로 어림해 그 안에 맞을 때까지 줄이기" 를 했다가 뺐다(VramGuard 설명: CICADA3302 는 13GB 인데도
+        // 원본으로 끊김 없이 돌았고, 어림은 1024 까지 줄여 화질만 버렸다). 그래픽카드는 그 순간 쓰는 이미지만 올려 두기 때문이다.
+        // 그래서 여기서는 끝까지 맞추지 않는다. 이미지 전체(RGBA 기준)가 지금 비어 있는 VRAM 의 1.25배를 넘으면 첫 단계(긴 변 3072)만
+        // 쓴다 - 3072 보다 큰 이미지만 줄어든다. 더 내리는 것은 지금처럼 실제로 끊겼을 때만(VramGuard) 한다.
+        // Hello (BPM) 2026: 원본 약 10.9GB, 첫 판에 VRAM 이 가득 차 130ms 씩 멈췄고, 3072 에서는 그 끊김이 없었다(이미지 84장 줄어듦).
+        // 크기는 파일 머리(PNG IHDR, JPG SOF)만 읽는다.
+        internal const int PredictSide = 3072;
+        internal static float PredictRatio = 1.25f;
+        private static int Predict(scnGame g, string dir, out string why)
+        {
+            why = "";
+            try
+            {
+                long totalMB = SystemInfo.graphicsMemorySize;
+                if (totalMB <= 0) return 0;
+                float used = SystemMonitor.VramUsedMB;
+                if (used <= 0) used = 1500f;   // 아직 못 읽었으면 게임 화면·메뉴 몫으로 어림
+                double freeMB = totalMB * 0.9 - used;
+                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                long bytes = 0; int big = 0, count = 0;
+                Action<ADOFAI.LevelEvent> look = ev =>
+                {
+                    if (ev == null || !ev.ContainsKey("decorationImage")) return;
+                    var img = ev["decorationImage"] as string;
+                    if (string.IsNullOrEmpty(img) || img.StartsWith("prefab:", StringComparison.OrdinalIgnoreCase)) return;
+                    string p = Path.Combine(dir, img);
+                    if (!seenPaths.Add(p)) return;
+                    int w, h;
+                    if (!ReadDims(p, out w, out h)) return;
+                    bytes += (long)w * h * 4; count++;
+                    if (Math.Max(w, h) > PredictSide) big++;
+                };
+                foreach (var ev in g.decorations) look(ev);
+                foreach (var ev in g.events) if ((int)ev.eventType == 29) look(ev);
+                double needMB = bytes / 1048576.0;
+                string info = string.Format("이미지 {0}장 원본 약 {1:F0}MB, 비어 있는 VRAM 약 {2:F0}MB, 3072 보다 큰 이미지 {3}장", count, needMB, freeMB, big);
+                if (needMB > Math.Max(0, freeMB) * PredictRatio && big > 0) { why = info; return PredictSide; }
+                why = info;
+                return 0;
+            }
+            catch (Exception ex) { why = "어림 실패: " + ex.Message; return 0; }
+        }
+
+        // 이미지 가로·세로를 파일 머리에서 읽는다 (PNG: IHDR, JPG: SOFn 표시). 못 읽으면 false.
+        private static bool ReadDims(string path, out int w, out int h)
+        {
+            w = h = 0;
+            try
+            {
+                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096))
+                {
+                    var b = new byte[24];
+                    if (fs.Read(b, 0, 24) < 24) return false;
+                    if (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47)
+                    {
+                        w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
+                        h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+                        return w > 0 && h > 0;
+                    }
+                    if (b[0] != 0xFF || b[1] != 0xD8) return false;
+                    // JPG: 표시(FF xx)를 따라가며 SOF0~SOF15(DHT C4, JPG C8, DAC CC 제외)를 찾는다
+                    fs.Position = 2;
+                    var m = new byte[9];
+                    for (int guard = 0; guard < 512; guard++)
+                    {
+                        int x = fs.ReadByte();
+                        while (x == 0xFF) x = fs.ReadByte();   // 채움 바이트
+                        if (x < 0) return false;
+                        int marker = x;
+                        if (marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01) continue;   // 길이 없는 표시
+                        if (fs.Read(m, 0, 2) < 2) return false;
+                        int len = (m[0] << 8) | m[1];
+                        if (len < 2) return false;
+                        if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
+                        {
+                            if (fs.Read(m, 0, 5) < 5) return false;
+                            h = (m[1] << 8) | m[2]; w = (m[3] << 8) | m[4];
+                            return w > 0 && h > 0;
+                        }
+                        fs.Position += len - 2;
+                        // 표시 사이에 FF 가 오도록: 다음 바이트가 FF 가 아니면 잘못된 파일
+                        int nx = fs.ReadByte();
+                        if (nx != 0xFF) return false;
+                    }
+                    return false;
+                }
+            }
+            catch { return false; }
+        }
+
         // ── 1) 불러올 순서 뽑기 ─────────────────────────────────────────
         public static void Begin(scnGame __instance)
         {
@@ -229,6 +345,17 @@ namespace StutterFix
                 if (MaxSide == Auto)
                 {
                     AutoNote = sideNow > 0 ? "자동: 전에 VRAM 이 모자라 끊긴 맵이라 긴 변 " + sideNow + " 으로 줄임" : "자동: 원본 그대로 (이 맵에서 VRAM 부족 끊김 기록 없음)";
+                    // 같은 맵(에디터 편집·되돌리기 때도 여기로 온다)은 이번 실행에서 이미 정한 한도를 그대로 쓴다.
+                    // 다시 어림하지 않아야 파일 수백 개를 매번 열지 않고, 한도가 바뀌어 이미지를 다시 불러오는 일도 없다.
+                    bool sameLevel = string.Equals(__instance.levelPath, VramGuard.Level, StringComparison.OrdinalIgnoreCase);
+                    if (sideNow == 0 && sameLevel && VramGuard.CurrentCap > 0) { sideNow = VramGuard.CurrentCap; AutoNote = "자동: 이번 실행에서 정한 긴 변 " + sideNow + " 그대로"; }
+                    else if (sideNow == 0 && !sameLevel)
+                    {
+                        string why;
+                        int pre = Predict(__instance, dir, out why);
+                        if (pre > 0) { sideNow = pre; AutoNote = "자동: 첫 판부터 긴 변 " + pre + " 으로 줄임 (" + why + ")"; }
+                        else if (why.Length > 0) AutoNote += " (" + why + ")";
+                    }
                     Main.Entry.Logger.Log("[이미지] " + AutoNote);
                 }
                 var list = new List<Item>();
@@ -285,7 +412,10 @@ namespace StutterFix
                     catch { }
                 }
 
-                int n = Math.Max(1, Math.Min(6, Environment.ProcessorCount - 1));
+                // 코어 수만큼 (최대 8). 예전에는 코어 - 1 이었는데, 메인 스레드는 불러오는 동안 대부분 풀린 이미지를 기다린다
+                // (Hello (BPM) 2026: 전체 11초 중 기다림 5초). 작업 스레드는 낮은 우선순위라 메인 스레드가 필요할 때는 양보한다.
+                int n = Math.Max(1, Math.Min(8, Environment.ProcessorCount));
+                PngDecoder.ResetStats();
                 workers = new Thread[n];
                 for (int i = 0; i < n; i++)
                 {
@@ -299,6 +429,12 @@ namespace StutterFix
 
         // ── 2) 작업 스레드 ─────────────────────────────────────────────
         private static void Work()
+        {
+            try { WorkLoop(); }
+            finally { NativeInflate.FreeThread(); }   // 스레드마다 둔 libdeflate 해독기와 풀 자리
+        }
+
+        private static void WorkLoop()
         {
             while (true)
             {
@@ -461,6 +597,9 @@ namespace StutterFix
                 Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장 (긴 변 " + sideNow + ", VRAM 약 " + LastSavedMB.ToString("F0") + "MB 아낌)" : ""),
                     used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart);
                 Main.Entry.Logger.Log("[이미지] " + Last);
+                double tk = Stopwatch.Frequency / 1000.0;
+                Main.Entry.Logger.Log(string.Format("[이미지] 해독 시간(작업 스레드 {0}개 합계): 압축 풀기 {1:F0}ms, 필터 되돌리기 {2:F0}ms | 새로 맡은 형식(흑백·인터레이스) {3}장 | libdeflate {4}장, 원래 zlib 로 다시 푼 것 {5}장 ({6})",
+                    workers.Length, PngDecoder.InflateTicks / tk, PngDecoder.FilterTicks / tk, PngDecoder.NewKinds, PngDecoder.NativeImages, PngDecoder.NativeFallbacks, NativeInflate.Status));
             }
             Stop();
             // 로딩 동안 꺼 둔 GC를 되돌리고 한 번에 치운다(곡 중이 아니라 멈춰도 괜찮은 순간).
