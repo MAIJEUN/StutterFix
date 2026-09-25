@@ -154,7 +154,7 @@ namespace StutterFix
             }
             return idx >= 0;
         }
-        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets], bucketRender = new double[MaxBuckets], bucketWait = new double[MaxBuckets], bucketGpu = new double[MaxBuckets], bucketAwake = new double[MaxBuckets], bucketAnim = new double[MaxBuckets];
+        private readonly double[] bucketMs = new double[MaxBuckets], bucketCpu = new double[MaxBuckets], bucketRender = new double[MaxBuckets], bucketWait = new double[MaxBuckets], bucketGpu = new double[MaxBuckets], bucketAwake = new double[MaxBuckets], bucketAnim = new double[MaxBuckets], bucketOff = new double[MaxBuckets];
         private readonly int[] bucketFrames = new int[MaxBuckets];
 
         private class HitchRec { public float Ms, Time; public int Count = 1; public bool IsMod, IsLoading; public string Cause, Detail, Title, Short; public Color Tone; }
@@ -305,14 +305,14 @@ namespace StutterFix
 
             // 이번 곡 통계: 곡이 시작되면 새로 센다 (곡이 끝난 뒤에도 다음 곡까지 남겨 둔다)
             bool playing = Hitch.Playing;
-            if (playing && !wasPlaying) { Main.Entry.Logger.Log("[곡 시작] " + ScreenState()); songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; System.Array.Clear(top, 0, TopN); fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); System.Array.Clear(bucketGpu, 0, MaxBuckets); System.Array.Clear(bucketAwake, 0, MaxBuckets); System.Array.Clear(bucketAnim, 0, MaxBuckets); }
+            if (playing && !wasPlaying) { Main.Entry.Logger.Log("[곡 시작] " + ScreenState()); songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; System.Array.Clear(top, 0, TopN); fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); System.Array.Clear(bucketGpu, 0, MaxBuckets); System.Array.Clear(bucketAwake, 0, MaxBuckets); System.Array.Clear(bucketAnim, 0, MaxBuckets); System.Array.Clear(bucketOff, 0, MaxBuckets); }
             wasPlaying = playing;
             if (!playing) SongBucket = -1;
             if (playing && ms < 1500f)
             {
                 int b = (int)(songMs / (BucketSec * 1000.0));
                 SongBucket = b < MaxBuckets ? b : -1;
-                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; bucketGpu[b] += lastGpu; bucketAwake[b] += Dormancy.LastAwake; bucketAnim[b] += DecoAnim.LastFrameMs; }
+                if (b < MaxBuckets) { bucketMs[b] += ms; bucketFrames[b]++; bucketCpu[b] += lastCpu; bucketRender[b] += lastRender; bucketWait[b] += lastWait; bucketGpu[b] += lastGpu; bucketAwake[b] += Dormancy.LastAwake; bucketAnim[b] += DecoAnim.LastFrameMs; bucketOff[b] += Dormancy.LastOffscreen; }
                 songMs += ms; songFrames++; if (ms > songWorst) songWorst = ms;
                 // 효과가 가장 무거운 프레임 (GPU 가 튄 프레임 같은 것에 가려지지 않게 따로 남긴다)
                 if (!InStartWindow)
@@ -557,7 +557,7 @@ namespace StutterFix
                 if (o.bucketFrames[i] < 10) continue;
                 double fps = 1000.0 * o.bucketFrames[i] / o.bucketMs[i];
                 int n = o.bucketFrames[i];
-                sb.AppendFormat(" {0}s {1:F0}({2:F1}/{3:F1}/{4:F1}/{5:F1}/{7:F1}, {6:F0}개)", i * BucketSec, fps, o.bucketCpu[i] / n, o.bucketRender[i] / n, o.bucketWait[i] / n, o.bucketGpu[i] / n, o.bucketAwake[i] / n, o.bucketAnim[i] / n);
+                sb.AppendFormat(" {0}s {1:F0}({2:F1}/{3:F1}/{4:F1}/{5:F1}/{7:F1}, {6:F0}/{8:F0}개)", i * BucketSec, fps, o.bucketCpu[i] / n, o.bucketRender[i] / n, o.bucketWait[i] / n, o.bucketGpu[i] / n, o.bucketAwake[i] / n, o.bucketAnim[i] / n, o.bucketOff[i] / n);
                 if (fps > bestFps) { bestFps = fps; best = i; }
             }
             if (best >= 0) sb.AppendFormat(" | 가장 높은 구간 {0}s {1:F0} FPS", best * BucketSec, bestFps);

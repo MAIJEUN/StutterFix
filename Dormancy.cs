@@ -97,6 +97,7 @@ namespace StutterFix
             try { Prepare(all); }
             catch (Exception ex) { broken = true; Main.Entry.Logger.Log("[잠든 장식] 오류로 끔: " + ex.Message); ResetState(); return all; }
             AwakeFrames++; AwakeTotal += awake.Count; AllCount = all.Count; LastAwake = awake.Count;
+            if (Edition.Dev || Main.MeasureBuild) CountOffscreen();
             return awake;
         }
 
@@ -191,6 +192,22 @@ namespace StutterFix
         {
             if (!Enabled || broken || source == null) return;
             if (dormant.Add(d)) Slept++;
+        }
+
+        // (측정용) 매 프레임 훑는(깨어 있는) 장식 중 실제로 화면에 안 그려진 것(카메라 밖) 수. 화면 밖 장식 갱신을 미루면 얼마나 줄지 가늠한다.
+        internal static int LastOffscreen;
+        private static readonly AccessTools.FieldRef<scrVisualDecoration, SpriteRenderer> srOff = AccessTools.FieldRefAccess<scrVisualDecoration, SpriteRenderer>("spriteRenderer");
+        private static void CountOffscreen()
+        {
+            int n = 0;
+            for (int i = 0; i < awake.Count; i++)
+            {
+                var v = awake[i] as scrVisualDecoration;
+                if ((object)v == null) continue;
+                var r = srOff(v);
+                if (r != null && r.enabled && !r.forceRenderingOff && !r.isVisible) n++;
+            }
+            LastOffscreen = n;
         }
 
         internal static bool IsDormant(scrDecoration d, bool disableShader)
