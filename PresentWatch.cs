@@ -9,7 +9,7 @@ namespace StutterFix
     // 곡 중 "화면 대기"(메인 스레드가 윈도우에 화면을 넘기며 기다린 시간)가 늘어난 순간의 게임 바깥 상태를 남긴다.
     //
     // 같은 맵 같은 구간에서 CPU(3.7ms)·GPU(1.5ms) 일은 그대로인데 화면 대기만 0 → 1.7ms 로 늘어 FPS 가 250 → 186 이 된 판이
-    // 섞여 나왔다(2026-09-26). 게임·모드가 하는 일이 아니라 윈도우가 화면을 받아 주는 쪽이다: 게임 창 위에 다른 창(오버레이,
+    // 섞여 나왔다(2026-09-26, 원인은 원격 데스크톱 StarDesk: 끄자 사라짐). 게임·모드가 하는 일이 아니라 윈도우가 화면을 받아 주는 쪽이다: 게임 창 위에 다른 창(오버레이,
     // 항상 위 창)이 겹치면 윈도우가 게임 화면을 바로 내보내지 못하고 한 번 더 합성하고, 다른 프로그램이 GPU 를 쓰면 게임 프레임이
     // 그 뒤에서 기다린다. 그래서 대기가 늘어난 순간과 다시 줄어든 순간에 (1) 게임 창이 앞에 있는지 (2) 게임 창 위에 겹친 창의
     // 프로그램 이름과 창 종류 (3) GPU 를 쓰는 다른 프로그램을 적는다. 창 제목은 적지 않는다(개인 정보).
@@ -137,7 +137,9 @@ namespace StutterFix
             try { int c; return DwmGetWindowAttribute(w, DWMWA_CLOAKED, out c, 4) == 0 && c != 0; } catch { return false; }
         }
 
-        // GPU 3D 엔진을 쓰는 다른 프로그램 (0.5초 동안 두 번 읽은 차이)
+        // GPU 를 쓰는 다른 프로그램 (0.5초 동안 두 번 읽은 차이). 3D 말고 영상 인코딩·복사 엔진도 본다:
+        // 원격 데스크톱(StarDesk)·녹화·방송 프로그램은 화면을 캡처해 인코딩하므로 3D 는 거의 안 쓰고 이쪽을 쓴다.
+        // StarDesk 를 끄자 화면 대기 1.7ms 판(186 FPS)이 사라지고 6판 모두 0ms, 280~293 FPS 가 됐다(2026-09-26).
         private static string OtherGpu()
         {
             var pdh = new SystemMonitor.Pdh();
@@ -147,17 +149,25 @@ namespace StutterFix
                 Thread.Sleep(500);
                 if (!pdh.Collect()) return "GPU 사용 프로그램: 읽을 수 없음";
                 uint self = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
-                var byPid = new Dictionary<uint, double>();
+                var d3 = new Dictionary<uint, double>(); var enc = new Dictionary<uint, double>(); var copy = new Dictionary<uint, double>();
                 double total = 0;
                 pdh.ForEach(pdh.Engine, (name, v) =>
                 {
-                    if (name.IndexOf("engtype_3D", StringComparison.OrdinalIgnoreCase) < 0 || !name.StartsWith("pid_", StringComparison.Ordinal)) return;
-                    int end = name.IndexOf('_', 4);
-                    uint pid; if (end < 0 || !uint.TryParse(name.Substring(4, end - 4), out pid)) return;
-                    double cur; byPid.TryGetValue(pid, out cur); byPid[pid] = cur + v; total += v;
+                    if (!name.StartsWith("pid_", StringComparison.Ordinal)) return;
+                    int end = name.IndexOf('_', 4), et = name.IndexOf("engtype_", StringComparison.Ordinal);
+                    uint pid; if (end < 0 || et < 0 || !uint.TryParse(name.Substring(4, end - 4), out pid)) return;
+                    string type = name.Substring(et + 8);
+                    Dictionary<uint, double> into = type.Equals("3D", StringComparison.OrdinalIgnoreCase) ? d3
+                        : type.StartsWith("VideoEncode", StringComparison.OrdinalIgnoreCase) ? enc
+                        : type.Equals("Copy", StringComparison.OrdinalIgnoreCase) ? copy : null;
+                    if (into == null) return;
+                    double cur; into.TryGetValue(pid, out cur); into[pid] = cur + v;
+                    if (into == d3) total += v;
                 });
-                double mine; byPid.TryGetValue(self, out mine); byPid.Remove(self);
-                var list = new List<KeyValuePair<uint, double>>(byPid);
+                double mine; d3.TryGetValue(self, out mine);
+                var sum = new Dictionary<uint, double>();
+                foreach (var m in new[] { d3, enc, copy }) foreach (var kv in m) { if (kv.Key == self) continue; double c; sum.TryGetValue(kv.Key, out c); sum[kv.Key] = c + kv.Value; }
+                var list = new List<KeyValuePair<uint, double>>(sum);
                 list.Sort((a, b) => b.Value.CompareTo(a.Value));
                 var sb = new StringBuilder();
                 sb.AppendFormat("GPU 3D 전체 {0:F0}%, 게임 {1:F0}%", total, mine);
@@ -165,7 +175,10 @@ namespace StutterFix
                 foreach (var kv in list)
                 {
                     if (kv.Value < 1 || shown >= 4) break;
-                    sb.Append(shown == 0 ? ", 다른 프로그램: " : ", ").Append(ProcName(kv.Key)).AppendFormat(" {0:F0}%", kv.Value);
+                    double a, e, c; d3.TryGetValue(kv.Key, out a); enc.TryGetValue(kv.Key, out e); copy.TryGetValue(kv.Key, out c);
+                    sb.Append(shown == 0 ? ", 다른 프로그램: " : ", ").Append(ProcName(kv.Key)).AppendFormat(" 3D {0:F0}%", a);
+                    if (e >= 1) sb.AppendFormat(" 영상 인코딩 {0:F0}%", e);
+                    if (c >= 1) sb.AppendFormat(" 복사 {0:F0}%", c);
                     shown++;
                 }
                 if (shown == 0) sb.Append(", 다른 프로그램 1% 넘는 것 없음");
