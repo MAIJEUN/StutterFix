@@ -1123,8 +1123,8 @@ namespace StutterFix
             {
                 T("모드를 끄면", "Turning it off"), T("UMM 에서 끄면 모든 변경을 즉시 되돌립니다. 멀티스레드 그리기는 다음 실행부터 원래대로 돌아갑니다.",
                     "Turning the mod off in UMM reverts everything immediately. Multithreaded rendering reverts on the next launch."),
-                T("그래도 끊긴다면", "Still stuttering?"), T("필터가 아주 많이 겹치는 구간은 그래픽카드 한계이고, 백그라운드 프로그램이 순간 끊김을 만들 수도 있습니다.",
-                    "Scenes stacking many full-screen filters are limited by the GPU, and background apps can cause occasional hitches."),
+                T("그래도 끊긴다면", "Still stuttering?"), T("필터가 아주 많이 겹치는 구간은 그래픽카드 한계이고, 백그라운드 프로그램이 순간 끊김을 만들 수도 있습니다. 원격 데스크톱(StarDesk 등)·화면 녹화 프로그램이 켜져 있으면 판마다 FPS 가 크게 떨어질 수 있으니 게임할 때는 끄세요.",
+                    "Scenes stacking many full-screen filters are limited by the GPU, and background apps can cause occasional hitches. Remote desktop (StarDesk etc.) or screen recording apps can drop FPS a lot in some runs; close them while playing."),
                 T("소스", "Source"), "github.com/pding4569/StutterFix",
             });
             GUILayout.Space(4);
