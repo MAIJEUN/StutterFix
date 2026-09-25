@@ -326,7 +326,7 @@ namespace StutterFix
                     bool quit = i == n - 1;
                     bool reopen = !quit && canReopen && i == 1;
                     Fill(b, b.Contains(m) ? new Color(0.92f, 0.32f, 0.30f, 0.75f) : new Color(1, 1, 1, 0.08f), 7);
-                    GUI.Label(b, quit ? T("게임 종료", "Quit game") : reopen ? T("이 맵으로 재시작", "Restart into this level") : T("게임 재시작", "Restart game"), sTip);
+                    GUI.Label(b, quit ? T("게임 종료", "Quit game") : reopen ? ReopenLabel() : T("게임 재시작", "Restart game"), sTip);
                     if (GUI.Button(b, GUIContent.none, GUIStyle.none))
                     {
                         if (quit) RestartAdvisor.Quit(); else RestartAdvisor.Restart(reopen);
@@ -338,7 +338,7 @@ namespace StutterFix
             {
                 var lines = new List<string>();
                 lines.Add(T("게임 재시작 · 종료", "Restart / quit game"));
-                if (RestartAdvisor.WillReopen()) lines.Add(T("에디터에서 연 맵으로 바로 다시 켤 수도 있습니다", "Can also restart straight into the level open in the editor"));
+                if (RestartAdvisor.WillReopen()) lines.Add(string.Format(T("에디터에서 연 맵으로 바로 다시 켤 수도 있습니다: {0}", "Can also restart straight into the editor level: {0}"), RestartAdvisor.ReopenName()));
                 if (why.Count > 0) { lines.Add(T("지금 재시작하면 좋은 이유:", "Good time to restart:")); foreach (var s in why) lines.Add("· " + s); }
                 float w = 0; foreach (var s in lines) w = Mathf.Max(w, sTip.CalcSize(new GUIContent(s)).x);
                 w += 22; float h = lines.Count * 22 + 8;
@@ -546,7 +546,7 @@ namespace StutterFix
                 {
                     bool reopen = i == 1, me = homeArmed && homeArmChoice == i;
                     string label = me ? T("한 번 더 누르면 재시작", "Click again to restart")
-                                      : reopen ? T("이 맵으로 재시작", "Restart into this level") : T("게임 재시작", "Restart game");
+                                      : reopen ? ReopenLabel() : T("게임 재시작", "Restart game");
                     if (GUILayout.Button(label, sPrimary, GUILayout.Width(190), GUILayout.Height(38)))
                     {
                         if (me) { homeArmUntil = 0; RestartAdvisor.Restart(reopen); }

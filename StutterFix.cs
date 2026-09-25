@@ -666,6 +666,7 @@ namespace StutterFix
         public int LowAutoMin = 50;         // 자동 해상도 최소 배율 %
         public int LowSplit = 0;            // 효과 몰림 나누기 세기: 0 기본(10ms, 400칸), 1 잘게(5ms, 200칸), 2 아주 잘게(3ms, 120칸)
         public string ReopenLevel = "";     // 재시작 버튼으로 껐을 때 다시 켠 뒤 에디터로 열 맵 (한 번 쓰고 비움)
+        public string LastEditorLevel = ""; // 에디터에서 마지막으로 연 맵 (메인 메뉴에서도 "마지막 맵으로 재시작" 하려고)
         public bool MoveFinish = true;     // 장식 위치 계산 줄이기 (마무리 묶기, 같은 값 건너뛰기, 편집기 작업 건너뛰기, LateUpdate 에 맡기기)
         public bool DormantSkip = true;    // 매 프레임 장식 순회에서 바뀔 일 없는 장식과 히트박스 없는 장식 빼기
         public int ImageMaxSide = -1;       // 큰 이미지 줄이기: 0 끔, -1 자동(VRAM 이 모자랄 때만), 4096, 2048 (긴 변 기준)

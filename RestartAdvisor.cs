@@ -26,6 +26,7 @@ namespace StutterFix
         internal static void Init()
         {
             startedAt = Time.realtimeSinceStartup;
+            try { lastEditorLevel = Main.Config.LastEditorLevel ?? ""; } catch { }   // 다시 켠 뒤에도 마지막 맵을 기억
             try
             {
                 dllPath = Path.Combine(Main.Entry.Path, "StutterFix.dll");
@@ -83,16 +84,27 @@ namespace StutterFix
             return null;
         }
 
+        // 에디터에서 마지막으로 연 맵. 에디터를 나가 메인 메뉴에 있어도 그 맵으로 재시작할 수 있게 기억한다 (1초마다 확인)
+        private static string lastEditorLevel = "";
+        private static float nextTrack;
+        private static void TrackEditorLevel()
+        {
+            if (Time.realtimeSinceStartup < nextTrack) return;
+            nextTrack = Time.realtimeSinceStartup + 1f;
+            try { if (Editor() != null) { string p = ADOBase.levelPath; if (!string.IsNullOrEmpty(p) && p != lastEditorLevel) { lastEditorLevel = p; Main.Config.LastEditorLevel = p; Main.Config.Save(Main.Entry); } } } catch { }
+        }
+
         private static string ReopenTarget()
         {
             try
             {
-                if (Editor() == null) return "";
-                string p = ADOBase.levelPath;
-                return !string.IsNullOrEmpty(p) && File.Exists(p) ? p : "";
+                if (Editor() != null) { string p = ADOBase.levelPath; if (!string.IsNullOrEmpty(p)) lastEditorLevel = p; }
+                return lastEditorLevel.Length > 0 && File.Exists(lastEditorLevel) ? lastEditorLevel : "";
             }
             catch { return ""; }
         }
+        internal static bool InEditor() { return Editor() != null; }
+        internal static string ReopenName() { var p = ReopenTarget(); return p.Length > 0 ? Path.GetFileName(Path.GetDirectoryName(p)) : ""; }
 
         internal static bool WillReopen() { return ReopenTarget().Length > 0; }
         internal static string RecentBlock() { return Time.realtimeSinceStartup - LastBlockAt < 6f ? LastBlock : null; }
@@ -104,12 +116,13 @@ namespace StutterFix
             Main.Config.ReopenLevel = "";                 // 한 번만 (실패해도 다음 실행에서 되풀이하지 않게)
             try { Main.Config.Save(Main.Entry); } catch { }
             if (!File.Exists(p)) { Main.Entry.Logger.Log("[재시작] 다시 열 맵이 없음: " + p); return; }
-            reopenPath = p; reopenStep = 1; reopenStart = Time.realtimeSinceStartup; reopenWait = 0f;
+            reopenPath = p; lastEditorLevel = p; reopenStep = 1; reopenStart = Time.realtimeSinceStartup; reopenWait = 0f;
             Main.Entry.Logger.Log("[재시작] 하던 맵을 다시 엽니다: " + p);
         }
 
         internal static void Tick()
         {
+            TrackEditorLevel();
             if (reopenStep == 0) return;
             if (Time.realtimeSinceStartup - reopenStart > 90f) { reopenStep = 0; Main.Entry.Logger.Log("[재시작] 맵 다시 열기 시간 초과"); return; }
             try
