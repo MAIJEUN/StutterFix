@@ -183,11 +183,21 @@ namespace StutterFix
                     var ev = d.sourceLevelEvent;
                     if (ev == null) continue;
                     h = (h ^ System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(ev)) * 1099511628211L;
-                    var data = dataField.GetValue(ev) as System.Collections.IDictionary;
-                    if (data == null) continue;
-                    long eh = data.Count;
-                    foreach (System.Collections.DictionaryEntry kv in data)   // 순서와 상관없게 더한다
-                        eh += (long)(kv.Key == null ? 0 : kv.Key.GetHashCode()) * 31 + ValueHash(kv.Value);
+                    object raw = dataField.GetValue(ev);
+                    long eh;
+                    var typed = raw as Dictionary<string, object>;   // 박싱 없이 (Arche 2만 8천 개 x 값 30개)
+                    if (typed != null)
+                    {
+                        eh = typed.Count;
+                        foreach (var kv in typed) eh += (long)(kv.Key == null ? 0 : kv.Key.GetHashCode()) * 31 + ValueHash(kv.Value);   // 순서와 상관없게 더한다
+                    }
+                    else
+                    {
+                        var data = raw as System.Collections.IDictionary;
+                        if (data == null) continue;
+                        eh = data.Count;
+                        foreach (System.Collections.DictionaryEntry kv in data) eh += (long)(kv.Key == null ? 0 : kv.Key.GetHashCode()) * 31 + ValueHash(kv.Value);
+                    }
                     h = (h ^ eh) * 1099511628211L;
                 }
                 return h;
