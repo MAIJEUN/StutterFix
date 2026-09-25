@@ -541,7 +541,7 @@ namespace StutterFix
             if (Updater.Available || Updater.Installed) UpdateCard();
             // 다른 모드(Quartz)와 겹치는 기능 안내
             var overlaps = Compat.Notes();
-            if (overlaps.Count > 0) InfoCard(new[] { T("다른 모드와 겹치는 기능 (Quartz)", "Overlaps with other mods (Quartz)"), string.Join("\n\n", overlaps.ToArray()) });
+            if (overlaps.Count > 0) InfoCard(new[] { T("다른 모드와 겹치는 기능", "Overlaps with other mods"), string.Join("\n\n", overlaps.ToArray()) });
 
             // 지금 재시작하면 좋은 때 (메모리가 쌓임, 멀티스레드 그리기 변경, 모드 업데이트 등)
             var why = RestartAdvisor.Reasons();
@@ -928,6 +928,13 @@ namespace StutterFix
             GUILayout.Space(6);
             int ic = c.LowImageCap >= 1024 ? 1 : c.LowImageCap > 0 ? 2 : 0;
             if (Segment("lowimg", ref ic, new[] { T("그대로", "Unchanged"), "1024", "512" })) { c.LowImageCap = ic == 1 ? 1024 : ic == 2 ? 512 : 0; ch = true; }
+            GUILayout.Space(12);
+            ch |= Option("lowcompress", ref c.LowCompressImages, T("이미지 압축해서 불러오기", "Compress images on load"),
+                T("장식 이미지를 DXT 로 압축해서 그래픽카드에 올립니다. 그래픽 메모리가 4분의 1(투명 없는 이미지는 8분의 1)로 줄고 올리는 시간도 줄어듭니다. 압축은 이미지를 불러올 때 여러 CPU 코어에서 미리 합니다('맵 불러오기' 페이지의 '이미지 빠르게 불러오기' 가 켜져 있어야 함). 손실 압축이라 가까이서 보면 이미지가 조금 뭉개질 수 있습니다. 다음에 여는 맵부터 적용됩니다." +
+                  (Compat.Pacl2Lossy ? " (지금 PACL2 의 이미지 손실 압축이 켜져 있어서, 이 옵션과 상관없이 PACL2 대신 여러 코어로 미리 압축하고 있습니다)" : ""),
+                  "Uploads decoration images DXT-compressed: 1/4 of the video memory (1/8 for opaque images) and faster uploads. Compression is done ahead on several CPU cores while loading (needs 'Parallel image loading' on the Level loading page). Lossy, so images can look slightly blocky up close. Applies to the next level you open." +
+                  (Compat.Pacl2Lossy ? " (PACL2 lossy image compression is on, so images are already pre-compressed on several cores in its place, regardless of this option)" : "")),
+                T("그래픽카드", "GPU"));
             Section(T("실험적 기능", "Experimental"));
             GUILayout.Label(T("아직 다듬는 중인 기능입니다. 화면이 마음에 들지 않으면 끄세요.", "Still being tuned. Turn off if you don't like how it looks."), sDim);
             GUILayout.Space(4);
@@ -953,7 +960,7 @@ namespace StutterFix
             { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; c.LowSplit = 1; c.LowMenuFps = 60; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = c.LowPauseParticles = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; c.LowMenuFps = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = c.LowPauseParticles = c.LowCompressImages = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; c.LowMenuFps = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]

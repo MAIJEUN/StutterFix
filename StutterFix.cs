@@ -116,6 +116,7 @@ namespace StutterFix
                 LeakGuard.Install(harmony);
                 LoadFix.Install(harmony);
                 LoadFix.InstallDoubleReset(harmony);
+                TexCompress.Install(harmony);
                 HalfRender.Install(harmony);
                 RenderVerify.Install(harmony);
                 FrameParts.Install(harmony);
@@ -465,7 +466,7 @@ namespace StutterFix
             Fsr.Apply();
             LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
-            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix; LoadFix.CacheFileTimes = Config.LoadCache; LoadFix.SkipDoubleReset = Config.LoadCache; LoadFix.ReverseToggle = Config.LoadCache;
+            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix; LoadFix.CacheFileTimes = Config.LoadCache; LoadFix.SkipDoubleReset = Config.LoadCache; LoadFix.ReverseToggle = Config.LoadCache; TexCompress.OwnOption = Config.LowCompressImages;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
@@ -666,6 +667,7 @@ namespace StutterFix
         public int LowMenuFps = 0;          // 플레이 중이 아닐 때(메뉴·에디터) FPS 제한 (0 끔, 30, 60)
         public bool LowNoFft = false;       // Volume 타일이 없으면 음악 주파수 분석 건너뛰기
         public bool LowPauseParticles = false; // (저사양) 화면 밖 파티클 장식 시뮬레이션 멈추기
+        public bool LowCompressImages = false; // (저사양) 장식 이미지를 DXT 로 압축해서 올리기 (그래픽 메모리 1/4, 여러 코어로 미리 압축)
         public int LowRenderScale = 100;    // 게임 화면(카메라) 해상도 배율 % (10~100), 100 = 원래대로
         public bool LowSharpUpscale = false; // 작게 그린 게임 화면을 선명하게(도트처럼) 늘리기
         public bool LowFsr = false;         // 작게 그린 게임 화면을 AMD FSR 1 로 늘리기 (가장자리 살리기 + 선명도 보정)

@@ -20,12 +20,37 @@ namespace StutterFix
         private static float nextRead = -100f;
         private static DateTime optTime;
 
+        // PACL2: "메모리 최적화" 기능 + "이미지 손실 압축 허용" 이 켜져 있으면 이미지를 올릴 때마다 메인 스레드에서 압축한다
+        // (MemoryOptimizerPatches.Texture2DApplyPrefix -> Texture2D.Compress(false), IL 확인). 이때 이미지 미리 풀기에서 미리 압축해 둔다.
+        internal static bool Pacl2, Pacl2Lossy;
+        private static DateTime pacl2Time;
+        private static void RefreshPacl2()
+        {
+            try
+            {
+                var m = UnityModManager.FindMod("PACL2");
+                Pacl2 = m != null && m.Active;
+                if (!Pacl2) { Pacl2Lossy = false; pacl2Time = default(DateTime); return; }
+                string f = Path.Combine(m.Path, "Settings.json");
+                if (!File.Exists(f)) { Pacl2Lossy = false; return; }
+                var t = File.GetLastWriteTimeUtc(f);
+                if (t == pacl2Time) return;
+                pacl2Time = t;
+                string j = File.ReadAllText(f);
+                bool feature = Regex.IsMatch(j, "\"MemoryOptimizer\"\\s*:\\s*\\{\\s*\"Enabled\"\\s*:\\s*true");
+                Pacl2Lossy = feature && Flag(j, "AllowLossyCompression");
+                Main.Entry.Logger.Log("[다른 모드] PACL2 메모리 최적화 " + (feature ? "켜짐" : "꺼짐") + ", 이미지 손실 압축 " + (Pacl2Lossy ? "켜짐 (이미지 미리 풀기에서 여러 코어로 미리 압축)" : "꺼짐"));
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[다른 모드] PACL2 설정 읽기 실패: " + ex.Message); }
+        }
+
         // 2초마다만 파일을 다시 본다 (설정 창에서 매 프레임 불려도 싸게)
         internal static void Refresh()
         {
             float now = UnityEngine.Time.realtimeSinceStartup;
             if (now < nextRead) return;
             nextRead = now + 2f;
+            RefreshPacl2();
             try
             {
                 var m = UnityModManager.FindMod("Quartz");
@@ -72,8 +97,17 @@ namespace StutterFix
         {
             Refresh();
             var n = new List<string>();
-            if (!Quartz || !QuartzOptimizer) return n;
             var c = Main.Config;
+            if (Pacl2Lossy)
+                n.Add(c.ImagePrefetch
+                    ? SettingsWindow.T("PACL2 '이미지 손실 압축': PACL2 는 이미지를 한 장씩 메인 스레드에서 압축해 맵 불러오기가 느려집니다(Arche 11.5초). 이 모드가 이미지 미리 풀기에서 여러 코어로 미리 압축해 대신 넣습니다.",
+                        "PACL2 'lossy image compression': PACL2 compresses images one at a time on the main thread, slowing level loads (Arche 11.5 s). This mod pre-compresses them on several cores during parallel image loading and hands the result over.")
+                    : SettingsWindow.T("PACL2 '이미지 손실 압축': 맵 불러오기가 느려집니다. '맵 불러오기' 페이지의 '이미지 빠르게 불러오기' 를 켜면 여러 코어로 미리 압축합니다.",
+                        "PACL2 'lossy image compression' slows level loads. Turn on 'Parallel image loading' to pre-compress on several cores."));
+            if (Quartz && QuartzOptimizer && QLossyTexture)
+                n.Add(SettingsWindow.T("Quartz '손실 텍스처 압축': 이미지를 한 장씩 메인 스레드에서 불러와 압축하고 이 모드의 이미지 미리 풀기도 건너뜁니다. 끄고 저사양 페이지의 '이미지 압축해서 불러오기' 를 쓰는 것을 권합니다.",
+                    "Quartz 'Lossy texture compression' loads and compresses images one at a time on the main thread and bypasses this mod's parallel loading. Turn it off and use 'Compress images on load' on the Low-end page instead."));
+            if (!Quartz || !QuartzOptimizer) return n;
             if (QSmoothGC && c.GcPause)
                 n.Add(SettingsWindow.T("메모리 정리: Quartz '부드러운 GC' 와 같은 일을 합니다. 둘 다 켜 두어도 문제는 없지만, Quartz 쪽은 실패·재시작마다 정리해서 재시작이 느려질 수 있습니다. Quartz 쪽을 끄는 것을 권합니다 (이 모드는 쌓인 양이 적으면 건너뜁니다).",
                     "Memory cleanup: same job as Quartz 'Smooth GC'. Both on is safe, but Quartz cleans on every fail/restart, which can slow restarts. Turning Quartz's off is recommended (this mod skips when little has built up)."));

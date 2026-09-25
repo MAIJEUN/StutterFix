@@ -39,6 +39,8 @@
     <Compile Include="ParticleFix.cs" />
     <Compile Include="LeakGuard.cs" />
     <Compile Include="LoadFix.cs" />
+    <Compile Include="DxtEncoder.cs" />
+    <Compile Include="TexCompress.cs" />
     <EmbeddedResource Include="fsr/stutterfix_fsr" LogicalName="StutterFix.fsr" />
     <Compile Include="RenderVerify.cs" />
     <Compile Include="WarmChars.cs" />
