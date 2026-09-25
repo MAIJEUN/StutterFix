@@ -15,6 +15,7 @@ namespace StutterFix
         internal static float Sharpness = 0.2f;   // RCAS 단계 (0 = 가장 선명, 클수록 약함). AMD 기본 0.2
         internal static bool Ready, Failed;
         internal static bool Suppress;              // 검증기가 보통 늘리기와 비교할 때
+        internal static float TestSharp = -2f;      // (개발자용 검증) -2 = 평소, -1 = EASU 만, 0 이상 = 이 세기로 RCAS
         internal static long Frames, Reused;
         private static Material easu, rcas;
         private static RenderTexture mid, outRT;
@@ -102,19 +103,20 @@ namespace StutterFix
                     outRT = new RenderTexture(W, H, 0, camRT.format) { filterMode = FilterMode.Bilinear, hideFlags = HideFlags.HideAndDontSave };
                     mid.Create(); outRT.Create();
                 }
-                if (done == content && ours) { Reused++; return; }
+                if (done == content && ours && TestSharp < -1.5f) { Reused++; return; }
+                float sharp = TestSharp > -1.5f ? TestSharp : Sharpness;   // 검증기: -1 = EASU 만, 0 이상 = 그 세기로 RCAS
                 float iw = camRT.width, ih = camRT.height;
                 easu.SetVector("_Con0", new Vector4(iw / W, ih / H, 0.5f * iw / W - 0.5f, 0.5f * ih / H - 0.5f));
                 easu.SetVector("_Con1", new Vector4(1f / iw, 1f / ih, 1f / iw, -1f / ih));
                 easu.SetVector("_Con2", new Vector4(-1f / iw, 2f / ih, 1f / iw, 2f / ih));
                 easu.SetVector("_Con3", new Vector4(0f, 4f / ih, 0f, 0f));
-                rcas.SetVector("_RcasCon", new Vector4(Mathf.Pow(2f, -Sharpness), 0f, 0f, 0f));
+                rcas.SetVector("_RcasCon", new Vector4(Mathf.Pow(2f, -Mathf.Max(0f, sharp)), 0f, 0f, 0f));
                 var prev = RenderTexture.active;
-                Graphics.Blit(camRT, mid, easu);
-                Graphics.Blit(mid, outRT, rcas);
+                if (sharp < -0.5f) Graphics.Blit(camRT, outRT, easu);
+                else { Graphics.Blit(camRT, mid, easu); Graphics.Blit(mid, outRT, rcas); }
                 RenderTexture.active = prev;
                 quadMat.mainTexture = outRT;
-                done = content; Frames++;
+                if (TestSharp < -1.5f) { done = content; Frames++; } else done = -1;   // 검증용으로 그린 것은 다음 프레임에 다시 그린다
             }
             catch (Exception ex) { Failed = true; Ready = false; Main.Entry.Logger.Log("[저사양] FSR 1 실패, 끔: " + ex.Message); RestoreQuad(); }
         }

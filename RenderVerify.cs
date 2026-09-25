@@ -106,24 +106,65 @@ namespace StutterFix
             // 원래 해상도: 같은 상태를 화면 크기로
             var full = RenderTexture.GetTemporary(Screen.width, Screen.height, 24);
             RenderScene(sc, full);
-            // FSR 이 켜져 있으면 같은 순간을 보통 늘리기로도 찍어 둘 중 어느 쪽이 원래 해상도에 가까운지 본다 (작게 줄이면 차이가 뭉개지므로 화면 크기 그대로 비교)
-            bool fsr = Fsr.Active;
-            RenderTexture plain = null;
-            if (fsr) { Fsr.Suppress = true; try { plain = OverlayShot(sc); } finally { Fsr.Suppress = false; } }
-            double fsrFull = 0, plainFull = 0;
-            if (fsr) { var F = Read(full); fsrFull = FullDiff(F, Read(shown)); plainFull = FullDiff(F, Read(plain)); RenderTexture.ReleaseTemporary(plain); }
+            // FSR 이 켜져 있으면 같은 순간을 여러 방식으로 늘려 화면 크기 그대로 원래 해상도와 비교한다 (작게 줄이면 차이가 뭉개진다)
+            //   전체 차이, 테두리(원래 화면에서 밝기가 크게 바뀌는 픽셀)만의 차이, 선명도(이웃 밝기 차이 평균)가 원래의 몇 %인지
+            string fsrText = Fsr.Active ? CompareUpscalers(sc, full) : "";
             var a = Small(full); var b = Small(shown);
             RenderTexture.ReleaseTemporary(full); RenderTexture.ReleaseTemporary(shown);
             double best = double.MaxValue; int bx = 0, by = 0;
             for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) { double d = Diff(a, b, dx, dy); if (d < best) { best = d; bx = dx; by = dy; } }
             ScaleN++; ScaleDiffSum += best; if (bx != 0 || by != 0) ScaleMisaligned++;
-            if (fsr) { FsrN++; FsrSum += fsrFull; PlainSum += plainFull; if (fsrFull <= plainFull) FsrBetter++; }
             Main.Entry.Logger.Log(string.Format("[저사양 검증] 해상도 {0}% ({1}x{2}): 원래 해상도와 평균 차이 {3:F2}/255, 가장 잘 맞는 어긋남 ({4},{5}){6}",
                 LowEnd.EffectivePct, camRT.width, camRT.height, best, bx, by,
-                fsr ? string.Format(" | 화면 크기 비교: FSR {0:F2}, 보통 늘리기 {1:F2}", fsrFull, plainFull) : ""));
+                fsrText));
         }
-        internal static long FsrN, FsrBetter;
-        internal static double FsrSum, PlainSum;
+        internal static long FsrN;
+        private static readonly string[] VarName = { "보통", "EASU만", "RCAS0", "RCAS0.2", "RCAS0.5", "RCAS1", "RCAS2" };
+        private static readonly float[] VarSharp = { -9f, -1f, 0f, 0.2f, 0.5f, 1f, 2f };
+        internal static readonly double[] VAll = new double[7], VEdge = new double[7], VSharp = new double[7];
+        private static string CompareUpscalers(scrCamera sc, RenderTexture full)
+        {
+            var F = Read(full);
+            int W = full.width, H = full.height;
+            // 원래 화면에서 밝기(초록)가 크게 바뀌는 픽셀 = 테두리
+            var edge = new bool[F.Length];
+            double nativeGrad = 0; long gn = 0;
+            for (int y = 1; y < H; y++) for (int x = 1; x < W; x++)
+            {
+                int i = y * W + x;
+                int g = Math.Abs(F[i].g - F[i - 1].g) + Math.Abs(F[i].g - F[i - W].g);
+                nativeGrad += g; gn++;
+                if (g > 32) edge[i] = true;
+            }
+            nativeGrad /= Math.Max(1, gn);
+            var sb = new System.Text.StringBuilder(" | 늘리기 비교 (전체/테두리 차이, 선명도%):");
+            try
+            {
+                for (int v = 0; v < VarName.Length; v++)
+                {
+                    RenderTexture shot;
+                    if (v == 0) { Fsr.Suppress = true; try { shot = OverlayShot(sc); } finally { Fsr.Suppress = false; } }
+                    else { Fsr.TestSharp = VarSharp[v]; try { shot = OverlayShot(sc); } finally { Fsr.TestSharp = -2f; } }
+                    var P = Read(shot);
+                    RenderTexture.ReleaseTemporary(shot);
+                    long all = 0, en = 0, es = 0; double grad = 0;
+                    for (int y = 1; y < H; y++) for (int x = 1; x < W; x++)
+                    {
+                        int i = y * W + x; var p = F[i]; var q = P[i];
+                        int d = Math.Abs(p.r - q.r) + Math.Abs(p.g - q.g) + Math.Abs(p.b - q.b);
+                        all += d;
+                        if (edge[i]) { es += d; en++; }
+                        grad += Math.Abs(q.g - P[i - 1].g) + Math.Abs(q.g - P[i - W].g);
+                    }
+                    double dAll = all / (3.0 * Math.Max(1, gn)), dEdge = es / (3.0 * Math.Max(1, en)), sharp = nativeGrad > 0 ? 100.0 * grad / Math.Max(1, gn) / nativeGrad : 0;
+                    VAll[v] += dAll; VEdge[v] += dEdge; VSharp[v] += sharp;
+                    sb.AppendFormat(" {0} {1:F2}/{2:F1}/{3:F0}%", VarName[v], dAll, dEdge, sharp);
+                }
+                FsrN++;
+            }
+            catch (Exception ex) { sb.Append(" 실패: " + ex.Message); }
+            return sb.ToString();
+        }
         private static Texture2D fullTex;
         private static Color32[] Read(RenderTexture rt)
         {
@@ -175,7 +216,11 @@ namespace StutterFix
         {
             string s = "";
             if (ScaleN > 0) s += string.Format(" | 해상도 검증 {0}번: 평균 차이 {1:F2}/255, 어긋남 {2}번", ScaleN, ScaleDiffSum / ScaleN, ScaleMisaligned);
-            if (FsrN > 0) s += string.Format(" | FSR 검증 {0}번: 원래 해상도와 차이 FSR {1:F2}, 보통 늘리기 {2:F2}, FSR 이 나은 경우 {3}번", FsrN, FsrSum / FsrN, PlainSum / FsrN, FsrBetter);
+            if (FsrN > 0)
+            {
+                s += " | 늘리기 비교 " + FsrN + "번 평균 (전체/테두리 차이, 선명도%):";
+                for (int v = 0; v < VarName.Length; v++) s += string.Format(" {0} {1:F2}/{2:F1}/{3:F0}%", VarName[v], VAll[v] / FsrN, VEdge[v] / FsrN, VSharp[v] / FsrN);
+            }
             if (HalfN > 0) { s += string.Format(" | 반만 그리기 검증 {0}번: 옮긴 것 평균 차이 {1:F2}, 안 옮긴 것 {2:F2}, 옮긴 쪽이 나은 경우 {3}번 ", HalfN, HalfFixSum / HalfN, HalfRawSum / HalfN, HalfBetter); }
             return s;
         }

@@ -285,6 +285,7 @@ namespace StutterFix
             if (__result == null) __result = __0 ?? AddRunning(new List<Tween>(n));
             else if (!ReferenceEquals(__result, __0)) AddRunning(__result);
             Listed += n;
+            Main.Entry.Logger.Log("[장식 애니메이션] 게임이 재생 중인 애니메이션 목록을 가져감 (멈춤/체크포인트 시작): 모드 애니메이션 " + n + "개를 함께 넘김");
         }
         private static List<Tween> AddRunning(List<Tween> list)
         {
