@@ -116,6 +116,7 @@ namespace StutterFix
                 }
                 long mono = GC.GetTotalMemory(false) / 1048576, native = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576;
                 sb.AppendFormat(" 관리 힙 {0}MB, 엔진 메모리 {1}MB ({2}ms)", mono, native, sw.ElapsedMilliseconds);
+                string ap = LoadFix.ApplySummary(); if (ap.Length > 0) sb.Append(" | " + ap);
                 Main.Entry.Logger.Log(sb.ToString());
                 lastCount = count; lastBytes = bytes; lastNames = names;
             }

@@ -32,10 +32,13 @@ namespace StutterFix
                     foreach (var m in typeof(TextureManager).GetMethods(AccessTools.all))
                         if (m.Name == name && !m.IsAbstract) h.Patch(m, transpiler: new HarmonyMethod(typeof(LoadFix), nameof(TimeTranspiler)));
                 Main.Entry.Logger.Log("[로딩] 이미지 파일 시각 캐시 설치 (바꾼 곳 " + replaced + ")");
+                // 에디터 클릭용 충돌 상자: 오브젝트는 켜 둔 채 충돌 상자만 켜고 끈다 (아래 SetColliderFast 설명)
+                var sc = AccessTools.Method(typeof(scrDecoration), "SetCollider", new[] { typeof(bool) });
+                if (sc != null && sc.DeclaringType == typeof(scrDecoration) && colField != null) h.Patch(sc, prefix: new HarmonyMethod(typeof(LoadFix), nameof(SetColliderFast)));
                 if (Edition.Dev)
                 {
-                    var sc = AccessTools.Method(typeof(scrDecoration), "SetCollider", new[] { typeof(bool) });
-                    if (sc != null && sc.DeclaringType == typeof(scrDecoration)) h.Patch(sc, prefix: new HarmonyMethod(typeof(LoadFix), nameof(SetColliderProbe)));
+                    var apply = AccessTools.Method(typeof(Texture2D), "Apply", new[] { typeof(bool), typeof(bool) });
+                    if (apply != null) h.Patch(apply, prefix: new HarmonyMethod(typeof(LoadFix), nameof(ApplyPrefix)), postfix: new HarmonyMethod(typeof(LoadFix), nameof(ApplyPostfix)));
                 }
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[로딩] 설치 실패: " + ex.Message); }
@@ -76,28 +79,45 @@ namespace StutterFix
         // ── (개발자용) 충돌 상자 켜고 끄기 비용 ──
         private static readonly System.Reflection.FieldInfo colField = AccessTools.Field(typeof(scrDecoration), "editorCollider");
         internal static long ColCalls, ColActiveTicks, ColEnableTicks, ColActiveChanged, ColEnableChanged;
-        private static bool colLogged;
-        public static bool SetColliderProbe(scrDecoration __instance, bool __0)
+        // 원래(scrDecoration.SetCollider, IL): editorCollider 가 있으면 그 GameObject.SetActive(값) 후 editorCollider.enabled = 값.
+        // 측정(Arche 재생 시작): SetActive 2.3~2.7초, enabled 0.1~0.2초 (장식 2만 8천 개). 이 오브젝트는 Transform + BoxCollider2D 뿐이고
+        // 자식이 없으며(개발자용 로그로 확인), 게임에서 editorCollider 의 오브젝트 켜짐 상태를 읽는 곳은 이 함수뿐이다(IL 전체 검색).
+        // 꺼진 충돌 상자는 물리 검사(재생 중 타일 찾기 OverlapPointAll, 에디터 클릭 RaycastAll)에 잡히지 않으므로, 오브젝트는 켜 둔 채
+        // 충돌 상자만 끄고 켜도 결과가 같다. 꺼져 있던 오브젝트를 켜야 할 때만 원래처럼 SetActive(true) 한다(처음 한 번).
+        // (scrObjectDecoration 은 자기 SetCollider 가 따로 있어 그대로 둔다)
+        internal static bool FastCollider = true;
+        public static bool SetColliderFast(scrDecoration __instance, bool __0)
         {
-            var c = colField == null ? null : colField.GetValue(__instance) as Behaviour;
+            if (!FastCollider) return true;
+            var c = colField.GetValue(__instance) as Behaviour;
             if (c == null) return false;   // 원래 코드도 null 이면 아무것도 안 한다
-            var go = c.gameObject;
-            if (!colLogged)
-            {
-                colLogged = true;
-                var names = new List<string>();
-                foreach (var comp in go.GetComponents<Component>()) names.Add(comp.GetType().Name);
-                Main.Entry.Logger.Log("[로딩] 충돌 상자 오브젝트 구성: " + string.Join(", ", names.ToArray()) + ", 자식 " + go.transform.childCount + "개, 종류 " + c.GetType().Name);
-            }
-            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (go.activeSelf != __0) ColActiveChanged++;
-            go.SetActive(__0);
-            long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (c.enabled != __0) ColEnableChanged++;
-            c.enabled = __0;
-            long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
-            ColCalls++; ColActiveTicks += t1 - t0; ColEnableTicks += t2 - t1;
+            long t0 = Edition.Dev ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            if (__0) { var go = c.gameObject; if (!go.activeSelf) { go.SetActive(true); ColActiveChanged++; } }
+            if (c.enabled != __0) { c.enabled = __0; ColEnableChanged++; }
+            if (Edition.Dev) { ColCalls++; ColEnableTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; }
             return false;
+        }
+
+        // (개발자용) 이미지 올리기(Texture2D.Apply) 비용: 크기와 시간
+        [ThreadStatic] private static long applyT0;
+        internal static long ApplyN, ApplyTicks, ApplyBytes; internal static string ApplySlow = ""; private static double applySlowMs;
+        public static void ApplyPrefix() { applyT0 = System.Diagnostics.Stopwatch.GetTimestamp(); }
+        public static void ApplyPostfix(Texture2D __instance)
+        {
+            long dt = System.Diagnostics.Stopwatch.GetTimestamp() - applyT0;
+            ApplyN++; ApplyTicks += dt;
+            long bytes = 0; try { bytes = (long)__instance.width * __instance.height * 4; } catch { }
+            ApplyBytes += bytes;
+            double ms = dt * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (ms > applySlowMs) { applySlowMs = ms; ApplySlow = string.Format("{0}x{1} {2} {3:F0}ms", __instance.width, __instance.height, __instance.format, ms); }
+        }
+        internal static string ApplySummary()
+        {
+            if (ApplyN == 0) return "";
+            double ms = ApplyTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            string s = string.Format("이미지 올리기 {0}장 {1}MB {2:F0}ms ({3:F0}MB/s), 가장 느린 것 {4}", ApplyN, ApplyBytes / 1048576, ms, ms > 0 ? ApplyBytes / 1048576.0 / (ms / 1000.0) : 0, ApplySlow);
+            ApplyN = ApplyTicks = ApplyBytes = 0; ApplySlow = ""; applySlowMs = 0;
+            return s;
         }
 
         // ── 3) 에디터 재생 시작 때 장식 다시 설정 한 번 줄이기 ──
@@ -108,7 +128,7 @@ namespace StutterFix
         // 하나도 바뀌지 않았으면 태그 목록도 그때와 똑같으므로, 첫 번째 다시 설정과 짝인 표시/내리기를 건너뛴다(안 쓰는 이미지는 다음
         // 맵 열기 때 내려간다). 조금이라도 바뀌었으면 원래대로 한다.
         // 개발자용: 건너뛴 재생과 안 건너뛴 재생을 번갈아 하고, 재생 준비가 끝난 순간 모든 장식의 상태를 비교한다.
-        internal static bool SkipDoubleReset = true;
+        internal static bool SkipDoubleReset = Edition.Dev;   // 검증(다른 것 0)이 끝날 때까지 개발자용에서만
         internal static long ResetsSkipped, ResetsKept;
         private static bool inEditorPlay, inReload, skipping, haveFp, lastPlaySkipped;
         private static long lastFp;
@@ -146,7 +166,7 @@ namespace StutterFix
             try
             {
                 bool same = Fingerprint() == lastFp;
-                skipping = same && (!Edition.Dev || (devPlays++ % 2 == 1));   // 개발자용은 번갈아
+                skipping = same && (devPlays++ / 2) % 2 == 1;   // (개발자용에서만 켬) 안 건너뜀 두 번, 건너뜀 두 번 차례로: 같은 방식끼리 비교가 기준선
                 if (!same) Main.Entry.Logger.Log("[로딩] 장식이 바뀌어 장식 다시 설정을 원래대로 두 번 함");
             }
             catch (Exception ex) { skipping = false; Main.Entry.Logger.Log("[로딩] 장식 지문 실패, 원래대로: " + ex.Message); }
@@ -218,7 +238,10 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrDecoration, Vector2> scaleRef = AccessTools.FieldRefAccess<scrDecoration, Vector2>("scaleVec");
         private static readonly AccessTools.FieldRef<scrDecoration, Color> colRef2 = AccessTools.FieldRefAccess<scrDecoration, Color>("color");
         private static readonly AccessTools.FieldRef<scrDecoration, float> opaRef = AccessTools.FieldRefAccess<scrDecoration, float>("opacity");
-        private static long[] lastSnap; private static long lastSnapFp; private static bool lastSnapSkipped;
+        // 장식마다 부분별 해시: 0 기준 위치·회전·크기, 1 색·불투명도, 2 보임, 3 히트박스, 4 실제 위치, 5 실제 회전·크기, 6 그림(스프라이트·켜짐·색)
+        private const int Parts = 7;
+        private static readonly string[] PartName = { "기준 위치/회전/크기", "색/불투명도", "보임", "히트박스", "실제 위치", "실제 회전/크기", "그림" };
+        private static long[] lastSnap; private static long lastTags; private static long lastSnapFp; private static bool lastSnapSkipped;
         internal static long VerifyN, VerifyDiffs;
         private static void VerifyAfterPlay()
         {
@@ -227,31 +250,52 @@ namespace StutterFix
                 var mgr = scrDecorationManager.instance;
                 var all = mgr == null ? null : allRef(mgr);
                 if (all == null || !haveFp) return;
-                var snap = new long[all.Count + 1];
+                var snap = new long[all.Count * Parts];
                 for (int i = 0; i < all.Count; i++)
                 {
                     var d = all[i];
                     if ((object)d == null) continue;
                     unchecked
                     {
-                        long h = pivotPosRef(d).GetHashCode() * 31L + rotRef(d).GetHashCode();
-                        h = h * 31 + scaleRef(d).GetHashCode(); h = h * 31 + colRef2(d).GetHashCode(); h = h * 31 + opaRef(d).GetHashCode();
-                        h = h * 31 + (d.GetVisible() ? 1 : 0); h = h * 31 + d.hitbox.GetHashCode();
-                        var t = d.transform; h = h * 31 + t.position.GetHashCode(); h = h * 31 + t.rotation.GetHashCode(); h = h * 31 + t.lossyScale.GetHashCode();
+                        int o = i * Parts;
+                        snap[o] = pivotPosRef(d).GetHashCode() * 31L + rotRef(d).GetHashCode() * 7L + scaleRef(d).GetHashCode();
+                        snap[o + 1] = colRef2(d).GetHashCode() * 31L + opaRef(d).GetHashCode();
+                        snap[o + 2] = d.GetVisible() ? 1 : 0;
+                        snap[o + 3] = d.hitbox.GetHashCode();
+                        var t = d.transform; snap[o + 4] = t.position.GetHashCode(); snap[o + 5] = t.rotation.GetHashCode() * 31L + t.lossyScale.GetHashCode();
+                        long g = 0;
                         var v = d as scrVisualDecoration;
-                        if (v != null) foreach (var r in v.GetComponentsInChildren<SpriteRenderer>(true)) { h = h * 31 + (r.sprite == null ? 0 : r.sprite.GetInstanceID()); h = h * 31 + (r.enabled ? 1 : 0); h = h * 31 + r.color.GetHashCode(); }
-                        snap[i] = h;
+                        if (v != null) foreach (var r in v.GetComponentsInChildren<SpriteRenderer>(true)) { g = g * 31 + (r.sprite == null ? 0 : r.sprite.GetInstanceID()); g = g * 31 + (r.enabled ? 1 : 0); g = g * 31 + r.color.GetHashCode(); }
+                        snap[o + 6] = g;
                     }
                 }
-                snap[all.Count] = TagCount(mgr);
-                if (lastSnap != null && lastSnap.Length == snap.Length && lastSnapFp == lastFp && lastSnapSkipped != lastPlaySkipped)
+                long tags = TagCount(mgr);
+                // 같은 장식 데이터로 연 두 재생끼리 비교: 건너뜀/안 건너뜀이 섞인 쌍과, 같은 방식끼리의 쌍(원래 흔들림 기준선)
+                if (lastSnap != null && lastSnap.Length == snap.Length && lastSnapFp == lastFp)
                 {
-                    int diff = 0;
-                    for (int i = 0; i < snap.Length; i++) if (snap[i] != lastSnap[i]) diff++;
-                    VerifyN++; VerifyDiffs += diff;
-                    Main.Entry.Logger.Log(string.Format("[로딩 검증] 장식 {0}개: 첫 번째 다시 설정을 건너뛴 재생과 한 재생의 재생 준비 끝 상태 비교 - 다른 것 {1}개{2}", all.Count, diff, diff > 0 && snap[all.Count] != lastSnap[all.Count] ? " (태그 목록 다름)" : ""));
+                    int diff = 0; var byPart = new int[Parts]; var sb = new System.Text.StringBuilder();
+                    for (int i = 0; i < all.Count; i++)
+                    {
+                        bool any = false;
+                        for (int p = 0; p < Parts; p++) if (snap[i * Parts + p] != lastSnap[i * Parts + p]) { byPart[p]++; any = true; }
+                        if (!any) continue;
+                        diff++;
+                        if (diff <= 6)
+                        {
+                            var d = all[i]; string tag = "";
+                            try { var ev = d.sourceLevelEvent; if (ev != null) tag = Convert.ToString(ev["tag"]); } catch { }
+                            sb.AppendFormat(" [#{0} {1} 태그 '{2}' 보임 {3}:", i, d.GetType().Name, tag, d.GetVisible());
+                            for (int p = 0; p < Parts; p++) if (snap[i * Parts + p] != lastSnap[i * Parts + p]) sb.Append(" " + PartName[p]);
+                            sb.Append("]");
+                        }
+                    }
+                    string kind = lastSnapSkipped == lastPlaySkipped ? (lastPlaySkipped ? "건너뜀끼리(기준선)" : "안 건너뜀끼리(기준선)") : "건너뜀 대 안 건너뜀";
+                    if (lastSnapSkipped != lastPlaySkipped) { VerifyN++; VerifyDiffs += diff; }
+                    var parts = new List<string>(); for (int p = 0; p < Parts; p++) if (byPart[p] > 0) parts.Add(PartName[p] + " " + byPart[p]);
+                    Main.Entry.Logger.Log(string.Format("[로딩 검증] {0}: 장식 {1}개 중 재생 준비 끝 상태가 다른 것 {2}개{3}{4}{5}", kind, all.Count, diff,
+                        parts.Count > 0 ? " (" + string.Join(", ", parts.ToArray()) + ")" : "", tags != lastTags ? ", 태그 목록 다름" : ", 태그 목록 같음", sb.ToString()));
                 }
-                lastSnap = snap; lastSnapFp = lastFp; lastSnapSkipped = lastPlaySkipped;
+                lastSnap = snap; lastTags = tags; lastSnapFp = lastFp; lastSnapSkipped = lastPlaySkipped;
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[로딩 검증] 실패: " + ex.Message); }
         }
@@ -275,7 +319,7 @@ namespace StutterFix
             if (ColCalls > 0)
             {
                 double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-                s += string.Format(" | 충돌 상자 {0}번: 오브젝트 켜기/끄기 {1:F0}ms (바뀐 것 {2}), 충돌 상자 켜기/끄기 {3:F0}ms (바뀐 것 {4})", ColCalls, ColActiveTicks * f, ColActiveChanged, ColEnableTicks * f, ColEnableChanged);
+                s += string.Format(" | 충돌 상자 {0}번 {1:F0}ms (충돌 상자만 켜고 끔 {2}, 오브젝트 켬 {3})", ColCalls, ColEnableTicks * f, ColEnableChanged, ColActiveChanged);
             }
             return s;
         }

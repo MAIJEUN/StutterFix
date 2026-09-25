@@ -276,7 +276,7 @@ namespace StutterFix
                     used = fallback = notReady = 0; waitMs = 0; shrunkCount = 0; savedBytes = 0;
                 }
                 startTicks = Stopwatch.GetTimestamp();
-                putMs = fallbackMs = 0;
+                putMs = fallbackMs = 0; fallbackNotes = 0;
                 gcAtStart = GC.CollectionCount(0);
                 // 로딩 동안 GC를 꺼 둔다. 지난번 로딩 중 GC가 13번 돌았다. 곡 중 GC 멈춤이 이미 끈 상태면 건드리지 않는다.
                 if (!GcControl.Paused && UnityEngine.Scripting.GarbageCollector.GCMode == UnityEngine.Scripting.GarbageCollector.Mode.Enabled)
@@ -372,6 +372,7 @@ namespace StutterFix
         public static byte[] ReadAllBytes(string path, out ADOFAI.LoadResult loadResult)
         {
             Item it = null;
+            string why = null;
             if (running)
             {
                 long t0 = Stopwatch.GetTimestamp();
@@ -380,20 +381,27 @@ namespace StutterFix
                     if (byPath.TryGetValue(path, out it))
                     {
                         // 아직 시작 안 한 것은 기다리지 않는다(순서가 어긋났다는 뜻). 푸는 중이면 끝날 때까지 기다린다.
-                        if (it.State == 0) { it.State = 3; notReady++; it = null; }
+                        if (it.State == 0) { it.State = 3; notReady++; it = null; why = "순서 어긋남"; }
                         else
                         {
                             while (it.State == 1 && running) Monitor.Wait(gate, 100);
                             if (it.State == 2) { it.State = 4; pendingBytes -= it.Size; DropSkipped(it.Index); Monitor.PulseAll(gate); }
-                            else it = null;
+                            else { it = null; why = "해독 못 함(지원하지 않는 PNG 형식이거나 오류)"; }
                         }
                     }
+                    else why = "미리 풀기 목록에 없음";
                 }
                 waitMs += (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
             }
 
             if (it == null)
             {
+                if (running && Edition.Dev && fallbackNotes < 20)
+                {
+                    fallbackNotes++;
+                    long len = -1; try { len = new FileInfo(path).Length; } catch { }
+                    Main.Entry.Logger.Log(string.Format("[이미지] 원래 방식으로: {0} ({1}, {2}KB)", Path.GetFileName(path), why, len / 1024));
+                }
                 if (running) fallback++;
                 return RDFile.ReadAllBytes(path, out loadResult);
             }
@@ -486,6 +494,7 @@ namespace StutterFix
         }
 
         private static double putMs, fallbackMs;
+        private static int fallbackNotes;   // (개발자용) 원래 방식으로 간 이미지 이름을 맵마다 20장까지
         private static int gcAtStart;
         private static bool gcWasOn;
 

@@ -465,7 +465,7 @@ namespace StutterFix
             Fsr.Apply();
             LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
-            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix; LoadFix.CacheFileTimes = Config.LoadCache; LoadFix.SkipDoubleReset = Config.LoadCache;
+            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix; LoadFix.CacheFileTimes = Config.LoadCache; LoadFix.SkipDoubleReset = Edition.Dev && Config.LoadCache; LoadFix.FastCollider = Config.LoadCache;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
