@@ -122,6 +122,19 @@ namespace StutterFix
         }
 
         // 모드가 고친 게임 함수 중 다른 모드도 고친 것 (게임이 켜지고 조금 뒤 한 번 로그에 남긴다)
+        internal static string SharedSummary = "";          // 모드별 곳 수 (예: "Quartz 12곳, PACL2 3곳")
+        internal static List<string> SharedDetail = new List<string>();
+        // Harmony 주인 이름을 모드 이름으로 줄인다 (quartz.module.optimizer -> Quartz, "JAPatch: PACL2.Features..." -> PACL2)
+        private static string ModName(string owner)
+        {
+            string o = owner;
+            if (o.StartsWith("JAPatch: ", StringComparison.Ordinal)) o = o.Substring(9);
+            int dot = o.IndexOf('.');
+            string head = dot > 0 ? o.Substring(0, dot) : o;
+            if (head.Equals("quartz", StringComparison.OrdinalIgnoreCase)) return "Quartz";
+            if (head.Equals("adofai_tweaks", StringComparison.OrdinalIgnoreCase)) return "AdofaiTweaks";
+            return head;
+        }
         private static bool logged;
         internal static void LogSharedPatches()
         {
@@ -130,14 +143,20 @@ namespace StutterFix
             try
             {
                 var shared = new List<string>();
+                var mods = new SortedDictionary<string, int>();
                 foreach (var m in Harmony.GetAllPatchedMethods())
                 {
                     var info = Harmony.GetPatchInfo(m);
                     if (info == null) continue;
                     bool mine = false; var others = new HashSet<string>();
                     foreach (var o in info.Owners) { if (o.StartsWith("StutterFix", StringComparison.OrdinalIgnoreCase)) mine = true; else others.Add(o); }
-                    if (mine && others.Count > 0) shared.Add((m.DeclaringType != null ? m.DeclaringType.Name + "." : "") + m.Name + " (" + string.Join(", ", new List<string>(others).ToArray()) + ")");
+                    if (!mine || others.Count == 0) continue;
+                    shared.Add((m.DeclaringType != null ? m.DeclaringType.Name + "." : "") + m.Name + " (" + string.Join(", ", new List<string>(others).ToArray()) + ")");
+                    foreach (var o in others) { string k = ModName(o); int c; mods.TryGetValue(k, out c); mods[k] = c + 1; }
                 }
+                var parts = new List<string>(); foreach (var kv in mods) parts.Add(kv.Key + " " + kv.Value + "곳");
+                SharedSummary = string.Join(", ", parts.ToArray());
+                SharedDetail = shared;
                 Main.Entry.Logger.Log("[다른 모드] 같은 게임 함수를 고치는 곳 " + shared.Count + "개" + (shared.Count > 0 ? ": " + string.Join(" | ", shared.ToArray()) : ""));
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[다른 모드] 겹침 확인 실패: " + ex.Message); }

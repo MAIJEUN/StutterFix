@@ -60,6 +60,12 @@ namespace StutterFix
             {
                 var harmony = new Harmony("StutterFix.GcControl");
 
+                // 맵 파일 읽기(LevelData.LoadLevel: 파일 전체를 문자열로 읽고 JSON 해석, 이벤트 수만 개 만들기) 동안 GC 멈추기
+                var levelData = AccessTools.TypeByName("ADOFAI.LevelData") ?? AccessTools.TypeByName("LevelData");
+                if (levelData != null) foreach (var m in levelData.GetMethods(AccessTools.all))
+                    if (m.Name == "LoadLevel" && !m.IsAbstract && m.DeclaringType == levelData)
+                        harmony.Patch(m, prefix: new HarmonyMethod(typeof(GcControl), nameof(ParsePrefix)), finalizer: new HarmonyMethod(typeof(GcControl), nameof(ParseFinalizer)));
+
                 var scnGame = AccessTools.TypeByName("scnGame");
                 if (scnGame != null)
                 {
@@ -161,6 +167,45 @@ namespace StutterFix
             resumeCountdown = -1f;
             Resume("모드 꺼짐");
             patched = false;   // 다시 켜면 다시 건다
+        }
+
+        // ── 맵 파일 읽는 동안 GC 멈추기 ──
+        // Arche(42MB 맵 파일)에서 LevelData.LoadLevel 7.5초 동안 GC 가 16번 돌았다. 해석하며 생기는 임시 데이터로 힙이 자라서
+        // 한 번에 0.1~0.3초씩 걸린다. 이 동안만 GC 를 멈추고 끝나면 원래대로 켠다(쌓인 것은 뒤이은 이미지 불러오기 끝의 정리나
+        // 다음 GC 가 치운다). 멈춘 동안 힙이 파일 크기의 수십 배까지 늘 수 있어서, RAM 이 12GB 이상이고 파일이 200MB 이하일 때만 한다.
+        internal static bool ParsePause = true;
+        private static bool parsePaused;
+        private static long parseT0, parseHeap0; private static int parseGc0;
+        public static void ParsePrefix(object[] __args)
+        {
+            Resilience.Phase("맵 파일 읽는 중");
+            if (!Enabled || !ParsePause || Paused || parsePaused) return;
+            try
+            {
+                if (ramMB == 0) { try { ramMB = SystemInfo.systemMemorySize; } catch { ramMB = -1; } }
+                if (ramMB < 12000) return;
+                string path = __args != null && __args.Length > 0 ? __args[0] as string : null;
+                long size = 0; try { if (path != null && System.IO.File.Exists(path)) size = new System.IO.FileInfo(path).Length; } catch { }
+                if (size > 200L * 1048576) return;
+                if (GarbageCollector.GCMode != GarbageCollector.Mode.Enabled) return;
+                parseHeap0 = GC.GetTotalMemory(false); parseGc0 = GC.CollectionCount(0); parseT0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                parsePaused = true;
+            }
+            catch { }
+        }
+        public static Exception ParseFinalizer(Exception __exception)
+        {
+            if (!parsePaused) return __exception;
+            parsePaused = false;
+            try
+            {
+                GarbageCollector.GCMode = GarbageCollector.Mode.Enabled;
+                double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - parseT0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                Main.Entry.Logger.Log(string.Format("[맵 파일 읽기] GC 멈춤 {0:F0}ms, 힙 {1}MB -> {2}MB (그 사이 GC {3}번)", ms, parseHeap0 / 1048576, GC.GetTotalMemory(false) / 1048576, GC.CollectionCount(0) - parseGc0));
+            }
+            catch { }
+            return __exception;
         }
 
         public static void AfterLoad() { endedByHook = false; LeakGuard.ScheduleCensus("맵 불러온 뒤", 2f); PerfOverlay.MarkLoading(SettingsWindow.T("맵 불러오기", "Level load")); PerfOverlay.LevelActivity(); Resume("맵 로딩"); }

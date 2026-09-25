@@ -33,6 +33,7 @@ namespace StutterFix
         {
             Entry = modEntry;
             Config = UnityModManager.ModSettings.Load<Settings>(modEntry);
+            Resilience.Init();   // 비정상 종료 감지 (안전 모드면 이번 실행 동안 일부 기능을 끔)
 
             modEntry.OnGUI = OnGUI;
             modEntry.OnSaveGUI = OnSaveGUI;
@@ -54,7 +55,7 @@ namespace StutterFix
         // 이제 끄면 다시 불러오기 때와 똑같이 전부 풀고, 켜면 다시 건다.
         private static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
         {
-            if (value) InstallAll(); else UninstallAll();
+            if (value) { Resilience.Init(); InstallAll(); } else UninstallAll();
             // 모드를 끄면 게임 파일도 원래대로 돌려놓는다(다음 실행부터 원래 방식).
             // 다시 불러오기도 내부에서 끄기 -> 켜기를 거치므로 그때는 건드리지 않는다
             // (중간에 실패하면 legacy 줄이 빠진 채로 남았다).
@@ -302,6 +303,7 @@ namespace StutterFix
             Try(LowEnd.Shutdown);
             Try(HalfRender.Shutdown);
             Try(ParticleFix.Shutdown);
+            Try(Resilience.Shutdown);
             Try(Fsr.Shutdown);
             Try(RenderWatch.Shutdown);
             Try(PhaseWatch.Uninstall);
@@ -380,7 +382,7 @@ namespace StutterFix
 
             long q = System.Diagnostics.Stopwatch.GetTimestamp();
             GcControl.Tick(dt); Tk(0, ref q);
-            RestartAdvisor.Tick(); LowEnd.AutoTick(); LowEnd.MenuCapTick(); Updater.Tick(); LeakGuard.Tick(); if (Time.realtimeSinceStartup > 30f) Compat.LogSharedPatches(); Tk(1, ref q);
+            RestartAdvisor.Tick(); LowEnd.AutoTick(); LowEnd.MenuCapTick(); Updater.Tick(); LeakGuard.Tick(); Resilience.Tick(); if (Time.realtimeSinceStartup > 30f) Compat.LogSharedPatches(); Tk(1, ref q);
             EffectBudget.Tick(); Tk(2, ref q);
             RecolorSplit.Tick(); Tk(3, ref q);
             FastBlend.Tick(); Tk(4, ref q);
@@ -448,32 +450,38 @@ namespace StutterFix
 
         private static void ApplyToggles()
         {
-            GcControl.Enabled = Config.GcPause;
-            EffectBudget.Enabled = Config.EffectSplit;
-            RecolorSplit.Enabled = Config.RecolorSplit;
-            TweenFix.Enabled = Config.TweenGuard;
-            ZeroTween.Enabled = Config.ZeroTween;
-            ZeroTween.SkipUpdate = Config.ZeroTween;
-            InstantMove.Enabled = Config.InstantDirect;
-            InstantMove.SkipSame = Config.SkipSame;
-            FastMove.Enabled = Config.FastLoop;
-            Precheck.Enabled = Config.Precheck; Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
-            if (!Config.DecoAnim && global::StutterFix.DecoAnim.Enabled) global::StutterFix.DecoAnim.FinishAll();   // 끄면 진행 중인 것은 끝값으로 (Kill(true) 와 같음)
-            global::StutterFix.DecoAnim.Enabled = Config.DecoAnim;
-            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = Mathf.Clamp(Config.LowRenderScale, 10, 100); LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Sharpen = Config.LowSharpen; LowEnd.SharpenValue = Mathf.Clamp(Config.LowSharpenValue, 0.25f, 4f); HalfRender.Enabled = Config.LowHalfRender; LowEnd.AutoRes = Config.LowAutoRes; LowEnd.AutoTargetFps = Config.LowAutoFps; LowEnd.AutoMinPct = Mathf.Clamp(Config.LowAutoMin, 10, 100); LowEnd.MenuFps = Config.LowMenuFps; Fsr.Enabled = Config.LowFsr && !Config.LowSharpUpscale;
+            // 설정 값에 "이번 실행 동안 끔"(오류 자동 차단, 안전 모드)을 겹친다 (Resilience)
+            Func<string, bool, bool> E = Resilience.Eff;
+            bool low = !Resilience.Off("LowEnd");   // 저사양 그래픽 기능 묶음
+            GcControl.Enabled = E("GcPause", Config.GcPause);
+            EffectBudget.Enabled = E("EffectSplit", Config.EffectSplit);
+            RecolorSplit.Enabled = E("RecolorSplit", Config.RecolorSplit);
+            TweenFix.Enabled = E("TweenGuard", Config.TweenGuard);
+            ZeroTween.Enabled = E("ZeroTween", Config.ZeroTween);
+            ZeroTween.SkipUpdate = ZeroTween.Enabled;
+            InstantMove.Enabled = E("InstantDirect", Config.InstantDirect);
+            InstantMove.SkipSame = E("InstantDirect", Config.SkipSame);
+            FastMove.Enabled = E("FastLoop", Config.FastLoop);
+            Precheck.Enabled = E("Precheck", Config.Precheck); Precheck.ResetAll();   // 설정이 바뀌면 확인해 둔 것을 모두 버린다
+            bool deco = E("DecoAnim", Config.DecoAnim);
+            if (!deco && global::StutterFix.DecoAnim.Enabled) global::StutterFix.DecoAnim.FinishAll();   // 끄면 진행 중인 것은 끝값으로 (Kill(true) 와 같음)
+            global::StutterFix.DecoAnim.Enabled = deco;
+            LowEnd.Priority = Config.LowPriority; LowEnd.NoThrottle = Config.LowNoThrottle; LowEnd.NoFft = Config.LowNoFft; LowEnd.RenderScalePct = low ? Mathf.Clamp(Config.LowRenderScale, 10, 100) : 100; LowEnd.SharpUpscale = Config.LowSharpUpscale; LowEnd.ImageCap = Config.LowImageCap; LowEnd.Sharpen = low && Config.LowSharpen; LowEnd.SharpenValue = Mathf.Clamp(Config.LowSharpenValue, 0.25f, 4f); HalfRender.Enabled = low && E("LowHalfRender", Config.LowHalfRender); LowEnd.AutoRes = low && Config.LowAutoRes; LowEnd.AutoTargetFps = Config.LowAutoFps; LowEnd.AutoMinPct = Mathf.Clamp(Config.LowAutoMin, 10, 100); LowEnd.MenuFps = Config.LowMenuFps; Fsr.Enabled = low && E("LowFsr", Config.LowFsr) && !Config.LowSharpUpscale;
             EffectBudget.BudgetMs = Config.LowSplit >= 2 ? 3f : Config.LowSplit == 1 ? 5f : 10f;
             RecolorSplit.ChunkTiles = Config.LowSplit >= 2 ? 120 : Config.LowSplit == 1 ? 200 : 400;
             Fsr.Apply();
             LowEnd.Apply();
-            MoveApply.Enabled = Config.MoveFinish;
-            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix; LoadFix.CacheFileTimes = Config.LoadCache; LoadFix.SkipDoubleReset = Config.LoadCache; LoadFix.ReverseToggle = Config.LoadCache; TexCompress.OwnOption = Config.LowCompressImages;
-            MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
-            TextFix.SkipSameText = Config.SkipSameText;
-            ImagePrefetch.Enabled = Config.ImagePrefetch;
-            ShaderWarm.Enabled = Config.ShaderWarm;
-            FastBlend.Enabled = Config.FastBlend;
-            InvisibleSkip.Enabled = Config.SkipInvisible;
-            InvisibleSkip.LazyMove = Config.LazyHidden;
+            MoveApply.Enabled = E("MoveFinish", Config.MoveFinish);
+            ParticleFix.SkipIdle = E("SkipIdleParticles", Config.SkipIdleParticles); ParticleFix.PauseOffscreen = E("LowPauseParticles", Config.LowPauseParticles); LeakGuard.Enabled = E("LeakFix", Config.LeakFix);
+            bool lc = E("LoadCache", Config.LoadCache); LoadFix.CacheFileTimes = lc; LoadFix.SkipDoubleReset = lc; LoadFix.ReverseToggle = lc;
+            TexCompress.OwnOption = E("ImagePrefetch", Config.LowCompressImages);
+            MoveApply.LogicSkip = Dormancy.Enabled = E("DormantSkip", Config.DormantSkip);
+            TextFix.SkipSameText = E("SkipSameText", Config.SkipSameText);
+            ImagePrefetch.Enabled = E("ImagePrefetch", Config.ImagePrefetch);
+            ShaderWarm.Enabled = E("ShaderWarm", Config.ShaderWarm);
+            FastBlend.Enabled = E("FastBlend", Config.FastBlend);
+            InvisibleSkip.Enabled = E("SkipInvisible", Config.SkipInvisible);
+            InvisibleSkip.LazyMove = E("SkipInvisible", Config.LazyHidden);
             if (!InvisibleSkip.Enabled) InvisibleSkip.RestoreAll();
             else if (!InvisibleSkip.LazyMove) InvisibleSkip.ApplyAllLazy();
             ImagePrefetch.MaxSide = LowEnd.CombinedMaxSide(Config.ImageMaxSide);
@@ -665,6 +673,7 @@ namespace StutterFix
         public bool LowPriority = false;    // 게임 우선순위 높음
         public bool LowNoThrottle = false;  // 윈도우 절전 제한 끄기 + 타이머 1ms
         public int LowMenuFps = 0;          // 플레이 중이 아닐 때(메뉴·에디터) FPS 제한 (0 끔, 30, 60)
+        public int CrashStreak = 0;         // 연속 비정상 종료 횟수 (2 이상이면 안전 모드)
         public bool LowNoFft = false;       // Volume 타일이 없으면 음악 주파수 분석 건너뛰기
         public bool LowPauseParticles = false; // (저사양) 화면 밖 파티클 장식 시뮬레이션 멈추기
         public bool LowCompressImages = false; // (저사양) 장식 이미지를 DXT 로 압축해서 올리기 (그래픽 메모리 1/4, 여러 코어로 미리 압축)

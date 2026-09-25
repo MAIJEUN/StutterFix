@@ -542,6 +542,17 @@ namespace StutterFix
             // 다른 모드(Quartz)와 겹치는 기능 안내
             var overlaps = Compat.Notes();
             if (overlaps.Count > 0) InfoCard(new[] { T("다른 모드와 겹치는 기능", "Overlaps with other mods"), string.Join("\n\n", overlaps.ToArray()) });
+            // 자동 보호 (오류가 반복된 기능 끄기, 비정상 종료 뒤 안전 모드)
+            var rnotes = Resilience.NotesCopy();
+            if (rnotes.Count > 0)
+            {
+                InfoCard(new[] { T("자동 보호", "Automatic protection"), string.Join("\n\n", rnotes.ToArray()) });
+                GUILayout.BeginHorizontal();
+                if (Resilience.SafeMode && GUILayout.Button(T("안전 모드 끄기", "Leave safe mode"), sPrimary, GUILayout.Width(170), GUILayout.Height(38))) Resilience.LeaveSafeMode();
+                if (Resilience.OffCount > 0) { GUILayout.Space(8); if (GUILayout.Button(T("꺼 둔 기능 다시 켜기", "Re-enable features"), sPrimary, GUILayout.Width(190), GUILayout.Height(38))) Resilience.ReenableAll(); }
+                GUILayout.EndHorizontal();
+                GUILayout.Space(14);
+            }
 
             // 지금 재시작하면 좋은 때 (메모리가 쌓임, 멀티스레드 그리기 변경, 모드 업데이트 등)
             var why = RestartAdvisor.Reasons();
@@ -1117,8 +1128,31 @@ namespace StutterFix
                 T("소스", "Source"), "github.com/pding4569/StutterFix",
             });
             GUILayout.Space(4);
+            TroubleCard();
             UpdateCard();
             ReportCard();
+        }
+
+        // 문제 해결: 다른 모드와 겹치는 곳, 자동 보호 상태, 안전 모드 켜기
+        private void TroubleCard()
+        {
+            string shared = Compat.SharedSummary.Length > 0 ? Compat.SharedSummary : T("없음 (또는 아직 확인 전)", "None (or not checked yet)");
+            string state = Resilience.SafeMode ? T("안전 모드로 켜져 있음", "Running in safe mode")
+                : Resilience.OffCount > 0 ? T("오류가 반복된 기능을 이번 실행 동안 꺼 둠", "Some features turned off for this run after repeated errors")
+                : T("문제 없음", "No problems");
+            InfoCard(new[]
+            {
+                T("다른 모드와 부딪히면", "If another mod conflicts"),
+                T("이 모드 기능에서 오류가 5번 반복되면 그 기능만 이번 실행 동안 자동으로 끕니다. 게임이 두 번 연속 비정상 종료되면 다음 실행은 안전 모드(게임에 깊이 관여하는 기능을 끔)로 켜집니다. 문제가 계속되면 아래 버튼으로 안전 모드를 켜 보고, '로그 파일 만들기' 로 생긴 zip 을 보내 주세요.",
+                  "If a feature of this mod errors 5 times, only that feature is turned off for this run. If the game ends abnormally twice in a row, the next launch starts in safe mode (features that hook deep into the game are off). If problems continue, try safe mode below and send the zip from 'Create log file'."),
+                T("지금 상태", "Status"), state,
+                T("같은 게임 함수를 고치는 다른 모드", "Other mods patching the same game functions"), shared,
+            });
+            GUILayout.BeginHorizontal();
+            if (!Resilience.SafeMode && GUILayout.Button(T("안전 모드로 (이번 실행)", "Safe mode (this run)"), sPrimary, GUILayout.Width(210), GUILayout.Height(38))) Resilience.EnterSafeModeManual();
+            if (Resilience.SafeMode && GUILayout.Button(T("안전 모드 끄기", "Leave safe mode"), sPrimary, GUILayout.Width(170), GUILayout.Height(38))) Resilience.LeaveSafeMode();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(14);
         }
 
         // 업데이트: 상태, 받기 / 지금 확인 버튼, 자동 확인 켜기

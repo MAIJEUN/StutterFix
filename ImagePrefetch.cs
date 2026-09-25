@@ -291,6 +291,7 @@ namespace StutterFix
                 }
 
                 Compat.Refresh();   // PACL2 손실 압축이 켜져 있는지 (작업 스레드가 미리 압축할지 정한다)
+                Resilience.Phase("맵 이미지 불러오는 중");
                 int n = Math.Max(1, Math.Min(6, Environment.ProcessorCount - 1));
                 workers = new Thread[n];
                 for (int i = 0; i < n; i++)
@@ -624,6 +625,7 @@ namespace StutterFix
                 Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장 (긴 변 " + sideNow + ", VRAM 약 " + LastSavedMB.ToString("F0") + "MB 아낌)" : ""),
                     used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart) + TexCompress.EndLoad() + (lateCompress > 0 ? ", 압축이 늦어 원래대로 " + lateCompress + "장" : "") + (compressWaitMs > 0 ? string.Format(", 압축 마저 기다림 {0:F0}ms", compressWaitMs) : "");
                 Main.Entry.Logger.Log("[이미지] " + Last);
+                Resilience.Phase("메뉴·편집");
             }
             Stop();
             // 로딩 동안 꺼 둔 GC를 되돌리고 한 번에 치운다(곡 중이 아니라 멈춰도 괜찮은 순간).
