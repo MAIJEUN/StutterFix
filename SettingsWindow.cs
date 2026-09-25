@@ -881,7 +881,7 @@ namespace StutterFix
                 if (c.LowFsr)
                 {
                     GUILayout.Label(T("AMD FSR 1 로 가장자리를 살려 늘리고 선명도를 보정합니다. 보통 늘리기보다 원본에 가깝고 덜 흐립니다. 화면 해상도로 두 번 더 그리므로 그래픽카드 일이 조금 늘어납니다.",
-                        "Upscales with AMD FSR 1 (edge-aware upscale + sharpening). Closer to native and less blurry than plain upscaling; costs two extra screen-resolution passes."), sSub);
+                        "Upscales with AMD FSR 1 (edge-aware upscale + sharpening). Closer to native and less blurry than plain upscaling; costs two extra screen-resolution passes."), sDim);   // 긴 설명은 줄바꿈되는 sDim (sSub 는 한 줄이라 패널이 옆으로 늘어나 페이지가 망가졌다)
                     if (Fsr.Failed) GUILayout.Label(T("이 컴퓨터에서는 쓸 수 없어 부드럽게 늘립니다", "Unavailable on this PC; using smooth upscale"), sSub);
                 }
             }
@@ -1050,7 +1050,7 @@ namespace StutterFix
             if (LogExport.LastPath.Length > 0 && GUILayout.Button(T("폴더 열기", "Show file"), sChip, GUILayout.Height(38), GUILayout.ExpandWidth(false))) LogExport.Reveal();
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            if (LogExport.LastError.Length > 0) { GUILayout.Space(6); GUILayout.Label(T("만들지 못했습니다: ", "Failed: ") + LogExport.LastError, sSub); }
+            if (LogExport.LastError.Length > 0) { GUILayout.Space(6); GUILayout.Label(T("만들지 못했습니다: ", "Failed: ") + LogExport.LastError, sDim); }
             else if (LogExport.LastPath.Length > 0) { GUILayout.Space(6); GUILayout.Label(T("만든 파일: ", "Created: ") + System.IO.Path.GetFileName(LogExport.LastPath) + T("  (바탕화면)", "  (desktop)"), sSub); }
             GUILayout.EndVertical();
         }
