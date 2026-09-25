@@ -776,6 +776,7 @@ namespace StutterFix
                     UnityEngine.Scripting.GarbageCollector.GCMode = UnityEngine.Scripting.GarbageCollector.Mode.Enabled;
                     long t0 = Stopwatch.GetTimestamp();
                     GC.Collect();
+                    GcControl.NoteClean();
                     Main.Entry.Logger.Log(string.Format("[이미지] 로딩 뒤 GC 한 번 {0:F0}ms",
                         (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency));
                 }

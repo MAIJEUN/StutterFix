@@ -48,7 +48,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 ## 이 포크에서 바뀐 것
 
-원본 2.2.0 위에 더한 것입니다. 전부 기본으로 켜져 있고, 화면·판정·소리는 원래 게임과 같습니다.
+원본 2.2.1 위에 더한 것입니다. 전부 기본으로 켜져 있고, 화면·판정·소리는 원래 게임과 같습니다.
 
 ### 맵 불러오기가 빨라짐
 
@@ -209,6 +209,7 @@ UMM 에서 끄면 모든 변경을 즉시 되돌립니다(패치, GC 상태, 작
 
 - 전체 화면 필터가 아주 많이 겹치는 구간은 그래픽카드 성능 한계입니다.
 - 백그라운드 프로그램이 순간적으로 CPU 를 가져가 끊길 수 있습니다(저사양 페이지의 "게임 우선순위 높이기").
+- 원격 데스크톱(StarDesk 등)·화면 녹화 프로그램이 켜져 있으면 화면을 캡처하는 동안 게임이 매 프레임 화면을 넘기며 기다려 FPS 가 크게 떨어질 수 있습니다(측정: 같은 구간 250 → 186 FPS, 끄자 6판 모두 280~293 FPS). 게임할 때는 끄세요. 2.2.1 부터 곡 중에 이런 대기가 생기면 그때 게임 창 위에 겹친 창과 GPU 를 쓰는 다른 프로그램을 로그에 남깁니다.
 - Steam 실행 옵션에 `-force-d3d12 -force-gfx-jobs native`가 있으면 곡 중 60~80ms 씩 멈출 수 있습니다. 빼는 것을 권합니다.
 - 맵에 **SetFrameRate** 이벤트가 있으면 그 구간의 낮은 FPS 는 맵이 의도한 연출입니다.
 
@@ -262,7 +263,7 @@ Stutter Fix reduces mid-play hitches and level loading times on heavy custom lev
 **Install:** download `StutterFix-x.y.z-player.zip` from the [upstream Releases](https://github.com/pding4569/StutterFix/releases) and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** for the settings window (Korean/English) and **Shift+Insert** for the live monitor.
 This fork's changes are not in the upstream release yet: build it (`dotnet build -p:Edition=Player`) and copy `bin/Player/StutterFix.dll`. Pressing *Update* in the settings window replaces this build with the upstream release.
 
-**What this fork adds (on top of 2.2.0):**
+**What this fork adds (on top of 2.2.1):**
 - **Faster level loading:** PNG inflate with libdeflate (MIT, embedded), decoding straight into the output buffer, interlaced PNGs decoded on worker threads, one worker per core. Hello (BPM) 2026: 12.2 s → 8.1 s. 1,047 PNGs verified pixel-identical against PIL.
 - **VRAM overflow prevented on the first play:** image sizes are read from file headers before loading; if the originals would exceed 1.25× the free VRAM, the largest images are capped at 3072 px from the first play (only this first step). Hello (BPM) 2026: no VRAM hitches on the first play (was several 130 ms hitches).
 - **Filter shader warm-up fixed:** shader names are read from each filter's IL (`Shader.Find`), legacy filters are included, and warm-up happens at level load (109 filters in about 200 ms).

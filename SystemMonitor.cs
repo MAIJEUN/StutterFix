@@ -113,7 +113,7 @@ namespace StutterFix
         private static float Clamp100(double v) { return (float)Math.Max(0, Math.Min(100, v)); }
 
         // ── PDH (성능 카운터) ──────────────────────────────────────────
-        private class Pdh
+        internal class Pdh
         {
             private IntPtr query;
             internal IntPtr Engine, AdapterDedicated, ProcDedicated, ProcShared;

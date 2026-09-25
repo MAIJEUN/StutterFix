@@ -308,6 +308,7 @@ namespace StutterFix
             if (playing && !wasPlaying) { Main.Entry.Logger.Log("[곡 시작] " + ScreenState()); songStartT = Time.unscaledTime; songMs = 0; songFrames = 0; songHitches = 0; songWorst = 0; songGpu = 0; songCpu = 0; songTiming = 0; songMod = 0; songWorstPlay = 0; wpFx = wpMove = 0; wpN = 0; System.Array.Clear(top, 0, TopN); fxWorst = fxWorstFx = fxWorstMove = 0; System.Array.Clear(bucketMs, 0, MaxBuckets); System.Array.Clear(bucketCpu, 0, MaxBuckets); System.Array.Clear(bucketFrames, 0, MaxBuckets); System.Array.Clear(bucketRender, 0, MaxBuckets); System.Array.Clear(bucketWait, 0, MaxBuckets); System.Array.Clear(bucketGpu, 0, MaxBuckets); System.Array.Clear(bucketAwake, 0, MaxBuckets); System.Array.Clear(bucketAnim, 0, MaxBuckets); System.Array.Clear(bucketOff, 0, MaxBuckets); }
             wasPlaying = playing;
             if (!playing) SongBucket = -1;
+            PresentWatch.Frame(playing, ms, lastWait);
             if (playing && ms < 1500f)
             {
                 int b = (int)(songMs / (BucketSec * 1000.0));

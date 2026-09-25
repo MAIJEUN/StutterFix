@@ -278,6 +278,7 @@ namespace StutterFix
         // 순간이라 전처럼 치운다. 다른 모드(Quartz 의 부드러운 GC 등)가 이미 치웠으면 쌓인 양이 적어 자연히 건너뛴다.
         internal static int DebtMinMB = 192;
         private static long lastCleanMB = -1;
+        internal static void NoteClean() { try { lastCleanMB = GC.GetTotalMemory(false) / 1048576; } catch { } }   // 다른 곳에서 한 정리 뒤 기준
         internal static long SkippedCollects;
         private static bool QuickTransition(string reason)
         {
@@ -297,7 +298,9 @@ namespace StutterFix
                 if (QuickTransition(reason))
                 {
                     long heap = GC.GetTotalMemory(false) / 1048576;
-                    if (lastCleanMB < 0) lastCleanMB = heap;
+                    // 힙이 기준보다 작으면 그 사이 누가 치운 것이다(맵 불러온 뒤 GC 등). 큰 맵의 기준이 남아 있으면 작은 맵에서 쌓인 양이
+                    // -1380MB 처럼 음수로 나와 2.4GB 가 될 때까지 안 치웠다(2026-09-26). 지금 힙을 새 기준으로.
+                    if (lastCleanMB < 0 || heap < lastCleanMB) lastCleanMB = heap;
                     long debt = heap - lastCleanMB;
                     long need = Math.Max(DebtMinMB, lastCleanMB * 35 / 100);
                     if (debt < need)
