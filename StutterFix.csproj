@@ -35,6 +35,13 @@
     <Compile Include="HalfRender.cs" />
     <Compile Include="Fsr.cs" />
     <Compile Include="Updater.cs" />
+    <Compile Include="Compat.cs" />
+    <Compile Include="ParticleFix.cs" />
+    <Compile Include="LeakGuard.cs" />
+    <Compile Include="LoadFix.cs" />
+    <Compile Include="DxtEncoder.cs" />
+    <Compile Include="TexCompress.cs" />
+    <Compile Include="Resilience.cs" />
     <EmbeddedResource Include="fsr/stutterfix_fsr" LogicalName="StutterFix.fsr" />
     <Compile Include="RenderVerify.cs" />
     <Compile Include="WarmChars.cs" />
@@ -84,7 +91,6 @@
     <Compile Include="MoveApply.cs" />
     <Compile Include="BootConfig.cs" />
     <Compile Include="SceneReset.cs" />
-    <Compile Include="ParticleSkip.cs" />
     <!-- libdeflate 1.24 (MIT, native/libdeflate-LICENSE.txt): 압축 풀기만 넣어 MSVC x64 로 빌드한 것. 이미지 불러오기에서 zlib 대신 쓴다 -->
     <EmbeddedResource Include="native/libdeflate.dll" LogicalName="StutterFix.libdeflate.dll" />
   </ItemGroup>

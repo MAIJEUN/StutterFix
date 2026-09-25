@@ -176,9 +176,15 @@ namespace StutterFix
         private static void SongStarted()
         {
             endLogged = false;
+            if (GcControl.RestartAt != 0)
+            {
+                double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - GcControl.RestartAt) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                GcControl.RestartAt = 0;
+                if (ms < 30000) Main.Entry.Logger.Log(string.Format("[재시작 시간] {0} → 곡 시작까지 {1:F0}ms{2}", GcControl.RestartWhy, ms, LoadFix.Summary()));
+                LoadFix.ResetStats();
+            }
             RestartAdvisor.SongStarted();
             InvisibleSkip.ResetPeak();
-            ParticleSkip.ResetStats();
             PerfOverlay.BeginStartPhase();   // 첫 타일 전(최대 5초)의 시작 연출 멈춤은 끊김으로 세지 않는다
             // 밀린 효과를 여기서 비우면 안 된다. 곡 중 일시정지(ESC) 뒤 다시 할 때도 "곡 시작" 으로 들어와서,
             // 효과 몰림 직후에 멈췄다 풀면 아직 못 돈 화면 효과·타일 색 조각이 버려져 원래와 다른 화면으로 남았다.
@@ -186,7 +192,7 @@ namespace StutterFix
             EffectBudget.Suspend(3f);
             ShaderWarm.MaybeRun();
             if (Edition.Dev) BlendProbe.Report();
-            LowEnd.SongStarted(); LowEnd.LogRenderOnce();
+            LowEnd.SongStarted(); LowEnd.LogRenderOnce(); Compat.Refresh(); Resilience.Phase("플레이 중");
         }
 
         // 곡이 끝났다고 밀린 효과를 버리면 안 된다. 마지막 타일은 효과가 한꺼번에 몰려 나눠 두는 곳이라,
@@ -199,6 +205,7 @@ namespace StutterFix
         {
             try
             {
+                Resilience.Phase("메뉴·편집");
                 InvisibleSkip.ApplyAllLazy();   // 곡이 끝나면 미뤄 둔 투명 장식 위치를 모두 반영한다 (편집기로 돌아갈 때 대비)
                 // 곡이 끝난 뒤(결과 화면 등) 재생 상태가 프레임마다 켜졌다 꺼졌다 해서 이 줄이 수백 번 찍혔다.
                 // 한 일이 없으면 남기지 않는다.
@@ -208,11 +215,11 @@ namespace StutterFix
                 {
                     endLogged = true;
                     string perf = PerfOverlay.SongSummary();
-                    if (perf != null) Main.Entry.Logger.Log("[곡] " + perf + " | 같은 그림자 색 건너뛰기 " + TextFix.SkippedSameShadow + "회" + LowEnd.Summary());
+                    if (perf != null) Main.Entry.Logger.Log("[곡] " + perf + " | 같은 그림자 색 건너뛰기 " + TextFix.SkippedSameShadow + "회" + ParticleFix.Summary() + LeakGuard.Summary() + LowEnd.Summary());
                     Main.Entry.Logger.Log("[장식 이동] " + ZeroTween.Summary() + " | " + MoveApply.Summary() + EffectBudget.Summary());
                     { var mp = MoveProf.SongSummary(); if (mp.Length > 0) Main.Entry.Logger.Log(mp); }
                     EffectBudget.ResetLate();
-                    if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary() + ParticleSkip.Summary());
+                    if (InvisibleSkip.Enabled) Main.Entry.Logger.Log("[투명 장식] " + InvisibleSkip.Summary());
                 }
                 ZeroTween.Reset(); MoveApply.Reset();
             }

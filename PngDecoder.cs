@@ -87,16 +87,19 @@ namespace StutterFix
 
     internal static unsafe class PngDecoder
     {
-        internal const int FormatRGB24 = 3, FormatRGBA32 = 4;   // UnityEngine.TextureFormat 값
+        internal static bool GrayVerified = Edition.Dev;   // 알파 없는 8비트 흑백: 유니티와 같음이 확인되면 모두에게 (원본 2.2.0)
+        internal const int FormatRGB24 = 3, FormatRGBA32 = 4, FormatARGB32 = 5;   // UnityEngine.TextureFormat 값 (추가 형식은 유니티처럼 ARGB32, 개발자용 비교로 확인)
 
         // 작업 스레드마다 버퍼를 재사용한다. 이미지마다 새로 만들면 로딩 중 GC가 13번 돌아 메인 스레드를 세웠다.
         [ThreadStatic] private static byte[] idatBuf, curBuf, prevBuf, oneBuf;
 
         private static byte[] Grow(ref byte[] b, long n) { if (b == null || b.Length < n) b = new byte[Math.Max(n, b == null ? 0 : b.Length * 3 / 2)]; return b; }
 
-        internal static bool TryDecode(byte[] d, int dLen, out int width, out int height, out int format, out IntPtr pixels, out long size)
+        internal static bool TryDecode(byte[] d, int dLen, out int width, out int height, out int format, out IntPtr pixels, out long size) { bool u; return TryDecode(d, dLen, false, out width, out height, out format, out pixels, out size, out u); }
+        // extra: 추가 형식(흑백+알파, 16비트 RGBA, 확인된 뒤 흑백)을 유니티와 같은 모양(ARGB32)으로 푼다. usedExtra: 이번 이미지가 추가 형식이었나
+        internal static bool TryDecode(byte[] d, int dLen, bool extra, out int width, out int height, out int format, out IntPtr pixels, out long size, out bool usedExtra)
         {
-            width = height = format = 0; pixels = IntPtr.Zero; size = 0;
+            width = height = format = 0; pixels = IntPtr.Zero; size = 0; usedExtra = false;
             if (d == null || dLen < 45 || dLen > d.Length) return false;
             if (d[0] != 0x89 || d[1] != 0x50 || d[2] != 0x4E || d[3] != 0x47 || d[4] != 0x0D || d[5] != 0x0A || d[6] != 0x1A || d[7] != 0x0A) return false;
 
@@ -129,14 +132,17 @@ namespace StutterFix
             if (colorType == 6 && bitDepth == 8) channels = 4;
             else if (colorType == 2 && bitDepth == 8) channels = 3;
             else if (colorType == 3 && (bitDepth == 1 || bitDepth == 2 || bitDepth == 4 || bitDepth == 8) && plte != null) channels = 1;
-            else if (colorType == 4 && bitDepth == 8) channels = 2;
-            else if (colorType == 0 && bitDepth == 8) channels = 1;
+            // (추가 형식, 원본 2.2.0: 유니티 결과와 바이트까지 같음을 개발자용 비교로 확인한 것만) 흑백+알파·16비트 RGBA -> ARGB32
+            else if (extra && colorType == 4 && bitDepth == 8) { channels = 2; usedExtra = true; }
+            else if (extra && colorType == 6 && bitDepth == 16) { channels = 4; usedExtra = true; }
+            else if (extra && GrayVerified && colorType == 0 && bitDepth == 8) { channels = 1; usedExtra = true; }   // 알파 없는 흑백은 아직 실제 파일로 확인 전
             else return false;
 
             // RGB·흑백에 투명색이 지정돼 있으면 알파가 필요하다
             bool rgbKey = colorType == 2 && trns != null && trns.Length >= 6;
             bool grayKey = colorType == 0 && trns != null && trns.Length >= 2;
-            format = ((colorType == 2 && !rgbKey) || (colorType == 0 && !grayKey)) ? FormatRGB24 : FormatRGBA32;
+            // 유니티는 흑백(+알파)과 16비트 RGBA 를 ARGB32 로 만든다 (A, R, G, B 순서)
+            format = usedExtra ? FormatARGB32 : (colorType == 2 && !rgbKey) ? FormatRGB24 : FormatRGBA32;
             int outBpp = format == FormatRGB24 ? 3 : 4;
             var cv = new Conv { ColorType = colorType, BitDepth = bitDepth, Plte = plte, Trns = trns, RgbKey = rgbKey, GrayKey = grayKey, OutBpp = outBpp };
 
@@ -188,7 +194,7 @@ namespace StutterFix
                         System.Threading.Interlocked.Add(ref InflateTicks, n1 - n0);
                         System.Threading.Interlocked.Add(ref FilterTicks, System.Diagnostics.Stopwatch.GetTimestamp() - n1);
                         System.Threading.Interlocked.Increment(ref NativeImages);
-                        if (interlace == 1 || colorType == 0 || colorType == 4) System.Threading.Interlocked.Increment(ref NewKinds);
+                        if (interlace == 1 || usedExtra) System.Threading.Interlocked.Increment(ref NewKinds);
                         ok = true;
                         return true;
                     }
@@ -245,7 +251,7 @@ namespace StutterFix
 
                             int y = ys + py * dy;
                             byte* dst = dst0 + (height - 1 - y) * outRow + (long)xs * outBpp;   // 유니티 텍스처는 아래 줄이 먼저
-                            if (dx == 1 && (colorType == 6 || (colorType == 2 && !rgbKey)))
+                            if (dx == 1 && bitDepth == 8 && (colorType == 6 || (colorType == 2 && !rgbKey)))   // 줄 길이가 출력과 같을 때만 그대로 복사 (16비트는 변환)
                                 Marshal.Copy(cur, 0, (IntPtr)dst, pRow);
                             else
                                 Convert(cur, dst, pw, dx * outBpp, cv);
@@ -259,7 +265,7 @@ namespace StutterFix
                 ok = true;
                 System.Threading.Interlocked.Add(ref InflateTicks, tInflate);
                 System.Threading.Interlocked.Add(ref FilterTicks, tFilter);
-                if (interlace == 1 || colorType == 0 || colorType == 4) System.Threading.Interlocked.Increment(ref NewKinds);
+                if (interlace == 1 || usedExtra) System.Threading.Interlocked.Increment(ref NewKinds);
                 return true;
             }
             catch { return false; }
@@ -371,6 +377,12 @@ namespace StutterFix
             switch (cv.ColorType)
             {
                 case 6:
+                    if (cv.BitDepth == 16)
+                    {
+                        // 16비트 RGBA -> ARGB32: 각 값의 윗 바이트(PNG 는 큰 쪽 바이트가 먼저), A R G B 순서 (원본 2.2.0, 유니티와 같음)
+                        fixed (byte* s0 = cur) { byte* s = s0; for (int x = 0; x < count; x++, s += 8, dst += step) { dst[0] = s[6]; dst[1] = s[0]; dst[2] = s[2]; dst[3] = s[4]; } }
+                        return;
+                    }
                     fixed (byte* s0 = cur) { byte* s = s0; for (int x = 0; x < count; x++, s += 4, dst += step) { dst[0] = s[0]; dst[1] = s[1]; dst[2] = s[2]; dst[3] = s[3]; } }
                     return;
                 case 2:
@@ -378,18 +390,19 @@ namespace StutterFix
                     fixed (byte* s0 = cur) { byte* s = s0; for (int x = 0; x < count; x++, s += 3, dst += step) { dst[0] = s[0]; dst[1] = s[1]; dst[2] = s[2]; } }
                     return;
                 case 4:
-                    fixed (byte* s0 = cur) { byte* s = s0; for (int x = 0; x < count; x++, s += 2, dst += step) { byte g = s[0]; dst[0] = g; dst[1] = g; dst[2] = g; dst[3] = s[1]; } }
+                    // 흑백+알파 -> ARGB32: A, 밝기, 밝기, 밝기 (원본 2.2.0, 유니티와 같음)
+                    fixed (byte* s0 = cur) { byte* s = s0; for (int x = 0; x < count; x++, s += 2, dst += step) { byte g = s[0]; dst[0] = s[1]; dst[1] = g; dst[2] = g; dst[3] = g; } }
                     return;
                 case 0:
                     {
-                        byte key = cv.GrayKey ? cv.Trns[1] : (byte)0;   // 8비트면 16비트 값의 아래 바이트
+                        // 흑백 -> ARGB32: A(255, tRNS 투명색이면 0), 밝기 x 3
+                        int key = cv.GrayKey ? cv.Trns[1] : -1;   // 8비트면 16비트 값의 아래 바이트
                         fixed (byte* s0 = cur)
                         {
                             byte* s = s0;
                             for (int x = 0; x < count; x++, s++, dst += step)
                             {
-                                byte g = s[0]; dst[0] = g; dst[1] = g; dst[2] = g;
-                                if (cv.OutBpp == 4) dst[3] = (byte)(cv.GrayKey && g == key ? 0 : 255);
+                                byte g = s[0]; dst[0] = (byte)(g == key ? 0 : 255); dst[1] = g; dst[2] = g; dst[3] = g;
                             }
                         }
                         return;
@@ -531,6 +544,7 @@ namespace StutterFix
             factor = 1f;
             int big = Math.Max(width, height);
             if (maxSide <= 0 || big <= maxSide || pixels == IntPtr.Zero) return false;
+            if (format != FormatRGB24 && format != FormatRGBA32) return false;   // 추가 형식(ARGB32)은 줄이지 않는다(원래 방식과 같게 둔다, 원본 2.2.0)
             factor = (float)maxSide / big;
             int nw = Math.Max(1, (int)Math.Round(width * (double)factor)), nh = Math.Max(1, (int)Math.Round(height * (double)factor));
             int bpp = format == FormatRGB24 ? 3 : 4;

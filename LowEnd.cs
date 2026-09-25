@@ -12,6 +12,7 @@ namespace StutterFix
     {
         internal static bool Priority, NoThrottle, NoFft;
         private static bool priorityOn, throttleOn, timerOn, installed;
+        private static ProcessPriorityClass priorityBefore = ProcessPriorityClass.Normal;
 
         // ── 1. 게임 우선순위 ──
         // 백그라운드 프로그램(브라우저, 방송 프로그램, 업데이트)이 CPU 를 가져갈 때 게임이 먼저 돌게 한다.
@@ -21,9 +22,12 @@ namespace StutterFix
             if (Priority == priorityOn) return;
             try
             {
-                Process.GetCurrentProcess().PriorityClass = Priority ? ProcessPriorityClass.High : ProcessPriorityClass.Normal;
+                // 끌 때는 "보통" 이 아니라 켜기 전 값으로 되돌린다 (Quartz 의 '프로세스 우선순위 높이기' 같은 다른 모드 설정을 덮지 않게)
+                var p = Process.GetCurrentProcess();
+                if (Priority) { priorityBefore = p.PriorityClass; p.PriorityClass = ProcessPriorityClass.High; }
+                else p.PriorityClass = priorityBefore;
                 priorityOn = Priority;
-                Main.Entry.Logger.Log("[저사양] 게임 우선순위 " + (Priority ? "높음" : "보통"));
+                Main.Entry.Logger.Log("[저사양] 게임 우선순위 " + (Priority ? "높음" : "원래대로 (" + priorityBefore + ")"));
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[저사양] 우선순위 바꾸기 실패: " + ex.Message); }
         }

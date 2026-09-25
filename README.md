@@ -15,6 +15,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 | Arche (장식 28,835개) | 매 프레임 훑는 장식 | 28,835개 → 평균 325개, 곡 평균 107 → 170 FPS |
 | Arche | 효과가 몰리는 프레임 | 91 → 67ms |
 | 블렌드 장식 1,500개 (3440×1440) | 화면 복사 없이 그리기 | 약 11 FPS 로 떨어지던 구간이 끊김 없이 |
+| Arche | 에디터 재생 시작 | 8.6초 → 4.3초 (2.2.0) |
 | Hello (BPM) 2026 | 맵 불러오기 | 12.2초 → **8.1초** (이 포크) |
 | Hello (BPM) 2026 | 첫 판 곡 중 끊김 | 10번(최악 133ms) → **2번(최악 35ms)** (이 포크) |
 
@@ -23,7 +24,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 - [설치](#설치)
 - [사용법](#사용법)
 - [이 포크에서 바뀐 것](#이-포크에서-바뀐-것)
-- [기능](#기능) — [플레이](#플레이) · [맵 불러오기](#맵-불러오기) · [그래픽](#그래픽) · [저사양](#저사양-210) · [편의](#편의-210)
+- [기능](#기능) — [플레이](#플레이) · [맵 불러오기](#맵-불러오기) · [그래픽](#그래픽) · [저사양](#저사양) · [편의](#편의) · [다른 모드와 함께](#다른-모드와-함께)
 - [실시간 모니터](#실시간-모니터)
 - [문제 보고](#문제-보고) · [그래도 끊긴다면](#그래도-끊긴다면)
 - [두 가지 버전](#두-가지-버전) · [빌드](#빌드) · [환경](#환경) · [라이선스](#라이선스와-사용한-외부-코드)
@@ -47,7 +48,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 ## 이 포크에서 바뀐 것
 
-원본 2.1.0 위에 더한 것입니다. 전부 기본으로 켜져 있고, 화면·판정·소리는 원래 게임과 같습니다.
+원본 2.2.0 위에 더한 것입니다. 전부 기본으로 켜져 있고, 화면·판정·소리는 원래 게임과 같습니다.
 
 ### 맵 불러오기가 빨라짐
 
@@ -55,7 +56,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 |---|---|
 | **libdeflate 로 압축 풀기** | PNG 압축 풀기를 게임의 zlib 대신 [libdeflate](https://github.com/ebiggers/libdeflate)(MIT)로 합니다. 압축 풀기만 넣어 빌드한 DLL(118KB)이 모드 DLL 안에 들어 있어 따로 챙길 파일이 없습니다. DLL 을 못 불러오거나 결과 크기가 맞지 않으면 원래 방식으로 다시 풉니다. |
 | 해독 중 복사 없애기 | 압축을 결과 메모리에 바로 풀고 그 자리에서 PNG 필터를 되돌립니다(2026 기준 약 10GB 의 복사가 사라짐). |
-| 더 많은 PNG 형식을 여러 코어에서 | 흑백, 흑백+알파, 인터레이스 PNG 도 작업 스레드에서 풉니다(예전에는 메인 스레드에서 한 장씩). JPG 는 손실 압축이라 해독기마다 픽셀이 달라질 수 있어 게임 해독기에 둡니다. |
+| 인터레이스 PNG 도 여러 코어에서 | 인터레이스(Adam7) PNG 도 작업 스레드에서 풉니다(예전에는 메인 스레드에서 한 장씩). 흑백+알파·16비트는 원본 2.2.0 이 유니티와 같은 모양(ARGB32)으로 맡습니다. JPG 는 손실 압축이라 해독기마다 픽셀이 달라질 수 있어 게임 해독기에 둡니다. |
 | 해독 스레드 | 코어 수 - 1 → 코어 수(최대 8). 메인 스레드는 불러오는 동안 대부분 해독을 기다립니다. |
 
 측정 (Hello (BPM) 2026, 긴 변 1536 같은 조건): 압축 풀기(작업 스레드 합계) 45.7초 → 5.2초, **전체 12.2초 → 8.1초**.
@@ -87,7 +88,6 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 - "장식 애니메이션 직접 처리"가 **피벗·시차 오프셋·시차 배율**도 맡습니다(예전에는 이것이 섞인 효과는 통째로 DOTween). 개발자용 대조: 진짜 DOTween 과 나란히 41,586프레임, **다름 0**.
 - 끝난 애니메이션 기록을 같은 자리에서 다시 써서, 곡 중 메모리가 덜 쌓입니다(2026: 41,117개 중 17,182개 재사용).
-- 꺼진(안 보이는) 파티클 장식의 매 프레임 갱신을 건너뛰고, 다시 켜지는 순간 같은 값을 바로 반영합니다.
 
 ### 고친 버그
 
@@ -109,7 +109,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 | 기능 | 하는 일 | 측정 |
 |---|---|---|
-| 메모리 정리 미루기 | 플레이 중 GC(메모리 정리)로 멈추는 것을 막고, 곡이 끝나고 몇 초 뒤 한 번에 정리합니다. | 평균 106 → 124 FPS, 33ms 넘는 구간 118 → 12 (125구간 중) |
+| 메모리 정리 미루기 | 플레이 중 GC(메모리 정리)로 멈추는 것을 막고, 곡이 끝나고 몇 초 뒤 한 번에 정리합니다. 실패·재시작 때는 쌓인 양이 클 때만 정리하고, 맵 파일을 읽는 동안에도 정리를 멈춥니다(RAM 12GB 이상이고 넉넉할 때만, 2.2.0). | 평균 106 → 124 FPS, 33ms 넘는 구간 118 → 12 (125구간 중). 재시작 정리 0.2~0.5초 → 전체 약 0.1초, Arche 맵 파일 읽기 7.6 → 6.3초 |
 | 효과 몰림 나누기 | 한 박자에 화면 효과 수십 개가 몰리면 몇 프레임에 나눠 시작합니다. 소리·판정 효과는 나누지 않습니다. | |
 | 타일 색 바꾸기 나누기 | 타일 수천 개의 색을 바꾸는 이벤트를 조금씩 나눠 칠합니다. 먼 타일이 몇 프레임 늦게 바뀔 뿐 결과는 같습니다. | 한 번에 41ms → 4ms |
 | 애니메이션 목록 재정렬 막기 | 효과가 많을 때 DOTween 이 목록을 반복 재정렬하느라 멈추는 것을 막습니다. | 한 프레임 435ms 중 382ms 였던 재정렬 제거 |
@@ -123,7 +123,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 | 장식 위치 계산 줄이기 | 위치 마무리 계산을 묶고, 플레이 중 필요 없는 편집기 작업과 같은 프레임에 게임이 다시 하는 계산을 건너뜁니다. | |
 | 투명한 장식 그리지 않기 | 투명도 0 인 이미지 장식을 그리기에서 빼고, 보이게 되는 순간 바로 다시 그립니다. 투명한 장식의 위치는 보일 때 한 번 반영합니다. | Arche 평균 95 → 105 FPS, GPU 7.6 → 3.4ms |
 | 장식 순회 줄이기 | 안 보이고 바뀔 일이 없는 장식을 매 프레임 갱신 목록에서 빼 두고, 바뀌는 순간 다시 넣습니다. 히트박스 판정도 히트박스 있는 장식만 봅니다. | Arche 훑는 장식 28,835 → 평균 325개, 평균 107 → 170 FPS |
-| 꺼진 파티클 건너뛰기 | 안 보이는 파티클 장식의 매 프레임 갱신을 건너뜁니다(이 포크). | |
+| 변화 없는 파티클 갱신 건너뛰기 | 파티클 장식이 값이 그대로여도 매 프레임 엔진에 다시 넣는 모양 크기와 속도를, 지난번과 같으면 건너뜁니다(2.2.0). | |
 
 <details>
 <summary>원래 게임과 같은지 어떻게 확인했나 (개발자용 자동 대조)</summary>
@@ -142,8 +142,10 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 | 기능 | 하는 일 | 측정 |
 |---|---|---|
-| 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 여러 코어에서 동시에 풉니다. 압축 풀기는 libdeflate(이 포크). | 700장 맵 67 → 38초, 2026 12.2 → 8.1초(이 포크) |
-| 불필요한 정리 건너뛰기 | 맵을 열거나 편집으로 돌아올 때 게임이 부르는 에셋 정리(한 번에 120~200ms)를 건너뜁니다. | |
+| 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 여러 코어에서 동시에 풉니다. 압축 풀기는 libdeflate(이 포크). 흑백+알파·16비트 PNG 도 유니티와 바이트까지 같게 미리 풀고(2.2.0), PACL2 의 이미지 손실 압축이 켜져 있으면 그 압축(메인 스레드에서 한 장씩)을 여러 코어에서 미리 해 둔 것으로 대신합니다(압축 오차는 시험한 모든 이미지에서 유니티 압축 이하, 2.2.0). | 700장 맵 67 → 38초, 2026 12.2 → 8.1초(이 포크), PACL2 와 함께 Arche 장식 준비 25.3 → 18.5초 |
+| 불필요한 정리 건너뛰기 | 편집으로 돌아올 때 게임이 부르는 에셋 정리(한 번에 120~200ms)를 건너뜁니다. 맵을 새로 열 때의 정리는 이전 맵 메모리를 풀기 위해 그대로 둡니다(2.2.0). | |
+| 에디터 재생 시작 빠르게 | 이미지 파일 수정 시각을 파일마다 한 번만 읽고, 장식이 하나도 안 바뀌었으면 장식 전체 다시 설정을 두 번 대신 한 번만 하고, 에디터 클릭용 충돌 상자를 넣은 반대 순서로 끕니다(2.2.0). 개발자용 검증: 건너뛴 다시 설정의 차이 0. | Arche 8.6 → 4.3초 |
+| 게임 메모리 누수 막기 | 게임의 사용자 지정 FPS 효과가 켤 때마다 새로 만들고 풀지 않던 화면 크기 버퍼(4K 에서 약 40MB)를 풀고, 재시작마다 게임 화면 버퍼를 괜히 다시 만드는 것을 막습니다(2.2.0). | |
 | 큰 이미지 줄이기 (기본 자동) | 필요한 VRAM 이 크게 넘칠 맵은 첫 판부터 긴 변 3072(이 포크), 그래도 VRAM 이 가득 차 끊기면 기억해 두었다가 한 단계씩(2048 → 1536 → 1024) 줄입니다. 화면에 보이는 크기는 그대로이고 선명도만 조금 낮아집니다. 설정 창에서 기억한 맵을 지울 수 있습니다. | 이미지 2,000장 맵(VRAM 8GB) 150~200ms 멈춤이 3072 에서 사라짐 |
 | 필터 셰이더 미리 준비 | 맵에서 쓰는 필터의 셰이더를 불러오기 끝에 미리 만들어 둡니다(이 포크에서 고침). | 2026 필터 109개 약 200ms |
 
@@ -154,7 +156,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 | 멀티스레드 그리기 | 게임 폴더의 `boot.config`에 `force-gfx-jobs=legacy` 한 줄을 넣어 그리기 준비를 여러 코어에 나눕니다. 원래 파일은 백업해 두고, 모드를 끄면 되돌립니다. | D3D11 140 → 160 FPS |
 | 블렌드 장식 빠르게 그리기 | 더하기(Linear Dodge) 블렌드 장식을 화면 복사 없이 그래픽카드 기본 섞기로 그립니다. 원래는 장식 하나마다 화면 전체를 복사했습니다. | 1,500개 장면 약 11 FPS → 끊김 없음, 픽셀 차이 0 |
 
-### 저사양 (2.1.0)
+### 저사양
 
 약한 컴퓨터를 위한 기능입니다. 게임 밖 설정을 바꾸거나 화면이 조금 달라지는 것을 감수하므로 **전부 기본 꺼짐**입니다. 설정 창의 속도계 아이콘(저사양) 페이지에서 켭니다.
 
@@ -169,13 +171,20 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 | 자동 해상도 | 그래픽카드가 바빠 목표 FPS 를 못 맞출 때만 해상도를 10% 씩 낮추고, 여유가 생기면 다시 올립니다. |
 | 메뉴·에디터 FPS 제한 | 플레이 중이 아닐 때 FPS 를 30 / 60 으로 묶어 발열을 줄입니다. 곡을 시작하면 바로 원래대로. |
 | 장식 이미지 최대 크기 | 장식 이미지 긴 변을 1024 / 512 로 줄입니다. 다음에 여는 맵부터. |
+| 화면 밖 파티클 멈추기 | 파티클 장식이 화면 밖에 있는 동안 시뮬레이션을 멈춥니다. 다시 들어오면 멈춘 곳부터 이어가서 모양·시점이 조금 다를 수 있습니다(2.2.0). |
+| 이미지 압축해서 불러오기 | 장식 이미지를 DXT 로 압축해 올립니다. 그래픽 메모리가 4분의 1(투명 없는 이미지는 8분의 1)로 줄고, 압축은 불러오는 동안 여러 코어에서 미리 합니다. 손실 압축이라 가까이서 보면 조금 뭉개질 수 있습니다(2.2.0). |
 | (실험) 늘린 화면 선명도 보정 | 해상도를 낮췄을 때 게임에 들어 있는 Sharpen 셰이더로 보정합니다. |
 | (실험) 반만 그리기 + 카메라 보정 | 게임 화면을 두 프레임에 한 번만 그리고, 사이 프레임은 카메라가 움직인 만큼 옮겨 보여 줍니다. 행성·장식·필터는 절반 속도로 갱신됩니다. |
 
-### 편의 (2.1.0)
+### 편의
 
 - **재시작 메뉴**: 게임 재시작 / 이 맵으로 재시작(메인 메뉴에서는 에디터에서 마지막으로 연 맵) / **게임 종료**. 저장 안 된 편집이 있으면 하지 않습니다.
 - **새 버전 알림**: 게임을 켜고 15초 뒤 GitHub 최신 릴리스를 한 번 확인해, 새 버전이 있으면 알리고 **패치노트**를 보여 줍니다. 받는 것은 버튼을 눌렀을 때만이고, 게임을 다시 켜면 적용됩니다. 정보 페이지에서 끌 수 있습니다.
+
+### 다른 모드와 함께
+
+- **겹치는 기능 알아서 쉬기** (2.2.0): Quartz 최적화 모듈과 PACL2 메모리 최적화의 설정을 읽어서, 같은 일을 하는 이 모드 기능은 쉬게 하고 설정 창 홈에 무엇이 겹치는지 알려 줍니다. 다른 모드의 설정 파일은 바꾸지 않습니다.
+- **자동 보호** (2.2.0): 이 모드 기능에서 오류가 5번 반복되면 그 기능만 이번 실행 동안 끄고, 같은 게임 함수를 고치는 모드를 함께 알려 줍니다. 게임이 두 번 연속 비정상 종료되면 다음 실행은 **안전 모드**(게임에 깊이 관여하는 기능을 끔)로 켜집니다. 비정상 종료 감지를 위해 실행 중에는 모드 폴더에 `session.lock` 이 생기고, 정상 종료하면 지워집니다.
 
 ## 실시간 모니터
 
@@ -253,15 +262,17 @@ Stutter Fix reduces mid-play hitches and level loading times on heavy custom lev
 **Install:** download `StutterFix-x.y.z-player.zip` from the [upstream Releases](https://github.com/pding4569/StutterFix/releases) and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** for the settings window (Korean/English) and **Shift+Insert** for the live monitor.
 This fork's changes are not in the upstream release yet: build it (`dotnet build -p:Edition=Player`) and copy `bin/Player/StutterFix.dll`. Pressing *Update* in the settings window replaces this build with the upstream release.
 
-**What this fork adds (on top of 2.1.0):**
-- **Faster level loading:** PNG inflate with libdeflate (MIT, embedded), decoding straight into the output buffer, grayscale / gray+alpha / interlaced PNGs decoded on worker threads, one worker per core. Hello (BPM) 2026: 12.2 s → 8.1 s. 1,047 PNGs verified pixel-identical against PIL.
+**What this fork adds (on top of 2.2.0):**
+- **Faster level loading:** PNG inflate with libdeflate (MIT, embedded), decoding straight into the output buffer, interlaced PNGs decoded on worker threads, one worker per core. Hello (BPM) 2026: 12.2 s → 8.1 s. 1,047 PNGs verified pixel-identical against PIL.
 - **VRAM overflow prevented on the first play:** image sizes are read from file headers before loading; if the originals would exceed 1.25× the free VRAM, the largest images are capped at 3072 px from the first play (only this first step). Hello (BPM) 2026: no VRAM hitches on the first play (was several 130 ms hitches).
 - **Filter shader warm-up fixed:** shader names are read from each filter's IL (`Shader.Find`), legacy filters are included, and warm-up happens at level load (109 filters in about 200 ms).
 - **Audio and judgement are never delayed:** effect burst splitting now only defers 20 visual-only effect types.
-- **Decoration animator** also handles pivot / parallax offset / parallax multiplier (41,586 frames vs real DOTween, 0 differences); hidden particle decorations skip their per-frame update.
+- **Decoration animator** also handles pivot / parallax offset / parallax multiplier (41,586 frames vs real DOTween, 0 differences).
 - **Bug fixes:** decorations left behind after leaving play mode, queued effects dropped after pausing, queued effects lost when a feature is turned off or the mod is unloaded mid-song, editor selection borders and text borders, and dev-build diagnostics that caused hitches.
 
 **Features (upstream):** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, direct handling of instant and animated decoration moves (bit-identical to DOTween), look-ahead skipping of no-op effects, not drawing fully transparent decorations, skipping dormant decorations in the per-frame loop, drawing additive blend-mode decorations with hardware blending (pixel-identical), parallel PNG decoding, skipping asset unloads, automatic image downscaling on VRAM overflow, and multithreaded rendering via `boot.config`. The low-end page (off by default) adds process priority, power throttling off, render scale with FSR 1, auto resolution, a menu FPS cap and experimental half-rate rendering.
+
+**2.2.0 (upstream):** faster editor play start (Arche 8.6 s → 4.3 s); GC on quick retries only when a lot has built up; gray+alpha and 16-bit PNGs decoded byte-identically to Unity; images pre-compressed on worker threads in place of PACL2's main-thread lossy compression; a fix for a game buffer leak; skipping unchanged particle writes; low-end options to pause off-screen particles and to load images DXT-compressed; detection of overlaps with Quartz/PACL2; automatic protection (a feature that keeps throwing errors is turned off for the session, and two abnormal exits in a row start the next launch in safe mode).
 
 **Live monitor:** FPS, CPU/GPU/VRAM/RAM and hitch alerts with an estimated cause.
 

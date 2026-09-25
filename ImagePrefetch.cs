@@ -41,6 +41,11 @@ namespace StutterFix
             public IntPtr Pixels;
             public long Size;
             public float Factor = 1f;   // 큰 이미지 줄이기로 줄인 비율 (1 이면 그대로)
+            public bool Extra;          // 추가 형식(흑백, 16비트)으로 푼 것: 개발자용에서 유니티 결과와 비교
+            public IntPtr Blocks; public long BlockSize; public bool Dxt5;   // 미리 압축한 DXT (없으면 Zero)
+            // 줄 묶음 압축: 전체 블록 줄, 다음에 나눠 줄 줄, 끝난 줄, 지금 압축 중인 묶음 수, 압축 그만둠(게임이 먼저 가져감), 다 됨
+            public int Rows, NextRow, DoneRows, InFlight, Layout; public bool Abandoned, BlocksReady, Urgent;   // Urgent: 게임이 기다리는 중
+            public bool PixelsOrphan, BlocksOrphan;   // 가져간 쪽이 풀기를 작업 스레드에 맡김 (압축 중인 묶음이 남아 있을 때)
         }
 
         private static readonly object gate = new object();
@@ -403,7 +408,7 @@ namespace StutterFix
                     used = fallback = notReady = 0; waitMs = 0; shrunkCount = 0; savedBytes = 0;
                 }
                 startTicks = Stopwatch.GetTimestamp();
-                putMs = fallbackMs = 0;
+                putMs = fallbackMs = 0; fallbackNotes = 0; lateCompress = 0; compressWaitMs = 0;
                 gcAtStart = GC.CollectionCount(0);
                 // 로딩 동안 GC를 꺼 둔다. 지난번 로딩 중 GC가 13번 돌았다. 곡 중 GC 멈춤이 이미 끈 상태면 건드리지 않는다.
                 if (!GcControl.Paused && UnityEngine.Scripting.GarbageCollector.GCMode == UnityEngine.Scripting.GarbageCollector.Mode.Enabled)
@@ -412,6 +417,8 @@ namespace StutterFix
                     catch { }
                 }
 
+                Compat.Refresh();   // PACL2 손실 압축이 켜져 있는지 (작업 스레드가 미리 압축할지 정한다)
+                Resilience.Phase("맵 이미지 불러오는 중");
                 // 코어 수만큼 (최대 8). 예전에는 코어 - 1 이었는데, 메인 스레드는 불러오는 동안 대부분 풀린 이미지를 기다린다
                 // (Hello (BPM) 2026: 전체 11초 중 기다림 5초). 작업 스레드는 낮은 우선순위라 메인 스레드가 필요할 때는 양보한다.
                 int n = Math.Max(1, Math.Min(8, Environment.ProcessorCount));
@@ -422,12 +429,31 @@ namespace StutterFix
                     workers[i] = new Thread(Work) { IsBackground = true, Name = "StutterFix.Image" + i, Priority = System.Threading.ThreadPriority.BelowNormal };
                     workers[i].Start();
                 }
-                Main.Entry.Logger.Log("[이미지] " + list.Count + "장 미리 풀기 시작 (작업 스레드 " + n + "개)");
+                Main.Entry.Logger.Log("[이미지] " + list.Count + "장 미리 풀기 시작 (작업 스레드 " + n + "개" + (TexCompress.Planned ? ", DXT 로 미리 압축: " + (Compat.Pacl2Lossy ? "PACL2 손실 압축" : "저사양 옵션") : "") + ")");
             }
             catch (Exception ex) { Main.Entry.Logger.Error("[이미지] 시작 실패: " + ex.Message); Stop(); }
         }
 
         // ── 2) 작업 스레드 ─────────────────────────────────────────────
+        // 압축은 이미지 하나를 블록 줄 묶음(ChunkRows)으로 나눠 여러 작업 스레드가 함께 한다. 큰 이미지(7680x4320)를 스레드 하나가 하면
+        // 2.5초가 걸려 그 사이 게임이 가져가 버렸다(2026-09-26: 29장이 늦음). 게임이 곧 가져갈 이미지(앞쪽)부터 압축한다.
+        // 풀어 둔 것이 2장 이상 기다리고 있으면 압축을, 아니면 다음 이미지 풀기를 먼저 한다(풀기가 밀리면 게임이 풀기를 기다린다).
+        private const int ChunkRows = 16;
+
+        // gate 안에서: 가장 앞의 압축할 거리
+        private static Item NextCompressJob(out int ahead)
+        {
+            ahead = 0; Item job = null;
+            for (int i = Math.Max(0, consumed); i < next && i < items.Count; i++)
+            {
+                var c = items[i];
+                if (c.State != 2) continue;
+                ahead++;
+                if (job == null && c.Blocks != IntPtr.Zero && !c.Abandoned && c.NextRow < c.Rows) job = c;
+            }
+            return job;
+        }
+
         private static void Work()
         {
             try { WorkLoop(); }
@@ -438,23 +464,61 @@ namespace StutterFix
         {
             while (true)
             {
-                Item it;
+                Item it = null, job = null; int r0 = 0, r1 = 0; IntPtr jpx = IntPtr.Zero, jbl = IntPtr.Zero;   // 픽셀·결과 주소는 gate 안에서 받아 둔다
                 lock (gate)
                 {
-                    // 풀어 둔 양이 많으면 메인 스레드가 가져갈 때까지 기다린다
-                    while (running && next < items.Count && pendingBytes > (long)MaxPendingMB * 1048576)
-                        Monitor.Wait(gate, 200);
-                    if (!running || next >= items.Count) return;
-                    it = items[next++];
-                    if (it.State != 0) continue;
-                    it.State = 1;
+                    while (true)
+                    {
+                        if (!running) return;
+                        int ahead;
+                        var cand = NextCompressJob(out ahead);
+                        // 풀어 둔 양이 많으면 풀기는 멈추고(메인 스레드가 가져갈 때까지) 압축만 한다
+                        bool canDecode = next < items.Count && pendingBytes <= (long)MaxPendingMB * 1048576;
+                        if (cand != null && (cand.Urgent || ahead >= 2 || !canDecode))
+                        {
+                            job = cand; jpx = cand.Pixels; jbl = cand.Blocks; r0 = cand.NextRow; r1 = Math.Min(cand.Rows, r0 + ChunkRows); cand.NextRow = r1; cand.InFlight++;
+                            break;
+                        }
+                        if (canDecode)
+                        {
+                            it = items[next++];
+                            if (it.State != 0) { it = null; continue; }
+                            it.State = 1;
+                            break;
+                        }
+                        if (next >= items.Count && cand == null)
+                        {
+                            // 남은 풀기가 없고 압축 거리도 없다: 다른 스레드가 아직 푸는 중이면 그 압축을 도우러 기다리고, 아니면 끝
+                            bool decoding = false;
+                            for (int i = Math.Max(0, consumed); i < items.Count; i++) if (items[i].State == 1) { decoding = true; break; }
+                            if (!decoding) return;
+                        }
+                        Monitor.Wait(gate, 100);
+                    }
                 }
 
-                int w = 0, h = 0, f = 0; IntPtr px = IntPtr.Zero; long size = 0; bool ok = false; float factor = 1f;
+                if (job != null)
+                {
+                    long t0 = Stopwatch.GetTimestamp();
+                    try { unsafe { DxtEncoder.EncodeRows((byte*)jpx, job.Width, job.Height, job.Layout, job.Dxt5, (byte*)jbl, r0, r1); } }
+                    catch { lock (gate) job.Abandoned = true; }
+                    Interlocked.Add(ref TexCompress.EncodeTicks, Stopwatch.GetTimestamp() - t0);
+                    lock (gate)
+                    {
+                        job.InFlight--;
+                        job.DoneRows += r1 - r0;
+                        if (job.DoneRows >= job.Rows && !job.Abandoned) job.BlocksReady = true;
+                        ReleaseIfDone(job);
+                        Monitor.PulseAll(gate);
+                    }
+                    continue;
+                }
+
+                int w = 0, h = 0, f = 0; IntPtr px = IntPtr.Zero; long size = 0; bool ok = false, extra = false; float factor = 1f;
                 try
                 {
                     int len = ReadInto(it.Path, ref fileBuf);
-                    ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, out w, out h, out f, out px, out size);
+                    ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, ExtraFormats, out w, out h, out f, out px, out size, out extra);
                     long before = (long)w * h * 4;   // GPU 에는 한 픽셀 4바이트로 올라간다
                     if (ok && sideNow > 0 && PngDecoder.Downscale(ref px, ref w, ref h, f, ref size, sideNow, out factor))
                     {
@@ -464,22 +528,46 @@ namespace StutterFix
                 }
                 catch { ok = false; }
 
+                // 압축할 예정이면(PACL2 손실 압축, 저사양 옵션) 압축 결과 자리를 잡고 줄 묶음 압축 거리로 내놓는다(푼 것은 바로 넘긴다).
+                // 유니티 압축처럼 알파 있는 형식은 DXT5, RGB24 는 DXT1. 크기가 4의 배수가 아니면 PACL2 도 압축하지 않는다(IL 확인).
+                bool compress = ok && TexCompress.Planned && w % 4 == 0 && h % 4 == 0 && (f == PngDecoder.FormatRGBA32 || f == PngDecoder.FormatARGB32 || f == PngDecoder.FormatRGB24);
+                bool d5 = f != PngDecoder.FormatRGB24;
+                long bsize = compress ? DxtEncoder.BlocksSize(w, h, d5) : 0;
+                IntPtr blocks = IntPtr.Zero;
+                if (compress) { try { blocks = Marshal.AllocHGlobal((IntPtr)bsize); } catch { blocks = IntPtr.Zero; bsize = 0; } }
                 lock (gate)
                 {
                     if (!running || it.State != 1 || it.Index < consumed)   // 게임이 이미 지나간 것
                     {
                         if (px != IntPtr.Zero) Marshal.FreeHGlobal(px);
+                        if (blocks != IntPtr.Zero) Marshal.FreeHGlobal(blocks);
                     }
                     else if (ok)
                     {
-                        it.Width = w; it.Height = h; it.Format = f; it.Pixels = px; it.Size = size; it.Factor = factor;
+                        it.Width = w; it.Height = h; it.Format = f; it.Pixels = px; it.Size = size; it.Factor = factor; it.Extra = extra;
+                        if (blocks != IntPtr.Zero)
+                        {
+                            it.Blocks = blocks; it.BlockSize = bsize; it.Dxt5 = d5; it.Layout = f == PngDecoder.FormatARGB32 ? 1 : f == PngDecoder.FormatRGB24 ? 2 : 0;
+                            it.Rows = h / 4; it.NextRow = 0; it.DoneRows = 0;
+                        }
                         it.State = 2;
-                        pendingBytes += size;
+                        pendingBytes += size + bsize;
                     }
-                    else it.State = 3;
+                    else { it.State = 3; if (blocks != IntPtr.Zero) Marshal.FreeHGlobal(blocks); }
                     Monitor.PulseAll(gate);
                 }
             }
+        }
+        internal static int lateCompress;      // 압축이 절반도 안 됐을 때 게임이 가져간 이미지 수 (그 이미지는 원래대로 유니티가 압축)
+        internal static double compressWaitMs; // 절반 넘게 된 압축을 게임이 기다린 시간
+
+        // gate 안에서: 압축 거리에서 빠진(게임이 가져갔거나 건너뜀) 이미지는 마지막 줄 묶음이 끝났을 때 결과·픽셀을 푼다
+        private static void ReleaseIfDone(Item c)
+        {
+            if (c.InFlight > 0) return;
+            if (c.Abandoned && c.Blocks != IntPtr.Zero && !c.BlocksReady) { Marshal.FreeHGlobal(c.Blocks); c.Blocks = IntPtr.Zero; }
+            if (c.PixelsOrphan) { Marshal.FreeHGlobal(c.Pixels); c.Pixels = IntPtr.Zero; c.PixelsOrphan = false; }
+            if (c.BlocksOrphan) { if (c.Blocks != IntPtr.Zero) Marshal.FreeHGlobal(c.Blocks); c.Blocks = IntPtr.Zero; c.BlocksOrphan = false; }
         }
 
         // 파일을 스레드마다 하나씩 둔 버퍼에 읽는다(이미지마다 새 배열을 만들지 않는다).
@@ -508,6 +596,7 @@ namespace StutterFix
         public static byte[] ReadAllBytes(string path, out ADOFAI.LoadResult loadResult)
         {
             Item it = null;
+            string why = null;
             if (running)
             {
                 long t0 = Stopwatch.GetTimestamp();
@@ -516,20 +605,39 @@ namespace StutterFix
                     if (byPath.TryGetValue(path, out it))
                     {
                         // 아직 시작 안 한 것은 기다리지 않는다(순서가 어긋났다는 뜻). 푸는 중이면 끝날 때까지 기다린다.
-                        if (it.State == 0) { it.State = 3; notReady++; it = null; }
+                        if (it.State == 0) { it.State = 3; notReady++; it = null; why = "순서 어긋남"; }
                         else
                         {
                             while (it.State == 1 && running) Monitor.Wait(gate, 100);
-                            if (it.State == 2) { it.State = 4; pendingBytes -= it.Size; DropSkipped(it.Index); Monitor.PulseAll(gate); }
-                            else it = null;
+                            // 압축이 절반 넘게 됐으면 모든 작업 스레드가 이것부터 마저 하도록 하고 기다린다. 절반도 안 됐으면 그만두고 원래대로(유니티 압축).
+                            if (it.State == 2 && it.Blocks != IntPtr.Zero && !it.BlocksReady && !it.Abandoned)
+                            {
+                                if (it.DoneRows * 2 >= it.Rows)
+                                {
+                                    long w0 = Stopwatch.GetTimestamp();
+                                    it.Urgent = true; Monitor.PulseAll(gate);
+                                    while (running && !it.BlocksReady && !it.Abandoned) Monitor.Wait(gate, 20);
+                                    compressWaitMs += (Stopwatch.GetTimestamp() - w0) * 1000.0 / Stopwatch.Frequency;
+                                }
+                                if (!it.BlocksReady) { it.Abandoned = true; lateCompress++; }
+                            }
+                            if (it.State == 2) { it.State = 4; pendingBytes -= it.Size + it.BlockSize; DropSkipped(it.Index); Monitor.PulseAll(gate); }
+                            else { it = null; why = "해독 못 함(지원하지 않는 PNG 형식이거나 오류)"; }
                         }
                     }
+                    else why = "미리 풀기 목록에 없음";
                 }
                 waitMs += (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
             }
 
             if (it == null)
             {
+                if (running && Edition.Dev && fallbackNotes < 20)
+                {
+                    fallbackNotes++;
+                    long len = -1; try { len = new FileInfo(path).Length; } catch { }
+                    Main.Entry.Logger.Log(string.Format("[이미지] 원래 방식으로: {0} ({1}, {2}KB)", Path.GetFileName(path), why, len / 1024));
+                }
                 if (running) fallback++;
                 return RDFile.ReadAllBytes(path, out loadResult);
             }
@@ -548,7 +656,12 @@ namespace StutterFix
             for (int i = consumed + 1; i < k && i < items.Count; i++)
             {
                 var s = items[i];
-                if (s.State == 2) { Marshal.FreeHGlobal(s.Pixels); s.Pixels = IntPtr.Zero; pendingBytes -= s.Size; }
+                if (s.State == 2)
+                {
+                    pendingBytes -= s.Size + s.BlockSize; s.Abandoned = true;
+                    if (s.InFlight > 0) { s.PixelsOrphan = true; if (s.Blocks != IntPtr.Zero) s.BlocksOrphan = true; }   // 압축 중인 묶음이 끝나면 작업 스레드가 푼다
+                    else { Marshal.FreeHGlobal(s.Pixels); s.Pixels = IntPtr.Zero; if (s.Blocks != IntPtr.Zero) { Marshal.FreeHGlobal(s.Blocks); s.Blocks = IntPtr.Zero; } }
+                }
                 if (s.State == 0 || s.State == 2) s.State = 3;
             }
             if (k > consumed) consumed = k;
@@ -567,9 +680,17 @@ namespace StutterFix
             markers.Remove(data);
             try
             {
+                if (it.Extra && Edition.Dev && !ExtraMatches(it))
+                {
+                    // 추가 형식이 유니티 결과와 다르면 원래 방식으로 (개발자용 확인 중)
+                    fallback++;
+                    return ImageConversion.LoadImage(tex, File.ReadAllBytes(it.Path));
+                }
                 tex.Reinitialize(it.Width, it.Height, (TextureFormat)it.Format, false);
                 tex.LoadRawTextureData(it.Pixels, (int)it.Size);
                 if (it.Factor < 1f) shrunk[tex] = it.Factor;   // 스프라이트를 만들 때 크기 기준을 맞춘다
+                // 미리 압축한 것은 압축 순간(PACL2 의 Compress, 또는 저사양 옵션의 Apply)에 넣도록 맡긴다
+                if (it.Blocks != IntPtr.Zero && it.BlocksReady) { TexCompress.Register(tex, it.Blocks, it.BlockSize, it.Dxt5, it.Width, it.Height, (TextureFormat)it.Format); it.Blocks = IntPtr.Zero; }
                 used++;
                 putMs += (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
                 return true;
@@ -582,9 +703,52 @@ namespace StutterFix
             }
             finally
             {
-                Marshal.FreeHGlobal(it.Pixels);
-                it.Pixels = IntPtr.Zero;
+                // 작업 스레드가 아직 이 픽셀로 압축 중인 묶음이 있으면 풀기를 그쪽에 맡긴다(마지막 묶음이 끝나면 작업 스레드가 푼다)
+                lock (gate)
+                {
+                    if (it.InFlight > 0) { it.PixelsOrphan = true; if (it.Blocks != IntPtr.Zero) it.BlocksOrphan = true; }
+                    else
+                    {
+                        Marshal.FreeHGlobal(it.Pixels); it.Pixels = IntPtr.Zero;
+                        if (it.Blocks != IntPtr.Zero) { Marshal.FreeHGlobal(it.Blocks); it.Blocks = IntPtr.Zero; }
+                    }
+                }
             }
+        }
+
+        // ── 추가 형식(8비트 흑백·흑백+알파, 16비트 RGBA) ──
+        // 유니티 LoadImage 가 이 형식들을 어떤 텍스처 형식·바이트로 만드는지와 똑같아야 쓸 수 있다. 개발자용에서만 풀고, 넣기 전에
+        // 같은 파일을 유니티로 풀어 형식·크기·바이트 전체를 비교한다. 같으면 우리 것을 쓰고 다르면 유니티 결과를 쓴다(로그에 남김).
+        // 모든 형식에서 같음이 확인되면 플레이어용에서도 켠다.
+        // 2026-09-26 확인: 16비트 RGBA(2692x2833), 흑백+알파(2000x2000) 모두 유니티 결과와 형식·바이트 전부 같음 -> 모두에게 켠다(개발자용은 계속 비교)
+        internal static bool ExtraFormats = true;
+        internal static int ExtraSame, ExtraDiff;
+        private static unsafe bool ExtraMatches(Item it)
+        {
+            Texture2D u = null;
+            try
+            {
+                u = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                ImageConversion.LoadImage(u, File.ReadAllBytes(it.Path));
+                string why = null;
+                if (u.format != (TextureFormat)it.Format) why = "형식 " + u.format + " / 우리 " + (TextureFormat)it.Format;
+                else if (u.width != it.Width || u.height != it.Height) why = "크기 " + u.width + "x" + u.height + " / 우리 " + it.Width + "x" + it.Height;
+                else
+                {
+                    var raw = u.GetRawTextureData<byte>();
+                    if (raw.Length != it.Size) why = "바이트 수 " + raw.Length + " / 우리 " + it.Size;
+                    else
+                    {
+                        byte* p = (byte*)it.Pixels;
+                        for (int i = 0; i < raw.Length; i++) if (raw[i] != p[i]) { why = "바이트 " + i + " 번째부터 다름 (유니티 " + raw[i] + ", 우리 " + p[i] + ")"; break; }
+                    }
+                }
+                if (why == null) ExtraSame++; else ExtraDiff++;
+                Main.Entry.Logger.Log("[이미지] 추가 형식 확인 " + Path.GetFileName(it.Path) + " (" + u.format + " " + u.width + "x" + u.height + "): " + (why == null ? "유니티와 같음" : "다름 - " + why));
+                return why == null;
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[이미지] 추가 형식 확인 실패: " + ex.Message); return false; }
+            finally { if (u != null) UnityEngine.Object.Destroy(u); }
         }
 
         // ── 끝 ─────────────────────────────────────────────────────────
@@ -595,11 +759,12 @@ namespace StutterFix
                 double total = (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
                 LastSide = sideNow; LastShrunk = shrunkCount; LastSavedMB = Interlocked.Read(ref savedBytes) / 1048576f; AnyLoad = true;
                 Last = string.Format("미리 푼 것 {0}장(넣기 {5:F0}ms), 원래 방식 {1}장({6:F0}ms, 순서 어긋남 {2}), 기다림 {3:F0}ms, GC {7}번, 전체 {4:F1}초" + (shrunkCount > 0 ? ", 줄인 이미지 " + shrunkCount + "장 (긴 변 " + sideNow + ", VRAM 약 " + LastSavedMB.ToString("F0") + "MB 아낌)" : ""),
-                    used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart);
+                    used, fallback, notReady, waitMs, total / 1000.0, putMs, fallbackMs, GC.CollectionCount(0) - gcAtStart) + TexCompress.EndLoad() + (lateCompress > 0 ? ", 압축이 늦어 원래대로 " + lateCompress + "장" : "") + (compressWaitMs > 0 ? string.Format(", 압축 마저 기다림 {0:F0}ms", compressWaitMs) : "");
                 Main.Entry.Logger.Log("[이미지] " + Last);
                 double tk = Stopwatch.Frequency / 1000.0;
                 Main.Entry.Logger.Log(string.Format("[이미지] 해독 시간(작업 스레드 {0}개 합계): 압축 풀기 {1:F0}ms, 필터 되돌리기 {2:F0}ms | 새로 맡은 형식(흑백·인터레이스) {3}장 | libdeflate {4}장, 원래 zlib 로 다시 푼 것 {5}장 ({6})",
                     workers.Length, PngDecoder.InflateTicks / tk, PngDecoder.FilterTicks / tk, PngDecoder.NewKinds, PngDecoder.NativeImages, PngDecoder.NativeFallbacks, NativeInflate.Status));
+                Resilience.Phase("메뉴·편집");
             }
             Stop();
             // 로딩 동안 꺼 둔 GC를 되돌리고 한 번에 치운다(곡 중이 아니라 멈춰도 괜찮은 순간).
@@ -626,6 +791,7 @@ namespace StutterFix
         }
 
         private static double putMs, fallbackMs;
+        private static int fallbackNotes;   // (개발자용) 원래 방식으로 간 이미지 이름을 맵마다 20장까지
         private static int gcAtStart;
         private static bool gcWasOn;
 
@@ -643,7 +809,13 @@ namespace StutterFix
             lock (gate)
             {
                 foreach (var it in items)
-                    if (it.Pixels != IntPtr.Zero && it.State == 2) { Marshal.FreeHGlobal(it.Pixels); it.Pixels = IntPtr.Zero; }
+                {
+                    if (it.State != 2) continue;
+                    it.Abandoned = true;
+                    if (it.InFlight > 0) { if (it.Pixels != IntPtr.Zero) it.PixelsOrphan = true; if (it.Blocks != IntPtr.Zero) it.BlocksOrphan = true; continue; }   // (5초 넘게 압축 중인 것) 끝나면 작업 스레드가 푼다
+                    if (it.Pixels != IntPtr.Zero) { Marshal.FreeHGlobal(it.Pixels); it.Pixels = IntPtr.Zero; }
+                    if (it.Blocks != IntPtr.Zero) { Marshal.FreeHGlobal(it.Blocks); it.Blocks = IntPtr.Zero; }
+                }
                 items = new List<Item>();
                 byPath = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
                 pendingBytes = 0;

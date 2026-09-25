@@ -29,6 +29,7 @@ namespace StutterFix
         private static readonly AccessTools.FieldRef<scrCamera, MeshRenderer> quadMeshRef = AccessTools.FieldRefAccess<scrCamera, MeshRenderer>("camQuadMesh");
 
         internal static bool Active { get { return Enabled && Ready && LowEnd.EffectivePct < 100; } }
+        internal static bool IsOwn(Texture t) { return (object)t != null && ReferenceEquals(t, outRT); }   // 누수 막기가 FSR 출력 버퍼를 사용자 지정 FPS 버퍼로 오해하지 않게
 
         internal static void Apply()
         {
