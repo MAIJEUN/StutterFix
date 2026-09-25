@@ -27,6 +27,7 @@
     <Compile Include="Edition.cs" />
     <Compile Include="SettingsWindow.cs" />
     <Compile Include="PerfOverlay.cs" />
+    <Compile Include="PresentWatch.cs" />
     <Compile Include="SystemMonitor.cs" />
     <Compile Include="UiInputBlock.cs" />
     <Compile Include="ModCost.cs" />
