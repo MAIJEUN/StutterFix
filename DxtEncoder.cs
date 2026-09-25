@@ -94,7 +94,7 @@ namespace StutterFix
             int c1 = To565(p[li * 4], p[li * 4 + 1], p[li * 4 + 2]);
             uint idx; int err = Match(p, c0, c1, out idx);
             // 후보 2: 평균색 하나로 - 두 끝색의 2/3 지점이 평균색에 딱 맞는 쌍(단색 최적 표). 거의 한 색인 블록(그라데이션)에서 크게 낫다
-            if (UseSolid)
+            if (UseSolid && (maxR - minR) + (maxG - minG) + (maxB - minB) <= SolidMaxRange)   // 범위가 크면 평균색 하나로는 이기지 못한다
             {
                 int ar2 = (sr + 8) >> 4, ag2 = (sg + 8) >> 4, ab2 = (sb + 8) >> 4;
                 int s0 = (O5a[ar2] << 11) | (O6a[ag2] << 5) | O5a[ab2], s1 = (O5b[ar2] << 11) | (O6b[ag2] << 5) | O5b[ab2];
@@ -217,6 +217,7 @@ namespace StutterFix
         // 설정 근거(2026-09-26, 유니티 에디터에서 Arche 이미지로 비교): 단색 최적 + PCA + 다듬기 1번 + 거의 한 색(범위 합 12 이하) 지름길 ->
         // 원본과의 평균 오차가 모든 이미지에서 유니티 Compress(false) 이하(1.37/1.17/0.97/0.73 대 1.40/1.19/1.02/0.78), 한 코어 81ns/픽셀(유니티 32).
         internal static int NearSolid = 12;
+        internal static int SolidMaxRange = 48;   // 같은 화질에 7% 빠름 (시험: 9999 / 96 / 48 모두 오차 같음)
 
         // 단색 최적 표: 값 v 마다 (2*확장(a) + 확장(b)) / 3 이 v 에 가장 가까운 a, b (같으면 a, b 가 가까운 쪽)
         private static readonly byte[] O5a = new byte[256], O5b = new byte[256], O6a = new byte[256], O6b = new byte[256];

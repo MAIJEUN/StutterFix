@@ -11,11 +11,13 @@ namespace StutterFix
     // 한 장씩 푸는 데 65초가 걸렸다. 같은 일을 여러 코어에서 미리 해 두려고 직접 푼다.
     //
     // 흔한 형식만 처리한다: 8비트 RGB / RGBA, 1~8비트 팔레트, 투명색(tRNS).
-    // 16비트, 흑백, 인터레이스, 손상된 파일은 false 를 돌려주고 원래 LoadImage 가 처리하게 한다.
+    // 추가로 8비트 흑백·흑백+알파와 16비트 RGBA 를 유니티처럼 ARGB32 로 푼다(유니티 결과와 바이트까지 같음을 확인).
+    // 그 밖의 16비트, 인터레이스, 손상된 파일은 false 를 돌려주고 원래 LoadImage 가 처리하게 한다.
     // 결과는 유니티 텍스처 순서(아래 줄부터)로 뒤집어서 관리 힙 밖(AllocHGlobal)에 담는다.
     // 수백 MB 짜리 배열을 GC 힙에 만들지 않기 위해서다.
     internal static unsafe class PngDecoder
     {
+        internal static bool GrayVerified = Edition.Dev;   // 알파 없는 8비트 흑백: 유니티와 같음이 확인되면 모두에게
         internal const int FormatRGB24 = 3, FormatRGBA32 = 4, FormatARGB32 = 5;   // UnityEngine.TextureFormat 값 (추가 형식은 유니티처럼 ARGB32, 개발자용 비교로 확인)
 
         // 작업 스레드마다 버퍼를 재사용한다. 이미지마다 새로 만들면 로딩 중 GC가 13번 돌아 메인 스레드를 세웠다.
@@ -61,7 +63,7 @@ namespace StutterFix
             else if (colorType == 2 && bitDepth == 8) channels = 3;
             else if (colorType == 3 && (bitDepth == 1 || bitDepth == 2 || bitDepth == 4 || bitDepth == 8) && plte != null) channels = 1;
             // (추가 형식, 유니티 결과와 같음이 확인된 뒤에만 켠다) 8비트 흑백·흑백+알파 -> RGBA32, 16비트 RGBA -> RGBA64
-            else if (extra && colorType == 0 && bitDepth == 8) { channels = 1; usedExtra = true; }
+            else if (extra && GrayVerified && colorType == 0 && bitDepth == 8) { channels = 1; usedExtra = true; }   // 알파 없는 흑백은 아직 실제 파일로 확인 전
             else if (extra && colorType == 4 && bitDepth == 8) { channels = 2; usedExtra = true; }
             else if (extra && colorType == 6 && bitDepth == 16) { channels = 4; usedExtra = true; }
             else return false;
