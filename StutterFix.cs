@@ -114,6 +114,8 @@ namespace StutterFix
                 LowEnd.Install(harmony);
                 ParticleFix.Install(harmony);
                 LeakGuard.Install(harmony);
+                LoadFix.Install(harmony);
+                LoadFix.InstallDoubleReset(harmony);
                 HalfRender.Install(harmony);
                 RenderVerify.Install(harmony);
                 FrameParts.Install(harmony);
@@ -225,7 +227,8 @@ namespace StutterFix
 
             var targets = new[]
             {
-                new[] { "scnGame", "LoadLevel" },
+                // scnGame.LoadLevel 은 뺐다(2.2.0): 에디터에서 맵을 새로 열 때 이전 맵의 머티리얼 인스턴스가 이 정리로만 풀리는데, 건너뛰면
+                // 맵을 열 때마다 쌓였다(측정: 맵 A 뒤 4,781개 → 맵 B 뒤 11,601개 = 4,781 + 맵 B 의 6,820). 맵 열기는 어차피 몇 초 걸리는 순간이라 원래대로 둔다.
                 new[] { "scnGame", "Awake" },
                 new[] { "scnEditor", "SwitchToEditMode" },
             };
@@ -462,7 +465,7 @@ namespace StutterFix
             Fsr.Apply();
             LowEnd.Apply();
             MoveApply.Enabled = Config.MoveFinish;
-            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix;
+            ParticleFix.SkipIdle = Config.SkipIdleParticles; ParticleFix.PauseOffscreen = Config.LowPauseParticles; LeakGuard.Enabled = Config.LeakFix; LoadFix.CacheFileTimes = Config.LoadCache; LoadFix.SkipDoubleReset = Config.LoadCache;
             MoveApply.LogicSkip = Dormancy.Enabled = Config.DormantSkip;
             TextFix.SkipSameText = Config.SkipSameText;
             ImagePrefetch.Enabled = Config.ImagePrefetch;
@@ -636,6 +639,7 @@ namespace StutterFix
         public bool SkipAssetUnload = true;
         public bool SkipIdleParticles = true;  // 파티클 장식이 매 프레임 같은 크기·속도를 다시 넣는 것 건너뛰기
         public bool LeakFix = true;            // 게임 메모리 누수 막기 (사용자 지정 FPS 화면 버퍼)
+        public bool LoadCache = true;          // 맵 열기·재생 시작 때 이미지 파일 수정 시각을 한 프레임에 한 번만 읽기
         public bool LegacyGfxJobs = true;   // boot.config 로 그래픽 작업 분산(legacy)을 켠다
 
         // 기능별 켜기/끄기 (플레이어용 설정 화면에서 바꾸고 저장된다)

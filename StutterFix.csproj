@@ -38,6 +38,7 @@
     <Compile Include="Compat.cs" />
     <Compile Include="ParticleFix.cs" />
     <Compile Include="LeakGuard.cs" />
+    <Compile Include="LoadFix.cs" />
     <EmbeddedResource Include="fsr/stutterfix_fsr" LogicalName="StutterFix.fsr" />
     <Compile Include="RenderVerify.cs" />
     <Compile Include="WarmChars.cs" />
