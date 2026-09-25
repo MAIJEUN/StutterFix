@@ -6,7 +6,7 @@
 > 게임이 일을 처리하는 순서와 방법만 바꿉니다. 결과가 달라질 수 있는 기능(저사양 페이지)은 전부 기본으로 꺼져 있습니다.
 > 모든 기능은 실제 맵에서 끊긴 순간을 하나씩 측정해 원인을 찾은 뒤 만들었고, 원래 게임과 같은 결과인지 자동으로 대조해 확인했습니다.
 
-made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](https://github.com/pding4569/StutterFix))
+made by **naro** & **Claude**
 
 ## 한눈에 보기
 
@@ -16,14 +16,14 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 | Arche | 효과가 몰리는 프레임 | 91 → 67ms |
 | 블렌드 장식 1,500개 (3440×1440) | 화면 복사 없이 그리기 | 약 11 FPS 로 떨어지던 구간이 끊김 없이 |
 | Arche | 에디터 재생 시작 | 8.6초 → 4.3초 (2.2.0) |
-| Hello (BPM) 2026 | 맵 불러오기 | 12.2초 → **8.1초** (이 포크) |
-| Hello (BPM) 2026 | 첫 판 곡 중 끊김 | 10번(최악 133ms) → **2번(최악 35ms)** (이 포크) |
+| Hello (BPM) 2026 | 맵 불러오기 | 12.2초 → **8.1초** |
+| Hello (BPM) 2026 | 첫 판 곡 중 끊김 | 10번(최악 133ms) → **2번(최악 35ms)** |
 
 ## 목차
 
 - [설치](#설치)
 - [사용법](#사용법)
-- [이 포크에서 바뀐 것](#이-포크에서-바뀐-것)
+- [2.2.1 이후 바뀐 것](#221-이후-바뀐-것)
 - [기능](#기능) — [플레이](#플레이) · [맵 불러오기](#맵-불러오기) · [그래픽](#그래픽) · [저사양](#저사양) · [편의](#편의) · [다른 모드와 함께](#다른-모드와-함께)
 - [실시간 모니터](#실시간-모니터)
 - [문제 보고](#문제-보고) · [그래도 끊긴다면](#그래도-끊긴다면)
@@ -32,12 +32,9 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 ## 설치
 
-1. [원본 Releases](https://github.com/pding4569/StutterFix/releases)에서 `StutterFix-x.y.z-player.zip`을 받습니다.
+1. [Releases](https://github.com/pding4569/StutterFix/releases)에서 `StutterFix-x.y.z-player.zip`을 받습니다.
 2. Unity Mod Manager의 **Mods** 탭에서 **Install Mod**로 zip을 고르거나, 압축을 풀어 `A Dance of Fire and Ice/Mods/StutterFix/` 폴더에 넣습니다.
 3. 게임을 켜면 적용됩니다. **게임을 한 번 더 껐다 켜면** 멀티스레드 그리기까지 적용됩니다.
-
-> **이 포크의 변경은 아직 원본 릴리스에 들어 있지 않습니다.** 이 포크를 쓰려면 [빌드](#빌드)해서 `bin/Player/StutterFix.dll`을 모드 폴더에 넣습니다.
-> 이 포크 빌드를 쓰는 동안 설정 창의 **업데이트 받기**를 누르면 원본 릴리스로 바뀌어 이 포크의 변경이 사라집니다(이전 파일은 `StutterFix.dll.bak`으로 남습니다).
 
 ## 사용법
 
@@ -46,9 +43,9 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 - 두 단축키는 설정 창 홈에서 바꿀 수 있고, 한국어/English를 고를 수 있습니다.
 - 아이콘 줄 맨 아래 버튼으로 게임을 다시 켤 수 있습니다. 에디터에서 맵을 열어 둔 채라면 **이 맵으로 재시작**으로 다시 켠 뒤 그 맵을 바로 엽니다(저장 안 한 편집이 있으면 재시작하지 않음). 다시 켜면 좋은 때(설정 변경, 모드 업데이트, 메모리를 많이 씀, 오래 켜 둠)는 주황색 표시로 알려 줍니다.
 
-## 이 포크에서 바뀐 것
+## 2.2.1 이후 바뀐 것
 
-원본 2.2.1 위에 더한 것입니다. 전부 기본으로 켜져 있고, 화면·판정·소리는 원래 게임과 같습니다.
+전부 기본으로 켜져 있고, 화면·판정·소리는 원래 게임과 같습니다.
 
 ### 맵 불러오기가 빨라짐
 
@@ -56,7 +53,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 |---|---|
 | **libdeflate 로 압축 풀기** | PNG 압축 풀기를 게임의 zlib 대신 [libdeflate](https://github.com/ebiggers/libdeflate)(MIT)로 합니다. 압축 풀기만 넣어 빌드한 DLL(118KB)이 모드 DLL 안에 들어 있어 따로 챙길 파일이 없습니다. DLL 을 못 불러오거나 결과 크기가 맞지 않으면 원래 방식으로 다시 풉니다. |
 | 해독 중 복사 없애기 | 압축을 결과 메모리에 바로 풀고 그 자리에서 PNG 필터를 되돌립니다(2026 기준 약 10GB 의 복사가 사라짐). |
-| 인터레이스 PNG 도 여러 코어에서 | 인터레이스(Adam7) PNG 도 작업 스레드에서 풉니다(예전에는 메인 스레드에서 한 장씩). 흑백+알파·16비트는 원본 2.2.0 이 유니티와 같은 모양(ARGB32)으로 맡습니다. JPG 는 손실 압축이라 해독기마다 픽셀이 달라질 수 있어 게임 해독기에 둡니다. |
+| 인터레이스 PNG 도 여러 코어에서 | 인터레이스(Adam7) PNG 도 작업 스레드에서 풉니다(예전에는 메인 스레드에서 한 장씩). JPG 는 손실 압축이라 해독기마다 픽셀이 달라질 수 있어 게임 해독기에 둡니다. |
 | 해독 스레드 | 코어 수 - 1 → 코어 수(최대 8). 메인 스레드는 불러오는 동안 대부분 해독을 기다립니다. |
 
 측정 (Hello (BPM) 2026, 긴 변 1536 같은 조건): 압축 풀기(작업 스레드 합계) 45.7초 → 5.2초, **전체 12.2초 → 8.1초**.
@@ -66,7 +63,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 예전 "큰 이미지 줄이기(자동)"는 VRAM 이 가득 차 **한 번 끊긴 뒤에야** 다음부터 줄였습니다. 이제는 맵을 불러오기 직전에 이미지 파일의 머리 정보만 읽어 원본 크기를 어림하고, **비어 있는 VRAM 의 1.25배를 넘으면 첫 판부터 긴 변 3072** 를 씁니다(3072 보다 큰 이미지만 줄어듦). 그보다 더 내리는 것은 지금처럼 실제로 끊겼을 때만 합니다.
 
-> 원본에서 예전에 뺀 "전체가 VRAM 에 들어갈 때까지 줄이기"와는 다릅니다. 그 방식은 원본으로도 잘 돌던 CICADA3302 를 1024 까지 줄였습니다(그래픽카드는 그 순간 쓰는 이미지만 올려 두므로 전체 양으로는 끊김을 예측할 수 없음). 여기서는 첫 단계(3072)만 씁니다.
+> 예전에 뺀 "전체가 VRAM 에 들어갈 때까지 줄이기"와는 다릅니다. 그 방식은 원본으로도 잘 돌던 CICADA3302 를 1024 까지 줄였습니다(그래픽카드는 그 순간 쓰는 이미지만 올려 두므로 전체 양으로는 끊김을 예측할 수 없음). 여기서는 첫 단계(3072)만 씁니다.
 
 측정 (Hello (BPM) 2026 첫 판): 원본 11.4GB / 비어 있는 VRAM 5.3GB → 3072, 87장 줄임. 곡 중 VRAM 끊김 0, 곡 시작 뒤 가장 긴 프레임 35ms.
 (전: 첫 판에 VRAM 이 가득 차 130ms 끊김 여러 번, 시스템 RAM 으로 5.5GB 넘침)
@@ -103,7 +100,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 ## 기능
 
-원본의 기능입니다. 기본으로 전부 켜져 있고, 설정 창에서 하나씩 끌 수 있습니다.
+기본으로 전부 켜져 있고, 설정 창에서 하나씩 끌 수 있습니다.
 
 ### 플레이
 
@@ -142,12 +139,12 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 | 기능 | 하는 일 | 측정 |
 |---|---|---|
-| 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 여러 코어에서 동시에 풉니다. 압축 풀기는 libdeflate(이 포크). 흑백+알파·16비트 PNG 도 유니티와 바이트까지 같게 미리 풀고(2.2.0), PACL2 의 이미지 손실 압축이 켜져 있으면 그 압축(메인 스레드에서 한 장씩)을 여러 코어에서 미리 해 둔 것으로 대신합니다(압축 오차는 시험한 모든 이미지에서 유니티 압축 이하, 2.2.0). | 700장 맵 67 → 38초, 2026 12.2 → 8.1초(이 포크), PACL2 와 함께 Arche 장식 준비 25.3 → 18.5초 |
+| 이미지 빠르게 불러오기 | 장식 이미지(PNG)를 여러 코어에서 동시에 풉니다. 압축 풀기는 libdeflate. 흑백+알파·16비트 PNG 도 유니티와 바이트까지 같게 미리 풀고(2.2.0), PACL2 의 이미지 손실 압축이 켜져 있으면 그 압축(메인 스레드에서 한 장씩)을 여러 코어에서 미리 해 둔 것으로 대신합니다(압축 오차는 시험한 모든 이미지에서 유니티 압축 이하, 2.2.0). | 700장 맵 67 → 38초, 2026 12.2 → 8.1초, PACL2 와 함께 Arche 장식 준비 25.3 → 18.5초 |
 | 불필요한 정리 건너뛰기 | 편집으로 돌아올 때 게임이 부르는 에셋 정리(한 번에 120~200ms)를 건너뜁니다. 맵을 새로 열 때의 정리는 이전 맵 메모리를 풀기 위해 그대로 둡니다(2.2.0). | |
 | 에디터 재생 시작 빠르게 | 이미지 파일 수정 시각을 파일마다 한 번만 읽고, 장식이 하나도 안 바뀌었으면 장식 전체 다시 설정을 두 번 대신 한 번만 하고, 에디터 클릭용 충돌 상자를 넣은 반대 순서로 끕니다(2.2.0). 개발자용 검증: 건너뛴 다시 설정의 차이 0. | Arche 8.6 → 4.3초 |
 | 게임 메모리 누수 막기 | 게임의 사용자 지정 FPS 효과가 켤 때마다 새로 만들고 풀지 않던 화면 크기 버퍼(4K 에서 약 40MB)를 풀고, 재시작마다 게임 화면 버퍼를 괜히 다시 만드는 것을 막습니다(2.2.0). | |
-| 큰 이미지 줄이기 (기본 자동) | 필요한 VRAM 이 크게 넘칠 맵은 첫 판부터 긴 변 3072(이 포크), 그래도 VRAM 이 가득 차 끊기면 기억해 두었다가 한 단계씩(2048 → 1536 → 1024) 줄입니다. 화면에 보이는 크기는 그대로이고 선명도만 조금 낮아집니다. 설정 창에서 기억한 맵을 지울 수 있습니다. | 이미지 2,000장 맵(VRAM 8GB) 150~200ms 멈춤이 3072 에서 사라짐 |
-| 필터 셰이더 미리 준비 | 맵에서 쓰는 필터의 셰이더를 불러오기 끝에 미리 만들어 둡니다(이 포크에서 고침). | 2026 필터 109개 약 200ms |
+| 큰 이미지 줄이기 (기본 자동) | 필요한 VRAM 이 크게 넘칠 맵은 첫 판부터 긴 변 3072, 그래도 VRAM 이 가득 차 끊기면 기억해 두었다가 한 단계씩(2048 → 1536 → 1024) 줄입니다. 화면에 보이는 크기는 그대로이고 선명도만 조금 낮아집니다. 설정 창에서 기억한 맵을 지울 수 있습니다. | 이미지 2,000장 맵(VRAM 8GB) 150~200ms 멈춤이 3072 에서 사라짐 |
+| 필터 셰이더 미리 준비 | 맵에서 쓰는 필터(일반·고급)의 셰이더를 불러오기 끝에 미리 만들어 둡니다. | 2026 필터 109개 약 200ms |
 
 ### 그래픽
 
@@ -194,10 +191,7 @@ made by **naro** & **Claude** · 이 포크: **MAIJEUN** ([원본 저장소](htt
 
 ## 문제 보고
 
-끊기거나 오류가 났다면 설정 창 **정보 → 로그 파일 만들기**(또는 UMM 모드 설정의 **문제 보고용 로그 만들기**)를 누르세요. 바탕화면에 `StutterFix-log-날짜.zip`이 생깁니다.
-
-- 원본 기능: 디스코드 **narooh** 에게 DM
-- 이 포크에서 바뀐 부분: [MAIJEUN/StutterFix](https://github.com/MAIJEUN/StutterFix)
+끊기거나 오류가 났다면 설정 창 **정보 → 로그 파일 만들기**(또는 UMM 모드 설정의 **문제 보고용 로그 만들기**)를 누르세요. 바탕화면에 `StutterFix-log-날짜.zip`이 생깁니다. 이 파일을 디스코드 **narooh** 에게 DM 으로 보내 주세요.
 
 들어가는 것: 컴퓨터 사양, 이 모드 설정, 설치된 모드 목록, 게임 로그(이번 실행과 직전 실행), 실시간 모니터의 끊김 기록. 로그 안의 윈도우 사용자 이름은 가려지고, 자동으로 어디에 올리지는 않습니다.
 
@@ -260,10 +254,9 @@ cl /O2 /GL /MT /LD /DLIBDEFLATE_DLL /I. lib\deflate_decompress.c lib\zlib_decomp
 
 Stutter Fix reduces mid-play hitches and level loading times on heavy custom levels in A Dance of Fire and Ice. **Visuals, judgement and audio stay identical to the vanilla game**; features that may change how things look (the low-end page) are off by default. Every feature was built after measuring a real hitch, and dev builds cross-check the results against the original game code.
 
-**Install:** download `StutterFix-x.y.z-player.zip` from the [upstream Releases](https://github.com/pding4569/StutterFix/releases) and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** for the settings window (Korean/English) and **Shift+Insert** for the live monitor.
-This fork's changes are not in the upstream release yet: build it (`dotnet build -p:Edition=Player`) and copy `bin/Player/StutterFix.dll`. Pressing *Update* in the settings window replaces this build with the upstream release.
+**Install:** download `StutterFix-x.y.z-player.zip` from [Releases](https://github.com/pding4569/StutterFix/releases) and install it with Unity Mod Manager (Install Mod), or extract it to `A Dance of Fire and Ice/Mods/StutterFix/`. Restart the game once more to enable multithreaded rendering. Press **Insert** for the settings window (Korean/English) and **Shift+Insert** for the live monitor.
 
-**What this fork adds (on top of 2.2.1):**
+**Since 2.2.1:**
 - **Faster level loading:** PNG inflate with libdeflate (MIT, embedded), decoding straight into the output buffer, interlaced PNGs decoded on worker threads, one worker per core. Hello (BPM) 2026: 12.2 s → 8.1 s. 1,047 PNGs verified pixel-identical against PIL.
 - **VRAM overflow prevented on the first play:** image sizes are read from file headers before loading; if the originals would exceed 1.25× the free VRAM, the largest images are capped at 3072 px from the first play (only this first step). Hello (BPM) 2026: no VRAM hitches on the first play (was several 130 ms hitches).
 - **Filter shader warm-up fixed:** shader names are read from each filter's IL (`Shader.Find`), legacy filters are included, and warm-up happens at level load (109 filters in about 200 ms).
@@ -271,12 +264,12 @@ This fork's changes are not in the upstream release yet: build it (`dotnet build
 - **Decoration animator** also handles pivot / parallax offset / parallax multiplier (41,586 frames vs real DOTween, 0 differences).
 - **Bug fixes:** decorations left behind after leaving play mode, queued effects dropped after pausing, queued effects lost when a feature is turned off or the mod is unloaded mid-song, editor selection borders and text borders, and dev-build diagnostics that caused hitches.
 
-**Features (upstream):** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, direct handling of instant and animated decoration moves (bit-identical to DOTween), look-ahead skipping of no-op effects, not drawing fully transparent decorations, skipping dormant decorations in the per-frame loop, drawing additive blend-mode decorations with hardware blending (pixel-identical), parallel PNG decoding, skipping asset unloads, automatic image downscaling on VRAM overflow, and multithreaded rendering via `boot.config`. The low-end page (off by default) adds process priority, power throttling off, render scale with FSR 1, auto resolution, a menu FPS cap and experimental half-rate rendering.
+**Features:** deferred GC during play, spreading effect bursts and large tile recolors over several frames, a DOTween re-sort guard, skipping redundant text updates, direct handling of instant and animated decoration moves (bit-identical to DOTween), look-ahead skipping of no-op effects, not drawing fully transparent decorations, skipping dormant decorations in the per-frame loop, drawing additive blend-mode decorations with hardware blending (pixel-identical), parallel PNG decoding, skipping asset unloads, automatic image downscaling on VRAM overflow, and multithreaded rendering via `boot.config`. The low-end page (off by default) adds process priority, power throttling off, render scale with FSR 1, auto resolution, a menu FPS cap and experimental half-rate rendering.
 
-**2.2.0 (upstream):** faster editor play start (Arche 8.6 s → 4.3 s); GC on quick retries only when a lot has built up; gray+alpha and 16-bit PNGs decoded byte-identically to Unity; images pre-compressed on worker threads in place of PACL2's main-thread lossy compression; a fix for a game buffer leak; skipping unchanged particle writes; low-end options to pause off-screen particles and to load images DXT-compressed; detection of overlaps with Quartz/PACL2; automatic protection (a feature that keeps throwing errors is turned off for the session, and two abnormal exits in a row start the next launch in safe mode).
+**2.2.0:** faster editor play start (Arche 8.6 s → 4.3 s); GC on quick retries only when a lot has built up; gray+alpha and 16-bit PNGs decoded byte-identically to Unity; images pre-compressed on worker threads in place of PACL2's main-thread lossy compression; a fix for a game buffer leak; skipping unchanged particle writes; low-end options to pause off-screen particles and to load images DXT-compressed; detection of overlaps with Quartz/PACL2; automatic protection (a feature that keeps throwing errors is turned off for the session, and two abnormal exits in a row start the next launch in safe mode).
 
 **Live monitor:** FPS, CPU/GPU/VRAM/RAM and hitch alerts with an estimated cause.
 
-**Bug reports:** Settings window → About → *Create log file* makes `StutterFix-log-<date>.zip` on your desktop (your Windows user name is hidden). Upstream features: **narooh** on Discord (DM). This fork's changes: [MAIJEUN/StutterFix](https://github.com/MAIJEUN/StutterFix).
+**Bug reports:** Settings window → About → *Create log file* makes `StutterFix-log-<date>.zip` on your desktop (your Windows user name is hidden). Send that file to **narooh** on Discord (DM).
 
 **Third-party code:** libdeflate 1.24 (MIT), AMD FidelityFX Super Resolution 1 (MIT).
