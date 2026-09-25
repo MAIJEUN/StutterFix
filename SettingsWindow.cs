@@ -876,8 +876,14 @@ namespace StutterFix
             {
                 GUILayout.Label(string.Format(T("게임 화면을 {0}×{1} 로 그립니다", "Game view drawn at {0}×{1}"), LowEnd.RTWidth(), LowEnd.RTHeight()), sSub);
                 GUILayout.Space(6);
-                int up = c.LowSharpUpscale ? 1 : 0;
-                if (Segment("lowsharp", ref up, new[] { T("부드럽게 늘리기", "Smooth"), T("선명하게 늘리기 (도트)", "Sharp (pixelated)") })) { c.LowSharpUpscale = up == 1; ch = true; }
+                int up = c.LowSharpUpscale ? 2 : c.LowFsr ? 1 : 0;
+                if (Segment("lowsharp", ref up, new[] { T("부드럽게", "Smooth"), "FSR 1", T("도트처럼", "Pixelated") })) { c.LowSharpUpscale = up == 2; c.LowFsr = up == 1; ch = true; }
+                if (c.LowFsr)
+                {
+                    GUILayout.Label(T("AMD FSR 1 로 가장자리를 살려 늘리고 선명도를 보정합니다. 보통 늘리기보다 원본에 가깝고 덜 흐립니다. 화면 해상도로 두 번 더 그리므로 그래픽카드 일이 조금 늘어납니다.",
+                        "Upscales with AMD FSR 1 (edge-aware upscale + sharpening). Closer to native and less blurry than plain upscaling; costs two extra screen-resolution passes."), sSub);
+                    if (Fsr.Failed) GUILayout.Label(T("이 컴퓨터에서는 쓸 수 없어 부드럽게 늘립니다", "Unavailable on this PC; using smooth upscale"), sSub);
+                }
             }
             GUILayout.Space(12);
             GUILayout.Label(T("장식 이미지 최대 크기", "Max decoration image size"), sBody);
@@ -911,7 +917,7 @@ namespace StutterFix
             { c.LowPriority = c.LowNoThrottle = c.LowNoFft = true; c.LowRenderScale = 75; c.LowImageCap = 1024; c.LowSplit = 1; Save(); }
             GUILayout.Space(8);
             if (GUILayout.Button(T("모두 끄기", "Turn all off"), sPrimary, GUILayout.Width(150), GUILayout.Height(38)))
-            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; Save(); }
+            { c.LowPriority = c.LowNoThrottle = c.LowNoFft = c.LowSharpUpscale = c.LowFsr = c.LowSharpen = c.LowHalfRender = c.LowAutoRes = false; c.LowRenderScale = 100; c.LowImageCap = 0; c.LowSplit = 0; Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(14);
             InfoCard(new[]

@@ -1,0 +1,116 @@
+using System.IO;
+using System.Text;
+using UnityEditor;
+using UnityEngine;
+
+public static class BuildFsr
+{
+    const string Out = "C:/SFBundle/out";
+
+    public static void Build()
+    {
+        Directory.CreateDirectory(Out);
+        PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64, false);
+        PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneWindows64, new[] { UnityEngine.Rendering.GraphicsDeviceType.Direct3D11, UnityEngine.Rendering.GraphicsDeviceType.Direct3D12, UnityEngine.Rendering.GraphicsDeviceType.Vulkan });
+        var b = new AssetBundleBuild
+        {
+            assetBundleName = "stutterfix_fsr",
+            assetNames = new[] { "Assets/Fsr/FsrEasu.shader", "Assets/Fsr/FsrRcas.shader" }
+        };
+        var m = BuildPipeline.BuildAssetBundles(Out, new[] { b }, BuildAssetBundleOptions.ChunkBasedCompression, BuildTarget.StandaloneWindows64);
+        File.WriteAllText(Out + "/build.txt", m != null ? "OK" : "FAIL");
+        Test();
+    }
+
+    // 스크린샷을 줄였다가 다시 늘려 원본과 비교: 보통 늘리기(bilinear) vs FSR(EASU) vs FSR+선명화(RCAS)
+    public static void Test()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("device " + SystemInfo.graphicsDeviceType + " " + SystemInfo.graphicsDeviceName);
+        var easu = new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/Fsr/FsrEasu.shader"));
+        var rcas = new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/Fsr/FsrRcas.shader"));
+        sb.AppendLine("easu supported " + easu.shader.isSupported + " rcas " + rcas.shader.isSupported);
+        foreach (var f in Directory.GetFiles("C:/SFBundle/shots", "*.png"))
+        {
+            var src = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            src.LoadImage(File.ReadAllBytes(f));
+            int W = src.width, H = src.height;
+            foreach (float s in new[] { 0.5f, 0.67f, 0.75f })
+            {
+                int w = Mathf.RoundToInt(W * s), h = Mathf.RoundToInt(H * s);
+                var low = RenderTexture.GetTemporary(w, h, 0); low.filterMode = FilterMode.Bilinear;
+                Graphics.Blit(src, low);
+                var bil = RenderTexture.GetTemporary(W, H, 0);
+                Graphics.Blit(low, bil);
+                var e = RenderTexture.GetTemporary(W, H, 0);
+                SetEasu(easu, w, h, W, H);
+                Graphics.Blit(low, e, easu);
+                var r = RenderTexture.GetTemporary(W, H, 0);
+                rcas.SetVector("_RcasCon", new Vector4(Mathf.Pow(2f, -0.2f), 0, 0, 0));
+                Graphics.Blit(e, r, rcas);
+                var o = Read(src, W, H); var pb = Read(bil, W, H); var pe = Read(e, W, H); var pr = Read(r, W, H);
+                sb.AppendLine(string.Format("{0} {1:F2}: diff bil {2:F2} easu {3:F2} rcas {4:F2} | edge orig {5:F2} bil {6:F2} easu {7:F2} rcas {8:F2} | shift easu {9}",
+                    Path.GetFileName(f), s, Diff(o, pb, W, H, 0, 0), Diff(o, pe, W, H, 0, 0), Diff(o, pr, W, H, 0, 0),
+                    Edge(o, W, H), Edge(pb, W, H), Edge(pe, W, H), Edge(pr, W, H), BestShift(o, pe, W, H)));
+                if (s == 0.5f && f.EndsWith("s00.png"))
+                {
+                    Save(bil, W, H, Out + "/cmp_bil.png"); Save(e, W, H, Out + "/cmp_easu.png"); Save(r, W, H, Out + "/cmp_rcas.png");
+                }
+                RenderTexture.ReleaseTemporary(low); RenderTexture.ReleaseTemporary(bil); RenderTexture.ReleaseTemporary(e); RenderTexture.ReleaseTemporary(r);
+            }
+        }
+        File.WriteAllText(Out + "/test.txt", sb.ToString());
+    }
+
+    public static void SetEasu(Material m, float iw, float ih, float ow, float oh)
+    {
+        m.SetVector("_Con0", new Vector4(iw / ow, ih / oh, 0.5f * iw / ow - 0.5f, 0.5f * ih / oh - 0.5f));
+        m.SetVector("_Con1", new Vector4(1f / iw, 1f / ih, 1f / iw, -1f / ih));
+        m.SetVector("_Con2", new Vector4(-1f / iw, 2f / ih, 1f / iw, 2f / ih));
+        m.SetVector("_Con3", new Vector4(0f, 4f / ih, 0, 0));
+    }
+
+    static Color32[] Read(Texture t, int W, int H)
+    {
+        var rt = RenderTexture.GetTemporary(W, H, 0);
+        Graphics.Blit(t, rt);
+        var prev = RenderTexture.active; RenderTexture.active = rt;
+        var tex = new Texture2D(W, H, TextureFormat.RGBA32, false);
+        tex.ReadPixels(new Rect(0, 0, W, H), 0, 0); tex.Apply();
+        RenderTexture.active = prev; RenderTexture.ReleaseTemporary(rt);
+        return tex.GetPixels32();
+    }
+    static void Save(Texture t, int W, int H, string path)
+    {
+        var px = Read(t, W, H);
+        var tex = new Texture2D(W, H, TextureFormat.RGBA32, false); tex.SetPixels32(px); tex.Apply();
+        File.WriteAllBytes(path, tex.EncodeToPNG());
+    }
+    static double Diff(Color32[] a, Color32[] b, int W, int H, int dx, int dy)
+    {
+        long s = 0; long n = 0;
+        for (int y = 4; y < H - 4; y++) for (int x = 4; x < W - 4; x++)
+        {
+            var p = a[y * W + x]; var q = b[(y + dy) * W + x + dx];
+            s += System.Math.Abs(p.r - q.r) + System.Math.Abs(p.g - q.g) + System.Math.Abs(p.b - q.b); n += 3;
+        }
+        return (double)s / n;
+    }
+    static string BestShift(Color32[] a, Color32[] b, int W, int H)
+    {
+        double best = double.MaxValue; int bx = 0, by = 0;
+        for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) { var d = Diff(a, b, W, H, dx, dy); if (d < best) { best = d; bx = dx; by = dy; } }
+        return "(" + bx + "," + by + ")";
+    }
+    // 선명도: 이웃 픽셀 밝기 차이 평균
+    static double Edge(Color32[] a, int W, int H)
+    {
+        double s = 0; long n = 0;
+        for (int y = 1; y < H; y++) for (int x = 1; x < W; x++)
+        {
+            int l = a[y * W + x].g, lx = a[y * W + x - 1].g, ly = a[(y - 1) * W + x].g;
+            s += System.Math.Abs(l - lx) + System.Math.Abs(l - ly); n += 2;
+        }
+        return s / n;
+    }
+}

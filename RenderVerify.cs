@@ -45,9 +45,9 @@ namespace StutterFix
             if (!half && !scale) return;
             next = Time.realtimeSinceStartup + 10f; turn++;
             HalfRender.Suppress = true;
-            try { if (half) CheckHalf(__instance); else CheckScale(__instance); }
+            try { if (half) { Fsr.Suppress = true; CheckHalf(__instance); } else CheckScale(__instance); }   // 반만 그리기 검증은 진짜 화면과 같은 보통 늘리기로
             catch (Exception ex) { Main.Entry.Logger.Log("[저사양 검증] 실패: " + ex.Message); }
-            finally { HalfRender.Suppress = false; }
+            finally { HalfRender.Suppress = false; Fsr.Suppress = false; }
         }
 
         // 세 카메라를 target 에 그린다 (꺼져 있어도 Render 는 된다)
@@ -106,13 +106,40 @@ namespace StutterFix
             // 원래 해상도: 같은 상태를 화면 크기로
             var full = RenderTexture.GetTemporary(Screen.width, Screen.height, 24);
             RenderScene(sc, full);
+            // FSR 이 켜져 있으면 같은 순간을 보통 늘리기로도 찍어 둘 중 어느 쪽이 원래 해상도에 가까운지 본다 (작게 줄이면 차이가 뭉개지므로 화면 크기 그대로 비교)
+            bool fsr = Fsr.Active;
+            RenderTexture plain = null;
+            if (fsr) { Fsr.Suppress = true; try { plain = OverlayShot(sc); } finally { Fsr.Suppress = false; } }
+            double fsrFull = 0, plainFull = 0;
+            if (fsr) { var F = Read(full); fsrFull = FullDiff(F, Read(shown)); plainFull = FullDiff(F, Read(plain)); RenderTexture.ReleaseTemporary(plain); }
             var a = Small(full); var b = Small(shown);
             RenderTexture.ReleaseTemporary(full); RenderTexture.ReleaseTemporary(shown);
             double best = double.MaxValue; int bx = 0, by = 0;
             for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) { double d = Diff(a, b, dx, dy); if (d < best) { best = d; bx = dx; by = dy; } }
             ScaleN++; ScaleDiffSum += best; if (bx != 0 || by != 0) ScaleMisaligned++;
-            Main.Entry.Logger.Log(string.Format("[저사양 검증] 해상도 {0}% ({1}x{2}): 원래 해상도와 평균 차이 {3:F2}/255, 가장 잘 맞는 어긋남 ({4},{5})",
-                LowEnd.EffectivePct, camRT.width, camRT.height, best, bx, by));
+            if (fsr) { FsrN++; FsrSum += fsrFull; PlainSum += plainFull; if (fsrFull <= plainFull) FsrBetter++; }
+            Main.Entry.Logger.Log(string.Format("[저사양 검증] 해상도 {0}% ({1}x{2}): 원래 해상도와 평균 차이 {3:F2}/255, 가장 잘 맞는 어긋남 ({4},{5}){6}",
+                LowEnd.EffectivePct, camRT.width, camRT.height, best, bx, by,
+                fsr ? string.Format(" | 화면 크기 비교: FSR {0:F2}, 보통 늘리기 {1:F2}", fsrFull, plainFull) : ""));
+        }
+        internal static long FsrN, FsrBetter;
+        internal static double FsrSum, PlainSum;
+        private static Texture2D fullTex;
+        private static Color32[] Read(RenderTexture rt)
+        {
+            if (fullTex == null || fullTex.width != rt.width || fullTex.height != rt.height) fullTex = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            fullTex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+            fullTex.Apply(false);
+            RenderTexture.active = prev;
+            return fullTex.GetPixels32();
+        }
+        private static double FullDiff(Color32[] a, Color32[] b)
+        {
+            long sum = 0; long n = 0;
+            for (int i = 0; i < a.Length; i += 1) { var p = a[i]; var q = b[i]; sum += Math.Abs(p.r - q.r) + Math.Abs(p.g - q.g) + Math.Abs(p.b - q.b); n += 3; }
+            return (double)sum / n;
         }
 
         private static void CheckHalf(scrCamera sc)
@@ -148,6 +175,7 @@ namespace StutterFix
         {
             string s = "";
             if (ScaleN > 0) s += string.Format(" | 해상도 검증 {0}번: 평균 차이 {1:F2}/255, 어긋남 {2}번", ScaleN, ScaleDiffSum / ScaleN, ScaleMisaligned);
+            if (FsrN > 0) s += string.Format(" | FSR 검증 {0}번: 원래 해상도와 차이 FSR {1:F2}, 보통 늘리기 {2:F2}, FSR 이 나은 경우 {3}번", FsrN, FsrSum / FsrN, PlainSum / FsrN, FsrBetter);
             if (HalfN > 0) { s += string.Format(" | 반만 그리기 검증 {0}번: 옮긴 것 평균 차이 {1:F2}, 안 옮긴 것 {2:F2}, 옮긴 쪽이 나은 경우 {3}번 ", HalfN, HalfFixSum / HalfN, HalfRawSum / HalfN, HalfBetter); }
             return s;
         }

@@ -206,7 +206,7 @@ namespace StutterFix
                 var oc = cam == null ? null : overlayRef(cam);
                 if (oc == null) return;
                 var comp = oc.GetComponent<UpscaleSharpen>();
-                bool want = Sharpen && SharpenReady && EffectivePct < 100;
+                bool want = Sharpen && SharpenReady && EffectivePct < 100 && !Fsr.Enabled;   // FSR 은 선명도 보정(RCAS)을 이미 한다
                 if (comp == null) { if (!want) return; comp = oc.gameObject.AddComponent<UpscaleSharpen>(); }
                 if (comp.enabled != want) comp.enabled = want;
             }
@@ -277,7 +277,7 @@ namespace StutterFix
             if (!NoFft && !Priority && !NoThrottle && RenderScalePct >= 100 && !HalfRender.Enabled && !AutoRes) return "";
             string rt = ""; try { var cam = scrCamera.instance; var t = cam == null ? null : camRTRef(cam); if (t != null) rt = ", 게임 화면 " + t.width + "x" + t.height; } catch { }
             return string.Format(" | 저사양: 우선순위 {0}, 절전 제한 끔 {1}, 음악 반응 계산 건너뜀 {2}번 (돈 것 {3}번), 해상도 배율 {4}%{5}, 선명도 보정 {6}프레임",
-                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames) + (AutoRes ? string.Format(", 자동 해상도: 목표 {0} FPS, 내림 {1}번, 올림 {2}번, 끝났을 때 {3}%", AutoTargetFps, AutoDown, AutoUp, AutoPct) : "") + HalfRender.Summary() + RenderVerify.Summary();
+                priorityOn ? "높음" : "보통", throttleOn, FftSkipped, FftRun, RenderScalePct, rt, SharpenFrames) + (AutoRes ? string.Format(", 자동 해상도: 목표 {0} FPS, 내림 {1}번, 올림 {2}번, 끝났을 때 {3}%", AutoTargetFps, AutoDown, AutoUp, AutoPct) : "") + Fsr.Summary() + HalfRender.Summary() + RenderVerify.Summary();
         }
     }
 }
