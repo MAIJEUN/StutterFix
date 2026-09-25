@@ -777,10 +777,10 @@ namespace StutterFix
             ch |= Option("unload", ref c.SkipAssetUnload, T("불필요한 정리 건너뛰기", "Skip asset unload"),
                 T("편집으로 돌아올 때 게임이 하는 짧은 정리 작업을 건너뛰어 멈춤을 줄입니다. 맵을 새로 열 때의 정리는 이전 맵 메모리를 풀기 위해 그대로 둡니다.",
                   "Skips a short cleanup the game runs when returning to the editor. The cleanup when opening a new level is kept so the previous level's memory is freed."), null);
-            ch |= Option("loadcache", ref c.LoadCache, T("이미지 파일 확인 줄이기", "Fewer image file checks"),
-                T("게임은 장식 이미지를 쓸 때마다 디스크에서 그 파일의 수정 시각을 다시 읽습니다(장식이 많은 맵을 재생하면 수만 번). 한 번의 불러오기 안에서는 파일마다 한 번만 읽습니다. 이미지 파일을 고친 뒤 다시 재생하면 전처럼 반영됩니다.",
-                  "The game re-reads each decoration image file's modified time from disk every time it uses it (tens of thousands of times on big levels). Reads it once per file per load. Edited image files are still picked up on the next play."),
-                T("예: Arche 재생 시작 -0.8초", "e.g. Arche play start -0.8s"));
+            ch |= Option("loadcache", ref c.LoadCache, T("에디터 재생 시작 빠르게", "Faster editor play start"),
+                T("에디터에서 재생을 누를 때 게임이 하는 헛일을 줄입니다. ① 장식 이미지 파일의 수정 시각을 한 번의 불러오기 안에서는 파일마다 한 번만 읽습니다(원래는 장식마다 디스크에서 다시 읽음). ② 지난번 뒤로 장식이 하나도 안 바뀌었으면 장식 전체 다시 설정을 한 번만 합니다(원래는 두 번). ③ 에디터 클릭용 충돌 상자를 끌 때 넣은 반대 순서로 꺼서 물리 엔진이 목록을 매번 끝까지 뒤지지 않게 합니다. 화면과 동작은 같습니다(자동 비교로 확인).",
+                  "Cuts wasted work when pressing Play in the editor: (1) reads each decoration image file's modified time once per load instead of once per decoration, (2) resets all decorations once instead of twice when nothing changed since the last play, (3) disables the editor click colliders in reverse order so the physics engine doesn't scan its whole list each time. Looks and plays the same (checked automatically)."),
+                T("예: Arche 재생 시작 8.6초 → 약 4초", "e.g. Arche play start 8.6s → ~4s"));
             ch |= Option("leakfix", ref c.LeakFix, T("게임 메모리 누수 막기", "Fix game memory leaks"),
                 T("게임의 사용자 지정 FPS 효과는 켤 때마다 화면 크기 버퍼(4K 급이면 약 40MB)를 새로 만들고 이전 것을 풀지 않으며, 재시작마다 게임 화면 버퍼를 괜히 다시 만듭니다. 이전 버퍼를 풀고 불필요한 재생성을 막습니다. 화면은 같습니다." + (Compat.QLeakGuard ? " (지금은 Quartz 의 누수 수정이 켜져 있어 쉬는 중)" : ""),
                   "The game's custom frame-rate effect creates a new screen-sized buffer each time it turns on without freeing the old one (~40 MB at 4K), and needlessly recreates the game view buffer on every restart. Frees the old buffer and avoids the recreate. Looks identical." + (Compat.QLeakGuard ? " (Idle now: Quartz leak fix is on)" : "")), null);

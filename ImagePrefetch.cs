@@ -41,6 +41,7 @@ namespace StutterFix
             public IntPtr Pixels;
             public long Size;
             public float Factor = 1f;   // 큰 이미지 줄이기로 줄인 비율 (1 이면 그대로)
+            public bool Extra;          // 추가 형식(흑백, 16비트)으로 푼 것: 개발자용에서 유니티 결과와 비교
         }
 
         private static readonly object gate = new object();
@@ -314,11 +315,11 @@ namespace StutterFix
                     it.State = 1;
                 }
 
-                int w = 0, h = 0, f = 0; IntPtr px = IntPtr.Zero; long size = 0; bool ok = false; float factor = 1f;
+                int w = 0, h = 0, f = 0; IntPtr px = IntPtr.Zero; long size = 0; bool ok = false, extra = false; float factor = 1f;
                 try
                 {
                     int len = ReadInto(it.Path, ref fileBuf);
-                    ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, out w, out h, out f, out px, out size);
+                    ok = len > 0 && PngDecoder.TryDecode(fileBuf, len, ExtraFormats, out w, out h, out f, out px, out size, out extra);
                     long before = (long)w * h * 4;   // GPU 에는 한 픽셀 4바이트로 올라간다
                     if (ok && sideNow > 0 && PngDecoder.Downscale(ref px, ref w, ref h, f, ref size, sideNow, out factor))
                     {
@@ -336,7 +337,7 @@ namespace StutterFix
                     }
                     else if (ok)
                     {
-                        it.Width = w; it.Height = h; it.Format = f; it.Pixels = px; it.Size = size; it.Factor = factor;
+                        it.Width = w; it.Height = h; it.Format = f; it.Pixels = px; it.Size = size; it.Factor = factor; it.Extra = extra;
                         it.State = 2;
                         pendingBytes += size;
                     }
@@ -439,6 +440,12 @@ namespace StutterFix
             markers.Remove(data);
             try
             {
+                if (it.Extra && !ExtraMatches(it))
+                {
+                    // 추가 형식이 유니티 결과와 다르면 원래 방식으로 (개발자용 확인 중)
+                    fallback++;
+                    return ImageConversion.LoadImage(tex, File.ReadAllBytes(it.Path));
+                }
                 tex.Reinitialize(it.Width, it.Height, (TextureFormat)it.Format, false);
                 tex.LoadRawTextureData(it.Pixels, (int)it.Size);
                 if (it.Factor < 1f) shrunk[tex] = it.Factor;   // 스프라이트를 만들 때 크기 기준을 맞춘다
@@ -457,6 +464,40 @@ namespace StutterFix
                 Marshal.FreeHGlobal(it.Pixels);
                 it.Pixels = IntPtr.Zero;
             }
+        }
+
+        // ── 추가 형식(8비트 흑백·흑백+알파, 16비트 RGBA) ──
+        // 유니티 LoadImage 가 이 형식들을 어떤 텍스처 형식·바이트로 만드는지와 똑같아야 쓸 수 있다. 개발자용에서만 풀고, 넣기 전에
+        // 같은 파일을 유니티로 풀어 형식·크기·바이트 전체를 비교한다. 같으면 우리 것을 쓰고 다르면 유니티 결과를 쓴다(로그에 남김).
+        // 모든 형식에서 같음이 확인되면 플레이어용에서도 켠다.
+        internal static bool ExtraFormats = Edition.Dev;
+        internal static int ExtraSame, ExtraDiff;
+        private static unsafe bool ExtraMatches(Item it)
+        {
+            Texture2D u = null;
+            try
+            {
+                u = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                ImageConversion.LoadImage(u, File.ReadAllBytes(it.Path));
+                string why = null;
+                if (u.format != (TextureFormat)it.Format) why = "형식 " + u.format + " / 우리 " + (TextureFormat)it.Format;
+                else if (u.width != it.Width || u.height != it.Height) why = "크기 " + u.width + "x" + u.height + " / 우리 " + it.Width + "x" + it.Height;
+                else
+                {
+                    var raw = u.GetRawTextureData<byte>();
+                    if (raw.Length != it.Size) why = "바이트 수 " + raw.Length + " / 우리 " + it.Size;
+                    else
+                    {
+                        byte* p = (byte*)it.Pixels;
+                        for (int i = 0; i < raw.Length; i++) if (raw[i] != p[i]) { why = "바이트 " + i + " 번째부터 다름 (유니티 " + raw[i] + ", 우리 " + p[i] + ")"; break; }
+                    }
+                }
+                if (why == null) ExtraSame++; else ExtraDiff++;
+                Main.Entry.Logger.Log("[이미지] 추가 형식 확인 " + Path.GetFileName(it.Path) + " (" + u.format + " " + u.width + "x" + u.height + "): " + (why == null ? "유니티와 같음" : "다름 - " + why));
+                return why == null;
+            }
+            catch (Exception ex) { Main.Entry.Logger.Log("[이미지] 추가 형식 확인 실패: " + ex.Message); return false; }
+            finally { if (u != null) UnityEngine.Object.Destroy(u); }
         }
 
         // ── 끝 ─────────────────────────────────────────────────────────

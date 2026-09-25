@@ -32,13 +32,20 @@ namespace StutterFix
                     foreach (var m in typeof(TextureManager).GetMethods(AccessTools.all))
                         if (m.Name == name && !m.IsAbstract) h.Patch(m, transpiler: new HarmonyMethod(typeof(LoadFix), nameof(TimeTranspiler)));
                 Main.Entry.Logger.Log("[로딩] 이미지 파일 시각 캐시 설치 (바꾼 곳 " + replaced + ")");
-                // 에디터 클릭용 충돌 상자: 오브젝트는 켜 둔 채 충돌 상자만 켜고 끈다 (아래 SetColliderFast 설명)
+                // 에디터 클릭용 충돌 상자를 끌 때 넣은 반대 순서로 (아래 ToggleReverse 설명)
+                var tog = AccessTools.Method(typeof(scrDecorationManager), "ToggleClickableBoxColliderForLevelEditor");
                 var sc = AccessTools.Method(typeof(scrDecoration), "SetCollider", new[] { typeof(bool) });
-                if (sc != null && sc.DeclaringType == typeof(scrDecoration) && colField != null) h.Patch(sc, prefix: new HarmonyMethod(typeof(LoadFix), nameof(SetColliderFast)));
+                if (tog != null && sc != null && tog.GetParameters().Length == 1)
+                {
+                    setCollider = AccessTools.MethodDelegate<Action<scrDecoration, bool>>(sc);   // 가상 호출 (scrObjectDecoration 도 원래대로)
+                    h.Patch(tog, prefix: new HarmonyMethod(typeof(LoadFix), nameof(ToggleReverse)));
+                }
                 if (Edition.Dev)
                 {
                     var apply = AccessTools.Method(typeof(Texture2D), "Apply", new[] { typeof(bool), typeof(bool) });
                     if (apply != null) h.Patch(apply, prefix: new HarmonyMethod(typeof(LoadFix), nameof(ApplyPrefix)), postfix: new HarmonyMethod(typeof(LoadFix), nameof(ApplyPostfix)));
+                    foreach (var m in typeof(Texture2D).GetMethods())
+                        if (m.Name == "Compress") h.Patch(m, prefix: new HarmonyMethod(typeof(LoadFix), nameof(ApplyPrefix)), postfix: new HarmonyMethod(typeof(LoadFix), nameof(CompressPostfix)));
                 }
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[로딩] 설치 실패: " + ex.Message); }
@@ -79,22 +86,24 @@ namespace StutterFix
         // ── (개발자용) 충돌 상자 켜고 끄기 비용 ──
         private static readonly System.Reflection.FieldInfo colField = AccessTools.Field(typeof(scrDecoration), "editorCollider");
         internal static long ColCalls, ColActiveTicks, ColEnableTicks, ColActiveChanged, ColEnableChanged;
-        // 원래(scrDecoration.SetCollider, IL): editorCollider 가 있으면 그 GameObject.SetActive(값) 후 editorCollider.enabled = 값.
-        // 측정(Arche 재생 시작): SetActive 2.3~2.7초, enabled 0.1~0.2초 (장식 2만 8천 개). 이 오브젝트는 Transform + BoxCollider2D 뿐이고
-        // 자식이 없으며(개발자용 로그로 확인), 게임에서 editorCollider 의 오브젝트 켜짐 상태를 읽는 곳은 이 함수뿐이다(IL 전체 검색).
-        // 꺼진 충돌 상자는 물리 검사(재생 중 타일 찾기 OverlapPointAll, 에디터 클릭 RaycastAll)에 잡히지 않으므로, 오브젝트는 켜 둔 채
-        // 충돌 상자만 끄고 켜도 결과가 같다. 꺼져 있던 오브젝트를 켜야 할 때만 원래처럼 SetActive(true) 한다(처음 한 번).
-        // (scrObjectDecoration 은 자기 SetCollider 가 따로 있어 그대로 둔다)
-        internal static bool FastCollider = true;
-        public static bool SetColliderFast(scrDecoration __instance, bool __0)
+        // 에디터 클릭용 충돌 상자 끄기 (scrDecorationManager.ToggleClickableBoxColliderForLevelEditor)
+        // 원래: 장식 목록 앞에서부터 SetCollider(값) (IL). 재생 시작 때 끄기가 Arche 에서 2.2~2.7초, 편집 복귀 때 켜기는 0.02초.
+        // 오브젝트를 켜 둔 채 충돌 상자만 꺼도(enabled) 똑같이 2.4초가 들어서, 비용은 "물리에서 충돌 상자 빼기" 자체다. 켜기와 100배 차이가
+        // 나는 것은 물리 엔진(Box2D)이 리지드바디 없는 충돌 상자를 한 고정 몸체의 목록에 넣고(맨 앞에 추가), 뺄 때 목록을 앞에서부터 찾기
+        // 때문으로 보인다: 넣은 순서대로 빼면 매번 목록 끝까지 뒤진다(2만 8천 x 2만 8천). 끌 때만 목록을 뒤에서부터 돌면 매번 맨 앞에서
+        // 찾는다. 부르는 함수와 값은 원래와 같고(가상 호출이라 scrObjectDecoration 도 자기 것), 순서만 거꾸로다. 켤 때는 원래대로 둔다.
+        internal static bool ReverseToggle = true;
+        private static Action<scrDecoration, bool> setCollider;
+        internal static long ToggleTicks;
+        public static bool ToggleReverse(bool __0)
         {
-            if (!FastCollider) return true;
-            var c = colField.GetValue(__instance) as Behaviour;
-            if (c == null) return false;   // 원래 코드도 null 이면 아무것도 안 한다
-            long t0 = Edition.Dev ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-            if (__0) { var go = c.gameObject; if (!go.activeSelf) { go.SetActive(true); ColActiveChanged++; } }
-            if (c.enabled != __0) { c.enabled = __0; ColEnableChanged++; }
-            if (Edition.Dev) { ColCalls++; ColEnableTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; }
+            if (!ReverseToggle || __0 || setCollider == null) return true;
+            var mgr = scrDecorationManager.instance;
+            var all = mgr == null ? null : allRef(mgr);
+            if (all == null) return true;
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int i = all.Count - 1; i >= 0; i--) setCollider(all[i], false);   // 원래는 foreach (null 이면 원래도 예외)
+            ToggleTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; ColCalls += all.Count;
             return false;
         }
 
@@ -110,13 +119,21 @@ namespace StutterFix
             ApplyBytes += bytes;
             double ms = dt * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             if (ms > applySlowMs) { applySlowMs = ms; ApplySlow = string.Format("{0}x{1} {2} {3:F0}ms", __instance.width, __instance.height, __instance.format, ms); }
+            string k = __instance.format.ToString(); double v; applyByFormat.TryGetValue(k, out v); applyByFormat[k] = v + ms;
+            int c; applyCountByFormat.TryGetValue(k, out c); applyCountByFormat[k] = c + 1;
         }
+        private static readonly Dictionary<string, double> applyByFormat = new Dictionary<string, double>();
+        private static readonly Dictionary<string, int> applyCountByFormat = new Dictionary<string, int>();
+        internal static long CompressN; internal static double CompressMs;
+        public static void CompressPostfix() { CompressN++; CompressMs += (System.Diagnostics.Stopwatch.GetTimestamp() - applyT0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency; }
         internal static string ApplySummary()
         {
             if (ApplyN == 0) return "";
             double ms = ApplyTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             string s = string.Format("이미지 올리기 {0}장 {1}MB {2:F0}ms ({3:F0}MB/s), 가장 느린 것 {4}", ApplyN, ApplyBytes / 1048576, ms, ms > 0 ? ApplyBytes / 1048576.0 / (ms / 1000.0) : 0, ApplySlow);
-            ApplyN = ApplyTicks = ApplyBytes = 0; ApplySlow = ""; applySlowMs = 0;
+            s += " | 형식별:"; foreach (var kv in applyByFormat) s += string.Format(" {0} {1}장 {2:F0}ms", kv.Key, applyCountByFormat[kv.Key], kv.Value);
+            if (CompressN > 0) s += string.Format(" | 압축(Compress) {0}번 {1:F0}ms", CompressN, CompressMs);
+            ApplyN = ApplyTicks = ApplyBytes = 0; ApplySlow = ""; applySlowMs = 0; applyByFormat.Clear(); applyCountByFormat.Clear(); CompressN = 0; CompressMs = 0;
             return s;
         }
 
@@ -128,7 +145,9 @@ namespace StutterFix
         // 하나도 바뀌지 않았으면 태그 목록도 그때와 똑같으므로, 첫 번째 다시 설정과 짝인 표시/내리기를 건너뛴다(안 쓰는 이미지는 다음
         // 맵 열기 때 내려간다). 조금이라도 바뀌었으면 원래대로 한다.
         // 개발자용: 건너뛴 재생과 안 건너뛴 재생을 번갈아 하고, 재생 준비가 끝난 순간 모든 장식의 상태를 비교한다.
-        internal static bool SkipDoubleReset = Edition.Dev;   // 검증(다른 것 0)이 끝날 때까지 개발자용에서만
+        // 검증(2026-09-26, Arche): 건너뛰지 않은 재생끼리도 안 보이는 장식 73개의 실제 위치가 매번 달랐고(원래 흔들림), 건너뛴 재생과의 차이도
+        // 똑같은 73개(실제 위치)뿐이었다. 태그 목록, 그림, 색, 보임, 히트박스는 모두 같았다. 건너뛰기가 만든 차이는 0.
+        internal static bool SkipDoubleReset = true;
         internal static long ResetsSkipped, ResetsKept;
         private static bool inEditorPlay, inReload, skipping, haveFp, lastPlaySkipped;
         private static long lastFp;
@@ -166,7 +185,7 @@ namespace StutterFix
             try
             {
                 bool same = Fingerprint() == lastFp;
-                skipping = same && (devPlays++ / 2) % 2 == 1;   // (개발자용에서만 켬) 안 건너뜀 두 번, 건너뜀 두 번 차례로: 같은 방식끼리 비교가 기준선
+                skipping = same && (!Edition.Dev || (devPlays++ / 2) % 2 == 1);   // 개발자용은 안 건너뜀 두 번, 건너뜀 두 번 차례로 (계속 비교)
                 if (!same) Main.Entry.Logger.Log("[로딩] 장식이 바뀌어 장식 다시 설정을 원래대로 두 번 함");
             }
             catch (Exception ex) { skipping = false; Main.Entry.Logger.Log("[로딩] 장식 지문 실패, 원래대로: " + ex.Message); }
@@ -309,7 +328,7 @@ namespace StutterFix
             return n;
         }
 
-        internal static void ResetStats() { TimeHits = TimeMisses = 0; ResetsSkipped = ResetsKept = 0; ColCalls = ColActiveTicks = ColEnableTicks = ColActiveChanged = ColEnableChanged = 0; }
+        internal static void ResetStats() { TimeHits = TimeMisses = 0; ResetsSkipped = ResetsKept = 0; ColCalls = ColActiveTicks = ColEnableTicks = ColActiveChanged = ColEnableChanged = 0; ToggleTicks = 0; }
 
         internal static string Summary()
         {
@@ -319,7 +338,7 @@ namespace StutterFix
             if (ColCalls > 0)
             {
                 double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-                s += string.Format(" | 충돌 상자 {0}번 {1:F0}ms (충돌 상자만 켜고 끔 {2}, 오브젝트 켬 {3})", ColCalls, ColEnableTicks * f, ColEnableChanged, ColActiveChanged);
+                s += string.Format(" | 충돌 상자 끄기(뒤에서부터) {0}개 {1:F0}ms", ColCalls, ToggleTicks * f);
             }
             return s;
         }
