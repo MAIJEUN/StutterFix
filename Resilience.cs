@@ -45,8 +45,9 @@ namespace StutterFix
 
         internal static bool Off(string key) { lock (sync) return off.Contains(key); }
 
-        internal static void Init()
+        internal static void Init()   // 여러 번 불려도 한 번만 (UMM 은 Load 다음 OnToggle(true) 도 부른다)
         {
+            if (lockPath != null) return;   // 이미 준비됨: 다시 하면 방금 남긴 session.lock 을 "지난번 것" 으로 착각한다(2026-09-26)
             try
             {
                 lockPath = Path.Combine(Main.Entry.Path, "session.lock");

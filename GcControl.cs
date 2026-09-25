@@ -172,7 +172,8 @@ namespace StutterFix
         // ── 맵 파일 읽는 동안 GC 멈추기 ──
         // Arche(42MB 맵 파일)에서 LevelData.LoadLevel 7.5초 동안 GC 가 16번 돌았다. 해석하며 생기는 임시 데이터로 힙이 자라서
         // 한 번에 0.1~0.3초씩 걸린다. 이 동안만 GC 를 멈추고 끝나면 원래대로 켠다(쌓인 것은 뒤이은 이미지 불러오기 끝의 정리나
-        // 다음 GC 가 치운다). 멈춘 동안 힙이 파일 크기의 수십 배까지 늘 수 있어서, RAM 이 12GB 이상이고 파일이 200MB 이하일 때만 한다.
+        // 다음 GC 가 치운다). 멈춘 동안 힙이 파일 크기의 약 50배 늘어서(Arche 42MB -> +2.2GB, 7.56초 -> 6.30초), RAM 이 12GB 이상이고
+        // 파일 x 60 이 RAM 의 4분의 1 이하일 때만 한다.
         internal static bool ParsePause = true;
         private static bool parsePaused;
         private static long parseT0, parseHeap0; private static int parseGc0;
@@ -186,7 +187,8 @@ namespace StutterFix
                 if (ramMB < 12000) return;
                 string path = __args != null && __args.Length > 0 ? __args[0] as string : null;
                 long size = 0; try { if (path != null && System.IO.File.Exists(path)) size = new System.IO.FileInfo(path).Length; } catch { }
-                if (size > 200L * 1048576) return;
+                // Arche(42MB)에서 힙이 2.2GB(파일의 약 52배) 늘었다. 파일 x 60 이 RAM 의 4분의 1 을 넘으면 하지 않는다
+                if (size * 60 > (long)ramMB * 1048576 / 4) return;
                 if (GarbageCollector.GCMode != GarbageCollector.Mode.Enabled) return;
                 parseHeap0 = GC.GetTotalMemory(false); parseGc0 = GC.CollectionCount(0); parseT0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
