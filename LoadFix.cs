@@ -269,55 +269,73 @@ namespace StutterFix
                 var mgr = scrDecorationManager.instance;
                 var all = mgr == null ? null : allRef(mgr);
                 if (all == null || !haveFp) return;
-                var snap = new long[all.Count * Parts];
-                for (int i = 0; i < all.Count; i++)
-                {
-                    var d = all[i];
-                    if ((object)d == null) continue;
-                    unchecked
-                    {
-                        int o = i * Parts;
-                        snap[o] = pivotPosRef(d).GetHashCode() * 31L + rotRef(d).GetHashCode() * 7L + scaleRef(d).GetHashCode();
-                        snap[o + 1] = colRef2(d).GetHashCode() * 31L + opaRef(d).GetHashCode();
-                        snap[o + 2] = d.GetVisible() ? 1 : 0;
-                        snap[o + 3] = d.hitbox.GetHashCode();
-                        var t = d.transform; snap[o + 4] = t.position.GetHashCode(); snap[o + 5] = t.rotation.GetHashCode() * 31L + t.lossyScale.GetHashCode();
-                        long g = 0;
-                        var v = d as scrVisualDecoration;
-                        if (v != null) foreach (var r in v.GetComponentsInChildren<SpriteRenderer>(true)) { g = g * 31 + (r.sprite == null ? 0 : r.sprite.GetInstanceID()); g = g * 31 + (r.enabled ? 1 : 0); g = g * 31 + r.color.GetHashCode(); }
-                        snap[o + 6] = g;
-                    }
-                }
+                var snap = Snapshot(all);
                 long tags = TagCount(mgr);
                 // 같은 장식 데이터로 연 두 재생끼리 비교: 건너뜀/안 건너뜀이 섞인 쌍과, 같은 방식끼리의 쌍(원래 흔들림 기준선)
                 if (lastSnap != null && lastSnap.Length == snap.Length && lastSnapFp == lastFp)
                 {
-                    int diff = 0; var byPart = new int[Parts]; var sb = new System.Text.StringBuilder();
-                    for (int i = 0; i < all.Count; i++)
-                    {
-                        bool any = false;
-                        for (int p = 0; p < Parts; p++) if (snap[i * Parts + p] != lastSnap[i * Parts + p]) { byPart[p]++; any = true; }
-                        if (!any) continue;
-                        diff++;
-                        if (diff <= 6)
-                        {
-                            var d = all[i]; string tag = "";
-                            try { var ev = d.sourceLevelEvent; if (ev != null) tag = Convert.ToString(ev["tag"]); } catch { }
-                            sb.AppendFormat(" [#{0} {1} 태그 '{2}' 보임 {3}:", i, d.GetType().Name, tag, d.GetVisible());
-                            for (int p = 0; p < Parts; p++) if (snap[i * Parts + p] != lastSnap[i * Parts + p]) sb.Append(" " + PartName[p]);
-                            sb.Append("]");
-                        }
-                    }
+                    string detail;
+                    int diff = Compare(all, lastSnap, snap, out detail);
                     string kind = lastSnapSkipped == lastPlaySkipped ? (lastPlaySkipped ? "건너뜀끼리(기준선)" : "안 건너뜀끼리(기준선)") : "건너뜀 대 안 건너뜀";
                     if (lastSnapSkipped != lastPlaySkipped) { VerifyN++; VerifyDiffs += diff; }
-                    var parts = new List<string>(); for (int p = 0; p < Parts; p++) if (byPart[p] > 0) parts.Add(PartName[p] + " " + byPart[p]);
-                    Main.Entry.Logger.Log(string.Format("[로딩 검증] {0}: 장식 {1}개 중 재생 준비 끝 상태가 다른 것 {2}개{3}{4}{5}", kind, all.Count, diff,
-                        parts.Count > 0 ? " (" + string.Join(", ", parts.ToArray()) + ")" : "", tags != lastTags ? ", 태그 목록 다름" : ", 태그 목록 같음", sb.ToString()));
+                    Main.Entry.Logger.Log(string.Format("[로딩 검증] {0}: 장식 {1}개 중 재생 준비 끝 상태가 다른 것 {2}개{3}{4}", kind, all.Count, diff,
+                        detail, tags != lastTags ? ", 태그 목록 다름" : ", 태그 목록 같음"));
                 }
                 lastSnap = snap; lastTags = tags; lastSnapFp = lastFp; lastSnapSkipped = lastPlaySkipped;
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[로딩 검증] 실패: " + ex.Message); }
         }
+
+        // 장식마다 부분별 해시 (TransitionFix 검증도 쓴다)
+        internal static long[] Snapshot(List<scrDecoration> all)
+        {
+            var snap = new long[all.Count * Parts];
+            for (int i = 0; i < all.Count; i++)
+            {
+                var d = all[i];
+                if ((object)d == null) continue;
+                unchecked
+                {
+                    int o = i * Parts;
+                    snap[o] = pivotPosRef(d).GetHashCode() * 31L + rotRef(d).GetHashCode() * 7L + scaleRef(d).GetHashCode();
+                    snap[o + 1] = colRef2(d).GetHashCode() * 31L + opaRef(d).GetHashCode();
+                    snap[o + 2] = d.GetVisible() ? 1 : 0;
+                    snap[o + 3] = d.hitbox.GetHashCode();
+                    var t = d.transform; snap[o + 4] = t.position.GetHashCode(); snap[o + 5] = t.rotation.GetHashCode() * 31L + t.lossyScale.GetHashCode();
+                    long g = 0;
+                    var v = d as scrVisualDecoration;
+                    if (v != null) foreach (var r in v.GetComponentsInChildren<SpriteRenderer>(true)) { g = g * 31 + (r.sprite == null ? 0 : r.sprite.GetInstanceID()); g = g * 31 + (r.enabled ? 1 : 0); g = g * 31 + r.color.GetHashCode(); }
+                    snap[o + 6] = g;
+                }
+            }
+            return snap;
+        }
+
+        // 다른 장식 수. detail: " (부분별 수) [처음 몇 개]"
+        internal static int Compare(List<scrDecoration> all, long[] a, long[] b, out string detail)
+        {
+            int diff = 0; var byPart = new int[Parts]; var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < all.Count && (i + 1) * Parts <= a.Length && (i + 1) * Parts <= b.Length; i++)
+            {
+                bool any = false;
+                for (int p = 0; p < Parts; p++) if (b[i * Parts + p] != a[i * Parts + p]) { byPart[p]++; any = true; }
+                if (!any) continue;
+                diff++;
+                if (diff <= 6)
+                {
+                    var d = all[i]; string tag = "";
+                    try { var ev = d.sourceLevelEvent; if (ev != null) tag = Convert.ToString(ev["tag"]); } catch { }
+                    sb.AppendFormat(" [#{0} {1} 태그 '{2}' 보임 {3}:", i, d.GetType().Name, tag, d.GetVisible());
+                    for (int p = 0; p < Parts; p++) if (b[i * Parts + p] != a[i * Parts + p]) sb.Append(" " + PartName[p]);
+                    sb.Append("]");
+                }
+            }
+            var parts = new List<string>(); for (int p = 0; p < Parts; p++) if (byPart[p] > 0) parts.Add(PartName[p] + " " + byPart[p]);
+            detail = (parts.Count > 0 ? " (" + string.Join(", ", parts.ToArray()) + ")" : "") + sb.ToString();
+            return diff;
+        }
+        internal static List<scrDecoration> AllDecorations() { var mgr = scrDecorationManager.instance; return mgr == null ? null : allRef(mgr); }
+        internal static long TagHash() { var mgr = scrDecorationManager.instance; return mgr == null ? 0 : TagCount(mgr); }
         private static readonly System.Reflection.FieldInfo tagField = AccessTools.Field(typeof(scrDecorationManager), "taggedDecorations");
         private static long TagCount(scrDecorationManager mgr)
         {

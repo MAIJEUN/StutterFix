@@ -36,7 +36,7 @@ namespace StutterFix
             { "MoveApply", new[] { "MoveFinish" } }, { "Dormancy", new[] { "DormantSkip" } }, { "TextFix", new[] { "SkipSameText" } },
             { "ImagePrefetch", new[] { "ImagePrefetch" } }, { "PngDecoder", new[] { "ImagePrefetch" } }, { "TexCompress", new[] { "ImagePrefetch" } }, { "DxtEncoder", new[] { "ImagePrefetch" } },
             { "ShaderWarm", new[] { "ShaderWarm" } }, { "FastBlend", new[] { "FastBlend" } }, { "InvisibleSkip", new[] { "SkipInvisible" } },
-            { "ParticleFix", new[] { "SkipIdleParticles", "LowPauseParticles" } }, { "LeakGuard", new[] { "LeakFix" } }, { "LoadFix", new[] { "LoadCache" } },
+            { "ParticleFix", new[] { "SkipIdleParticles", "LowPauseParticles" } }, { "LeakGuard", new[] { "LeakFix" } }, { "LoadFix", new[] { "LoadCache" } }, { "TransitionFix", new[] { "LoadCache" } },
             { "Fsr", new[] { "LowFsr" } }, { "HalfRender", new[] { "LowHalfRender" } }, { "LowEnd", new[] { "LowEnd" } },
         };
         // 안전 모드에서 끄는 것: 게임 동작에 깊이 끼어드는 기능 (메모리 정리 미루기·같은 글자 건너뛰기처럼 단순한 것은 둔다)
