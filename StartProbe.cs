@@ -32,7 +32,8 @@ namespace StutterFix
             new[] { "scnGame", "ReloadSong" }, new[] { "scnGame", "UpdateBackgroundSprites" }, new[] { "scnGame", "UpdateDecorationObjects" },
             new[] { "scnGame", "UpdateFloorSprites" }, new[] { "scnGame", "SetBackground" }, new[] { "scnGame", "UpdateVideo" },
             new[] { "scnGame", "ReloadCustomSounds" }, new[] { "scnGame", "Play" }, new[] { "scnGame", "FinishCustomLevelLoading" },
-            new[] { "scnGame", "PrepVfx" }, new[] { "scnGame", "LoadLevel" },
+            new[] { "scnGame", "PrepVfx" }, new[] { "scnGame", "LoadLevel" }, new[] { "scnGame", "ResetScene" }, new[] { "scnGame", "DisableFilters" },
+            new[] { "scnGame", "SetStartingBG" }, new[] { "scrVfxPlus", "Reset" }, new[] { "scnEditor", "ResetScene" }, new[] { "scnEditor", "UpdateSongAndLevelSettings" },
             new[] { "ADOBase", "FlushUnusedMemory" },
             new[] { "LevelData", "LoadLevel" },
             new[] { "scrUIController", "LevelFinishedLoading" },
@@ -60,7 +61,16 @@ namespace StutterFix
             new[] { "scrDecorationManager", "TryAddDecorationToDictionary" }, new[] { "scnGame", "ApplyEvent" },
             new[] { "scrFloor", "SetTrackStyle" }, new[] { "scrFloor", "UpdateAngle" },
             new[] { "UnityEngine.Texture2D", "Apply" },
+            // 타일 다시 만들기(MakeLevel)·이벤트 걸기(ApplyEventsToFloors) 안쪽: 타일마다 부르는 것들
+            new[] { "scrLevelMaker", "ResetFloor" }, new[] { "scrLevelMaker", "CalculateSingleFloorAngleLength" },
+            new[] { "scrLevelMaker", "MakeFreeroamGrid" }, new[] { "scrLevelMaker", "ClearFreeroam" },
+            new[] { "scrFloor", "SetColor" }, new[] { "scrFloor", "SetOpacity" }, new[] { "scrFloor", "SetRotation" },
+            new[] { "scrFloor", "UpdateIconSprite" }, new[] { "scrFloor", "SetIconSprite" }, new[] { "scrFloor", "SetTileColor" },
+            new[] { "scrFloor", "SetSortingOrder" }, new[] { "scrFloor", "SpawnPortalParticles" }, new[] { "scrFloor", "ResetToLevelStart" },
+            new[] { "scnGame", "ApplyCoreEventsToFloors" }, new[] { "ffxChangeTrack", "PrepFloor" },
         };
+        // 효과 컴포넌트(ffxPlusBase 자식)마다 따로 정의된 것: 이름을 합쳐 센다 (ApplyEvent 에서 AddComponent -> Awake, Decode, SetStartTime)
+        private static readonly string[] FfxHot = { "Awake", "Decode", "SetStartTime" };
 
         private class Hot { public int Count; public double Ms; }
         private static readonly Dictionary<string, Hot> hot = new Dictionary<string, Hot>();
@@ -123,6 +133,18 @@ namespace StutterFix
                     catch { }
                 }
             }
+            var ffxBase = AccessTools.TypeByName("ffxPlusBase");
+            if (ffxBase != null)
+                foreach (var type in AccessTools.GetTypesFromAssembly(ffxBase.Assembly))
+                {
+                    if (type == null || !ffxBase.IsAssignableFrom(type)) continue;
+                    foreach (var m in type.GetMethods(AccessTools.all))
+                    {
+                        if (m.DeclaringType != type || m.IsAbstract || m.ContainsGenericParameters || Array.IndexOf(FfxHot, m.Name) < 0) continue;
+                        try { harmony.Patch(m, prefix: hpre, postfix: hpost); names[m] = "ffx(효과 컴포넌트)." + m.Name; h++; }
+                        catch { }
+                    }
+                }
             Main.Entry.Logger.Log("[시작시간] 함수 " + n + "개, 자주 불리는 함수 " + h + "개 감쌈");
         }
 
