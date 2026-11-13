@@ -201,7 +201,7 @@ namespace StutterFix
             var p = instance; if (p == null) return;
             instance = null;
             Camera.onPreCull -= PreCull; Camera.onPreRender -= PreRender;
-            new Harmony(Id).UnpatchAll(Id);
+            new Harmony(Id).UnpatchOwner(Id);
             p.StopAllCoroutines();
             if (p.counters != null) foreach (var counter in p.counters) counter.Dispose();
             foreach (var c in p.cameras.Values) { if (c.Camera) c.Camera.RemoveCommandBuffer(CameraEvent.AfterEverything, c.End); c.End.Release(); }

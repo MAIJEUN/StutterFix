@@ -23,6 +23,17 @@
     <OutputPath>bin/Player/</OutputPath>
     <IntermediateOutputPath>obj/Player/</IntermediateOutputPath>
   </PropertyGroup>
+  <!-- MelonLoader 빌드: dotnet build -p:Edition=Player -p:Loader=Melon 로 bin/Melon 에 만든다. 소스는 같고 melon/ 의 UMM 흉내와 진입점만 더한다. -->
+  <PropertyGroup Condition="'$(Loader)' == 'Melon'">
+    <MelonGamePath Condition="'$(MelonGamePath)' == ''">D:/clientmine/A Dance of Fire and Ice</MelonGamePath>
+    <DefineConstants>$(DefineConstants);MELON</DefineConstants>
+    <OutputPath>bin/Melon/</OutputPath>
+    <IntermediateOutputPath>obj/Melon/</IntermediateOutputPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Loader)' == 'Melon'">
+    <Compile Include="melon/UmmShim.cs" />
+    <Compile Include="melon/MelonEntry.cs" />
+  </ItemGroup>
   <!-- (측정용, 배포 안 함) 플레이어용에 자동 시험만 더한다: dotnet build -p:Edition=Player -p:AutoTestBuild=1 -->
   <PropertyGroup Condition="'$(AutoTestBuild)' == '1'">
     <DefineConstants>$(DefineConstants);AUTOTEST</DefineConstants>
@@ -53,6 +64,8 @@
     <Compile Include="ScriptCensus.cs" />
     <Compile Include="GpuPriority.cs" />
     <Compile Include="TightSpriteProbe.cs" />
+    <Compile Include="HarmonyCompat.cs" />
+    <Compile Include="ReplayCompat.cs" />
     <Compile Include="LightProbe.cs" />
     <Compile Include="BeatProbe.cs" />
     <Compile Include="GpuDecoPlayer.cs" />
@@ -480,12 +493,22 @@
       <HintPath>$(GameManaged)\DOTween.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityModManager">
+    <Reference Include="UnityModManager" Condition="'$(Loader)' != 'Melon'">
       <HintPath>$(GameManaged)\UnityModManager\UnityModManager.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="0Harmony">
+    <Reference Include="0Harmony" Condition="'$(Loader)' != 'Melon'">
       <HintPath>$(GameManaged)\UnityModManager\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- MelonLoader 빌드: UMM 대신 MelonLoader 와 그 안의 Harmony(HarmonyX) -->
+    <Reference Include="MelonLoader" Condition="'$(Loader)' == 'Melon'">
+      <HintPath>$(MelonGamePath)/MelonLoader/net35/MelonLoader.dll</HintPath>
+      <Aliases>melon</Aliases>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony" Condition="'$(Loader)' == 'Melon'">
+      <HintPath>$(MelonGamePath)/MelonLoader/net35/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

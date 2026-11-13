@@ -136,7 +136,7 @@ namespace StutterFix
         {
             if (!Running) return;
             Running = false;
-            try { harmony.UnpatchAll("StutterFix.AllocScan"); } catch { }
+            try { harmony.UnpatchOwner("StutterFix.AllocScan"); } catch { }
             Report();
         }
 

@@ -81,7 +81,7 @@ namespace StutterFix
                 enabled = true;
                 Log("켬: " + installed + "/" + targets.Length + " 대상, 주 스레드 곡 중 호출만, 시간 1/64. 원래 함수·다른 패치·안쪽 호출 포함; 모드 비용 아님.");
             }
-            catch { h.UnpatchAll(Id); enabled = false; throw; }
+            catch { h.UnpatchOwner(Id); enabled = false; throw; }
         }
 
         // No reflection, dictionary lookup, allocation or lock on the invocation path.
@@ -99,7 +99,7 @@ namespace StutterFix
         internal static void Off()
         {
             Tick(false); enabled = false;
-            new Harmony(Id).UnpatchAll(Id);
+            new Harmony(Id).UnpatchOwner(Id);
         }
         internal static void State()
         {

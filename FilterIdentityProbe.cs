@@ -53,7 +53,7 @@ namespace StutterFix
                 default: throw new Exception("filteridentity on|off|state|approve");
             }
         }
-        internal static void Stop() { Running = false; new Harmony(Id).UnpatchAll(Id); }
+        internal static void Stop() { Running = false; new Harmony(Id).UnpatchOwner(Id); }
         static void State()
         {
             foreach (var c in FilterIdentity.Candidates.Values)

@@ -131,7 +131,7 @@ namespace StutterFix
         internal static void Shutdown()
         {
             active = false;
-            if (harmony != null) { harmony.UnpatchAll(harmony.Id); harmony = null; }
+            if (harmony != null) { harmony.UnpatchOwner(harmony.Id); harmony = null; }
             stages.Clear(); top = null; depth = 0;
         }
         internal static bool Active { get { return active; } }

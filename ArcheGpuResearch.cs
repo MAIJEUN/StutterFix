@@ -167,7 +167,7 @@ namespace StutterFix
             // Gate first so a failed unpatch cannot leave a picture-changing path active.
             active = false; selected = null; bypassed = 0; effects.Clear(); observations.Clear();
             if (Main.Config != null) Main.Config.ArcheGpuResearch = false;
-            new Harmony(Id).UnpatchAll(Id);
+            new Harmony(Id).UnpatchOwner(Id);
         }
         static void Log(string value) { Main.Entry.Logger.Log("[archegpu] " + value); }
     }

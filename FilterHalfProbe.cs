@@ -14,7 +14,7 @@ internal static class FilterHalfProbe {
  method=AccessTools.Method(t,"OnRenderImage",new[]{typeof(RenderTexture),typeof(RenderTexture)});
  new Harmony(Id).Patch(method,prefix:new HarmonyMethod(typeof(FilterHalfProbe),nameof(Before)),postfix:new HarmonyMethod(typeof(FilterHalfProbe),nameof(After)),finalizer:new HarmonyMethod(typeof(FilterHalfProbe),nameof(Final)));
  }
- internal static void Stop(){new Harmony(Id).UnpatchAll(Id);}
+ internal static void Stop(){new Harmony(Id).UnpatchOwner(Id);}
  public static void Before(object __instance,RenderTexture __0,ref RenderTexture __1,out Capture __state){
  __state=null;if(nested||samples>=8||Time.frameCount-frame<90||__0==null)return;
  frame=Time.frameCount;var output=RenderTexture.GetTemporary(__0.descriptor);

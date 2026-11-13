@@ -64,7 +64,7 @@ namespace StutterFix
             }
             catch
             {
-                harmony.UnpatchAll(Id); enabled = false;
+                harmony.UnpatchOwner(Id); enabled = false;
                 throw;
             }
         }
@@ -73,7 +73,7 @@ namespace StutterFix
         {
             Tick(false);
             enabled = false; generation++;
-            new Harmony(Id).UnpatchAll(Id);
+            new Harmony(Id).UnpatchOwner(Id);
         }
 
         private static void Before(int index, out Stamp stamp)

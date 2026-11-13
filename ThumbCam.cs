@@ -32,7 +32,10 @@ namespace StutterFix
         // 설정이 바뀌었을 때도 부른다
         internal static void Apply()
         {
-            if (cam != null) cam.enabled = !Enabled;
+            if (cam == null) return;
+            // 다시 켤 때 그릴 텍스처가 없으면 화면에 직접 그려 게임 화면을 덮는다: 그때는 꺼 둔 채로 둔다
+            if (!Enabled && cam.targetTexture == null) { Main.Entry.Logger.Log("[썸네일 카메라] 그릴 텍스처가 없어 다시 켜지 않음"); return; }
+            cam.enabled = !Enabled;
         }
     }
 }

@@ -142,7 +142,7 @@ namespace StutterFix
                             patches.Patch(setup, postfix: new HarmonyMethod(typeof(DecoBake), nameof(SetupPostfix)));
                             patches.Patch(prep, postfix: new HarmonyMethod(typeof(DecoBake), nameof(PrepPostfix)));
                         }
-                        catch { patches.UnpatchAll(Owner); patches = null; throw; }
+                        catch { patches.UnpatchOwner(Owner); patches = null; throw; }
                         enabled = true; status = "켜짐: 새 맵 open 대기"; Log(status); return;
                     case "off": Shutdown(); Log(status); return;
                     case "state": Log("ready=" + ready + " generation=" + generation + " collector=" + (collector != null) + " worker=" + (job != null) + " status=" + status); return;
@@ -203,7 +203,7 @@ namespace StutterFix
             DecoSim.ForgetBake();
 #endif
             table = null;
-            patches?.UnpatchAll(Owner); patches = null; status = "꺼짐";
+            patches?.UnpatchOwner(Owner); patches = null; status = "꺼짐";
         }
         // 제품 경로: 다시 하기는 장식을 새로 Setup 하지 않을 수 있으므로(가벼운 초기화) 처음 Setup 기록(initial)과 관리자는 남긴다.
         // 맵을 새로 불러오면 새 관리자의 Setup 이 기록을 비우고 다시 채운다(SetupPostfix).

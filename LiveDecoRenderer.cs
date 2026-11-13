@@ -1134,7 +1134,7 @@ namespace StutterFix
             }
             finally
             {
-                try { harmony?.UnpatchAll(PatchId); }
+                try { harmony?.UnpatchOwner(PatchId); }
                 finally
                 {
                     if (root) { root.SetActive(false); UnityEngine.Object.Destroy(root); }

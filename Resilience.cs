@@ -13,6 +13,10 @@ namespace StutterFix
     // 2) 비정상 종료 감지: 게임이 켜지면 모드 폴더에 session.lock 을 남기고 정상 종료 때 지운다. 다음 실행에 남아 있으면 비정상 종료
     //    (튕김·멈춰서 강제 종료). 두 번 연속이면 안전 모드(게임 동작에 깊이 관여하는 기능을 끔)로 켜고 설정 창에 알린다.
     //    어느 단계(맵 불러오는 중, 플레이 중 등)에서 끝났는지도 남긴다.
+    //    사람이 끈 것은 세지 않는다 (Alt+F4 뒤 저장 물음에서 강제로 끄거나, 작업 관리자로 끄는 사람이 많아 그때마다 안전 모드가 됐다):
+    //      - 창 닫기 요청(Application.wantsToQuit, Alt+F4·X 버튼)이 온 뒤 끝났으면 "끄는 중" 표시가 남아 있다 -> 세지 않음.
+    //      - 표시 없이 끝났어도, 끝나기 직전까지 게임이 돌고 있었고(멈춤 표시 없음) 지난 로그에 유니티 튕김 기록이 없으면 강제 종료로 본다 -> 세지 않음.
+    //    세는 것: 지난 로그(Player-prev.log)에 튕김 기록이 있거나, 메인 스레드가 HangSeconds 넘게 멈춘 채로 끝난 경우(옆 스레드가 그때 한 번 표시).
     internal static class Resilience
     {
         internal const int Threshold = 5;
@@ -53,7 +57,10 @@ namespace StutterFix
             Main.Entry.Logger.Log("[안정성] " + feature + " 실패 " + n + "회: " + reason);
         }
 #endif
-        internal static bool Off(string key) { lock (sync) return off.Contains(key); }
+        internal static bool Off(string key) { lock (sync) return off.Contains(key) || replayOff.Contains(key); }
+        // 리플레이 모드가 재생하는 동안만 끄는 것 (ReplayCompat). 안전 모드·오류 차단과 따로 둬서 끝나면 그것만 되돌린다
+        private static readonly HashSet<string> replayOff = new HashSet<string>();
+        internal static void SetReplayOff(string[] keys) { lock (sync) { replayOff.Clear(); if (keys != null) foreach (var k in keys) replayOff.Add(k); } }
 
         internal static void Init()   // 여러 번 불려도 한 번만 (UMM 은 Load 다음 OnToggle(true) 도 부른다)
         {
@@ -64,18 +71,34 @@ namespace StutterFix
                 if (File.Exists(lockPath))
                 {
                     LastCrashPhase = File.ReadAllText(lockPath).Trim();
-                    Main.Config.CrashStreak++;
-                    Main.Entry.Logger.Log("[안정성] 지난번 게임이 비정상 종료됨 (그때 단계: " + LastCrashPhase + ", 연속 " + Main.Config.CrashStreak + "번)");
+                    bool hung = LastCrashPhase.StartsWith(HungMark, StringComparison.Ordinal);
+                    bool closing = LastCrashPhase.StartsWith(ClosingMark, StringComparison.Ordinal);
+                    bool crashed = PrevLogHasCrash();
+                    if (crashed || hung)
+                    {
+                        Main.Config.CrashStreak++;
+                        Main.Entry.Logger.Log("[안정성] 지난번 게임이 비정상 종료됨 (" + (crashed ? "튕김 기록 있음" : "멈춘 채로 끝남") + ", 그때 단계: " + LastCrashPhase + ", 연속 " + Main.Config.CrashStreak + "번)");
+                    }
+                    else
+                    {
+                        // 사람이 끈 것: 연속 횟수는 그대로 둔다(올리지도 지우지도 않음)
+                        Main.Entry.Logger.Log("[안정성] 지난번 게임은 " + (closing ? "창 닫기 요청 뒤" : "돌던 중에 강제로") + " 꺼짐 - 사람이 끈 것으로 보고 세지 않음 (그때 단계: " + LastCrashPhase + ")");
+                        LastCrashPhase = "";
+                    }
                 }
                 else Main.Config.CrashStreak = 0;
-                if (Main.Config.CrashStreak >= 2) EnterSafeMode("게임이 " + Main.Config.CrashStreak + "번 연속 비정상 종료됨 (마지막 단계: " + LastCrashPhase + ")");
-                else if (Main.Config.CrashStreak == 1) lock (sync)
+                if (Main.Config.CrashStreak >= 2 && LastCrashPhase.Length > 0) EnterSafeMode("게임이 " + Main.Config.CrashStreak + "번 연속 비정상 종료됨 (마지막 단계: " + LastCrashPhase + ")");
+                else if (Main.Config.CrashStreak == 1 && LastCrashPhase.Length > 0) lock (sync)
                     Notes.Add(SettingsWindow.T("지난번 게임이 비정상 종료됐습니다 (그때: " + LastCrashPhase + "). 한 번 더 그러면 자동으로 안전 모드로 켜집니다.",
                         "The game ended abnormally last time (during: " + LastCrashPhase + "). If it happens again, safe mode turns on automatically."));
                 try { Main.Config.Save(Main.Entry); } catch { }
                 Phase("시작");
                 Application.quitting += OnQuit;
+                Application.wantsToQuit += OnWantsToQuit;
+                focused = Application.isFocused; Application.focusChanged += OnFocus;
                 Application.logMessageReceivedThreaded += OnLog;
+                lastTick = System.Diagnostics.Stopwatch.GetTimestamp();
+                StartWatch();
             }
             catch (Exception ex) { Main.Entry.Logger.Log("[안정성] 준비 실패: " + ex.Message); }
         }
@@ -83,13 +106,81 @@ namespace StutterFix
         internal static void Shutdown()
         {
             Application.quitting -= OnQuit;
+            Application.wantsToQuit -= OnWantsToQuit;
+            Application.focusChanged -= OnFocus;
             Application.logMessageReceivedThreaded -= OnLog;
             Stop();   // 모드를 끄거나 다시 불러오는 것도 정상
         }
 
         private static void OnQuit() { try { if (lockPath != null && File.Exists(lockPath)) File.Delete(lockPath); } catch { } }
         // 모드를 끄면 단계 기록도 멈춘다 (다시 켜면 Init)
-        private static void Stop() { OnQuit(); lockPath = null; phase = ""; }
+        private static void Stop() { watchGen++; OnQuit(); lockPath = null; phase = ""; closingAt = 0; hungMarked = false; }
+
+        // ── 사람이 끈 것과 튕김·멈춤 가르기 ──
+        private const string ClosingMark = "[끄는 중] ", HungMark = "[멈춤] ";
+        internal static float HangSeconds = 20f;
+        private static readonly object fileLock = new object();
+        private static long lastTick, closingAt;
+        private static volatile bool hungMarked;
+        private static volatile int watchGen;
+        private static volatile bool focused = true;   // 창이 뒤에 있으면 게임이 스스로 쉴 수 있어 멈춤으로 보지 않는다
+        private static void OnFocus(bool f) { focused = f; System.Threading.Interlocked.Exchange(ref lastTick, System.Diagnostics.Stopwatch.GetTimestamp()); }
+
+        // 창 닫기 요청 (Alt+F4, X 버튼, Application.Quit). 막지 않는다(true). 게임이 저장 물음으로 취소할 수 있어, 20초 뒤에도 돌고 있으면 표시를 지운다(Tick).
+        private static bool OnWantsToQuit()
+        {
+            try { closingAt = System.Diagnostics.Stopwatch.GetTimestamp(); WriteLock(); } catch { }
+            return true;
+        }
+
+        private static void WriteLock()
+        {
+            if (lockPath == null) return;
+            string body = phase + " (" + DateTime.Now.ToString("HH:mm:ss") + ")";
+            string text = hungMarked ? HungMark + body : closingAt != 0 ? ClosingMark + body : body;
+            lock (fileLock) { try { File.WriteAllText(lockPath, text); } catch { } }
+        }
+
+        // 옆 스레드: 메인 스레드가 HangSeconds 넘게 안 돌면 한 번 "멈춤" 표시. 다시 돌면 Tick 이 지운다. 평소에는 파일을 쓰지 않는다.
+        private static void StartWatch()
+        {
+            int gen = ++watchGen;
+            var th = new System.Threading.Thread(() =>
+            {
+                while (gen == watchGen)
+                {
+                    System.Threading.Thread.Sleep(2000);
+                    if (gen != watchGen || lockPath == null || hungMarked || !focused) continue;
+                    double idle = (System.Diagnostics.Stopwatch.GetTimestamp() - System.Threading.Interlocked.Read(ref lastTick)) / (double)System.Diagnostics.Stopwatch.Frequency;
+                    if (idle < HangSeconds) continue;
+                    hungMarked = true;
+                    try { WriteLock(); } catch { }
+                }
+            }) { IsBackground = true, Name = "StutterFix.HangWatch" };
+            th.Start();
+        }
+
+        // 지난 실행의 게임 로그에 유니티 튕김 기록이 있는지 (끝 256KB 만 읽는다)
+        private static bool PrevLogHasCrash()
+        {
+            try
+            {
+                string log = Application.consoleLogPath;
+                if (string.IsNullOrEmpty(log)) return false;
+                string prev = Path.Combine(Path.GetDirectoryName(log), "Player-prev.log");
+                if (!File.Exists(prev)) return false;
+                using (var fs = new FileStream(prev, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    long n = Math.Min(fs.Length, 256 * 1024);
+                    fs.Seek(-n, SeekOrigin.End);
+                    var buf = new byte[n];
+                    int got = 0; while (got < n) { int r = fs.Read(buf, got, (int)n - got); if (r <= 0) break; got += r; }
+                    string tail = System.Text.Encoding.UTF8.GetString(buf, 0, got);
+                    return tail.Contains("Crash!!!") || tail.Contains("OUTPUTTING STACK TRACE") || tail.Contains("A crash has been intercepted");
+                }
+            }
+            catch { return false; }
+        }
 
         // 지금 무엇을 하는 중인지 (비정상 종료 때 어디서 끝났는지 알려고). 단계가 바뀔 때만 부른다.
         private static string phase = "";
@@ -97,7 +188,7 @@ namespace StutterFix
         {
             if (p == phase || lockPath == null) return;
             phase = p;
-            try { File.WriteAllText(lockPath, p + " (" + DateTime.Now.ToString("HH:mm:ss") + ")"); } catch { }
+            WriteLock();
         }
 
         private static void EnterSafeMode(string why)
@@ -177,6 +268,10 @@ namespace StutterFix
         // 메인 스레드에서 매 프레임
         internal static void Tick()
         {
+            long nowT = System.Diagnostics.Stopwatch.GetTimestamp();
+            System.Threading.Interlocked.Exchange(ref lastTick, nowT);
+            if (hungMarked) { hungMarked = false; WriteLock(); }   // 다시 돌기 시작함 (긴 불러오기 등)
+            if (closingAt != 0 && (nowT - closingAt) / (double)System.Diagnostics.Stopwatch.Frequency > 20.0) { closingAt = 0; WriteLock(); }   // 닫기를 취소하고 계속 함
             if (!pendingApply) return;
             pendingApply = false;
             try { Main.ApplyConfig(); } catch { }

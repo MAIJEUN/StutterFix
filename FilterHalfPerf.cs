@@ -10,7 +10,7 @@ internal static class FilterHalfPerf {
  Stop();if(name=="off")return;var t=AccessTools.TypeByName(name);if(t==null)throw new Exception("filter type missing");
  activeName=name;calls=frames=0;lastFrame=-1;new Harmony(Id).Patch(AccessTools.Method(t,"OnRenderImage",new[]{typeof(RenderTexture),typeof(RenderTexture)}),prefix:new HarmonyMethod(typeof(FilterHalfPerf),nameof(Before)),postfix:new HarmonyMethod(typeof(FilterHalfPerf),nameof(After)),finalizer:new HarmonyMethod(typeof(FilterHalfPerf),nameof(Final)));
  }
- internal static void Stop(){if(activeName!=null){Main.Entry.Logger.Log("[filterhalfperf] "+activeName+" calls="+calls+" frames="+frames);activeName=null;}new Harmony(Id).UnpatchAll(Id);}
+ internal static void Stop(){if(activeName!=null){Main.Entry.Logger.Log("[filterhalfperf] "+activeName+" calls="+calls+" frames="+frames);activeName=null;}new Harmony(Id).UnpatchOwner(Id);}
  public static void Before(ref RenderTexture __0,ref RenderTexture __1,out Capture __state){
  __state=null;if(__0==null)return;if(Hitch.Playing){calls++;if(lastFrame!=Time.frameCount){lastFrame=Time.frameCount;frames++;}}var desc=__0.descriptor;desc.width=Math.Max(1,desc.width/2);desc.height=Math.Max(1,desc.height/2);desc.depthBufferBits=0;
  var a=RenderTexture.GetTemporary(desc);var b=RenderTexture.GetTemporary(desc);

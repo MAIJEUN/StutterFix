@@ -199,7 +199,7 @@ namespace StutterFix
         {
             exact = verify = applied = false;
             pending = null; before = null;
-            exactHarmony?.UnpatchAll(ExactId); exactHarmony = null;
+            exactHarmony?.UnpatchOwner(ExactId); exactHarmony = null;
             fields.Clear();
         }
 
@@ -207,7 +207,7 @@ namespace StutterFix
         {
             StopExact();
             Array.Clear(skip, 0, skip.Length);
-            skipHarmony?.UnpatchAll(SkipId); skipHarmony = null;
+            skipHarmony?.UnpatchOwner(SkipId); skipHarmony = null;
         }
     }
 }

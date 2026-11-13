@@ -123,7 +123,7 @@ namespace StutterFix
             }
             catch
             {
-                harmony.UnpatchAll(Owner);
+                harmony.UnpatchOwner(Owner);
                 SceneManager.activeSceneChanged -= SceneChanged;
                 AudioSettings.OnAudioConfigurationChanged -= AudioChanged;
                 throw;
@@ -481,7 +481,7 @@ namespace StutterFix
             Compat.ReleaseHitSoundGuard();
             SceneManager.activeSceneChanged -= SceneChanged;
             AudioSettings.OnAudioConfigurationChanged -= AudioChanged;
-            harmony?.UnpatchAll(Owner);
+            harmony?.UnpatchOwner(Owner);
             installed = false;
         }
 

@@ -48,7 +48,7 @@ internal sealed class FilterGpuProbe:MonoBehaviour {
  for(int i=0;i<names.Count;i++){ulong n=fg_stat(i,0),ns=fg_stat(i,1);if(n>0)Main.Entry.Logger.Log(FormattableString.Invariant($"[filtergpu] {names[i]} samples={n} mean_us={(double)ns/n/1000:R} sum_ms={(double)ns/1e6:R} frames={frames[i]} total_frames={totalFrames} active_seconds={seconds[i]:R} song_seconds={totalSeconds:R}"));}
  for(int i=0;i<1024;i++)if(distribution[i]>0)Main.Entry.Logger.Log("[filtergpu] concurrent="+i+" frames="+distribution[i]);
  Main.Entry.Logger.Log("[filtergpu] skipped="+fg_stat(-1,0)+" invalid="+fg_stat(-1,1));}
- internal static void Stop(){new Harmony(Id).UnpatchAll(Id);if(instance==null)return;Report();Issue(3,IntPtr.Zero);var r=instance;instance=null;r.cb.Release();Destroy(r.gameObject);}
+ internal static void Stop(){new Harmony(Id).UnpatchOwner(Id);if(instance==null)return;Report();Issue(3,IntPtr.Zero);var r=instance;instance=null;r.cb.Release();Destroy(r.gameObject);}
 }
 }
 #endif

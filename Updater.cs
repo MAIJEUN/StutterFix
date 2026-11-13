@@ -41,6 +41,9 @@ namespace StutterFix
         // OnUpdate 에서 부른다
         internal static void Tick()
         {
+#if MELON
+            return;   // MelonLoader 빌드: 받는 파일이 UMM 용 DLL 이라 확인·받기를 하지 않는다
+#endif
             if (installState >= 2) InstallDone();
             if (Main.Config == null || Hitch.Playing) return;   // 곡 중에는 결과 처리도 새 요청도 하지 않는다
             if (req != null) { if (req.isDone) Finish(); return; }

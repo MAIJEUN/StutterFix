@@ -80,7 +80,7 @@ namespace StutterFix
         }
         static void RestorePlanets()
         {
-            try { pausePatch.UnpatchAll(pausePatch.Id); }
+            try { pausePatch.UnpatchOwner(pausePatch.Id); }
             finally
             {
                 foreach (var ps in pausedParticles)

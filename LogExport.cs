@@ -19,6 +19,11 @@ namespace StutterFix
     internal static class LogExport
     {
         internal static string LastPath = "";
+#if MELON
+        private static string LoadError(UnityModManager.ModEntry m) { return ""; }
+#else
+        private static string LoadError(UnityModManager.ModEntry m) { return m.ErrorOnLoading ? " (불러오기 오류)" : ""; }
+#endif
         internal static string LastError = "";
 
         internal static string Markdown()
@@ -151,7 +156,7 @@ namespace StutterFix
             try
             {
                 foreach (var m in UnityModManager.modEntries)
-                    sb.AppendLine(string.Format("{0} {1} {2}{3}", m.Info.Id, m.Info.Version, m.Enabled ? "켜짐" : "꺼짐", m.ErrorOnLoading ? " (불러오기 오류)" : ""));
+                    sb.AppendLine(string.Format("{0} {1} {2}{3}", m.Info.Id, m.Info.Version, m.Enabled ? "켜짐" : "꺼짐", LoadError(m)));
             }
             catch (Exception ex) { sb.AppendLine("목록을 읽지 못함: " + ex.Message); }
             sb.AppendLine();

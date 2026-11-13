@@ -184,7 +184,7 @@ namespace StutterFix
                     scCalls = scSameMat = scSameCached = 0; scFrame0 = Time.frameCount;
                     return "FloorMeshRenderer.color 세터 세기 시작";
                 }
-                if (a == "off") { if (colorH != null) { colorH.UnpatchAll("StutterFix.colorstat"); colorH = null; } return "끔"; }
+                if (a == "off") { if (colorH != null) { colorH.UnpatchOwner("StutterFix.colorstat"); colorH = null; } return "끔"; }
                 int fr = Math.Max(1, Time.frameCount - scFrame0);
                 return "프레임 " + fr + "개 동안 세터 호출 " + scCalls + "번(프레임당 " + (scCalls / (double)fr).ToString("F1") + "), 현재 머티리얼 색과 같은 것 "
                     + scSameMat + "(" + (scCalls > 0 ? (100.0 * scSameMat / scCalls).ToString("F0") : "0") + "%), 기억한 색(cachedColor)과 같은 것 " + scSameCached;

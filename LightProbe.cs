@@ -75,7 +75,7 @@ namespace StutterFix
 
         internal static void Uninstall()
         {
-            try { if (h != null) h.UnpatchAll("StutterFix.LightProbe"); } catch { }
+            try { if (h != null) h.UnpatchOwner("StutterFix.LightProbe"); } catch { }
             h = null; names.Clear(); skip.Clear();
         }
     }

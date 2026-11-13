@@ -192,7 +192,7 @@ namespace StutterFix
         internal static void Stop()
         {
             active = InWindow = false; UpdateEvalMemo.Verify = false;
-            if (harmony != null) { harmony.UnpatchAll(Id); harmony = null; }
+            if (harmony != null) { harmony.UnpatchOwner(Id); harmony = null; }
             slots.Clear(); names.Clear(); grouping.Clear(); decorations.Clear(); patchList = "";
         }
     }

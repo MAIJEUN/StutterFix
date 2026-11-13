@@ -102,7 +102,7 @@ namespace StutterFix
         internal static void Stop()
         {
             if (!Running) return;
-            harmony.UnpatchAll("StutterFix.Profiler");
+            harmony.UnpatchOwner("StutterFix.Profiler");
             Running = false;
             lock (gate) stats.Clear();
             Main.Entry.Logger.Log("profiler stopped");

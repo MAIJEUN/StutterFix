@@ -580,7 +580,7 @@ namespace StutterFix
                         return true;
                     }
                 case "unpatch":
-                    new Harmony(Main.Entry.Info.Id).UnpatchAll(Main.Entry.Info.Id); Log("이 모드의 게임 패치를 모두 뗌 (비교용)"); return true;
+                    new Harmony(Main.Entry.Info.Id).UnpatchOwner(Main.Entry.Info.Id); Log("이 모드의 게임 패치를 모두 뗌 (비교용)"); return true;
                 case "orphaninfo":
                     {
                         var cur = new HashSet<Material>();

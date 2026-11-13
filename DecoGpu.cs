@@ -532,7 +532,7 @@ namespace StutterFix
             {
                 try { if(s.camera && s.commands!=null)s.camera.RemoveCommandBuffer(DrawEvent,s.commands); }
                 catch(Exception e) { restoreMismatch++;Log("remove command buffer failed: "+e.Message); }
-                try { s.harmony?.UnpatchAll(PatchId); }
+                try { s.harmony?.UnpatchOwner(PatchId); }
                 catch(Exception e) { restoreMismatch++;Log("unpatch failed: "+e.Message); }
                 foreach(var i in s.owned.Values)
                 {

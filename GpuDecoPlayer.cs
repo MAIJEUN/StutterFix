@@ -29,7 +29,7 @@ namespace StutterFix
 
         internal static void Configure()
         {
-            if (Main.Config.GpuDeco != 1) { if (Product) Shutdown(); return; }
+            if (Main.Config.GpuDeco != 1 || Resilience.Off("GpuDeco")) { if (Product) Shutdown(); return; }
             if (Product) return;
             Product = true; lifetime.NewRound(); reported=false; GpuDecoGpu.AlphaEarlyOut = 1;
             try
@@ -222,7 +222,7 @@ namespace StutterFix
                 return;
             }
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
-            hooks?.UnpatchAll(Owner); hooks = null;
+            hooks?.UnpatchOwner(Owner); hooks = null;
             try { if (RuntimeInitialized) { DecoBake.ReleasePlayerLevel(); DecoBake.Shutdown(); } }
             finally
             {

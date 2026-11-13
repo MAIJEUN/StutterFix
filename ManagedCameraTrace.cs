@@ -97,7 +97,7 @@ namespace StutterFix
         internal static void Stop()
         {
             active=false;
-            try{harmony?.UnpatchAll(Id);}catch{}harmony=null;samples=null;cameraRt=null;
+            try{harmony?.UnpatchOwner(Id);}catch{}harmony=null;samples=null;cameraRt=null;
         }
     }
 }

@@ -94,7 +94,7 @@ namespace StutterFix
             }
             catch
             {
-                harmony.UnpatchAll(Owner);
+                harmony.UnpatchOwner(Owner);
                 throw;
             }
         }
@@ -117,7 +117,7 @@ namespace StutterFix
             var probe = installed;
             if (probe == null) return;
             probe.Window = null;
-            new Harmony(Owner).UnpatchAll(Owner);
+            new Harmony(Owner).UnpatchOwner(Owner);
             installed = null;
         }
 

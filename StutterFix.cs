@@ -1015,6 +1015,7 @@ ParticleTextWatch.Install(harmony);
             EndDisplayTransition();
 
             Try(GpuDecoPlayer.Shutdown);
+            Try(ReplayCompat.Reset);
             Try(RunLod.Unload);
 
 #if AUTOTEST
@@ -1256,7 +1257,7 @@ Try(RenderCallbackScan.Shutdown);
 
             foreach (var id in HarmonyIds)
 
-                Try(() => new Harmony(id).UnpatchAll(id));
+                Try(() => new Harmony(id).UnpatchOwner(id));
 
 
 
@@ -1390,6 +1391,7 @@ if (Edition.AutoTest && AutoTest.ReloadNow) { AutoTest.ReloadNow = false; Reques
 
             long q = System.Diagnostics.Stopwatch.GetTimestamp();
 
+            ReplayCompat.Tick();
             GcControl.Tick(dt); Tk(0, ref q);
 
             RestartAdvisor.Tick(); if (Edition.AutoTest) {
@@ -2020,7 +2022,7 @@ BlendProbe.Tick();
             FlashSkip.SetEnabled(E("SkipClearFlash", Config.SkipClearFlash));
             MouseSkip.Enabled = E("MouseEventsSkip", Config.MouseEventsSkip);
 
-            ThumbCam.Enabled = InvisibleSkip.Enabled; ThumbCam.Apply();
+            ThumbCam.Enabled = InvisibleSkip.Enabled || ReplayCompat.Active; ThumbCam.Apply();   // 리플레이 중에도 썸네일 카메라는 꺼 둔다 (중간에 다시 켜면 화면을 덮었다)
 
             TileCull.Enabled = InvisibleSkip.Enabled;
 

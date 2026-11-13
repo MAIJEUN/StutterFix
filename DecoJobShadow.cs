@@ -434,7 +434,7 @@ namespace StutterFix
             SceneManager.activeSceneChanged -= SceneChanged;
             Camera.onPreCull -= CheckLifetime;
             // Attempt unpatch even if Patch threw after partially installing.
-            try { if (patched) { new Harmony(Id).UnpatchAll(Id); patched = false; } }
+            try { if (patched) { new Harmony(Id).UnpatchOwner(Id); patched = false; } }
             finally
             {
                 if (scheduled) { pending.Complete(); scheduled = false; }
