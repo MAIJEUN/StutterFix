@@ -2506,7 +2506,7 @@ BlendProbe.Tick();
 
         public bool HitMeterFade = true;   // 판정 오차 막대 눈금이 사라질 때 그림을 다시 만들지 않고 렌더러 투명도만 바꾸기
 
-        public bool HitMeterDirectKill = true;   // 판정 오차 막대 눈금·손의 트윈을 문자열 검색 대신 핸들로 종료 (원래 DOTween 과 비트 차이 0; 고BPM 맵 +11~13%)
+        public bool HitMeterDirectKill = false;  // (로컬: 기본 끔 - Mare Tranquillitatis 에서 카메라 고정 BG 장식이 심하게 떨렸고, 이것만 끄면 멈춤을 나눠 시험으로 확인 2026-11-13) 판정 오차 막대 눈금·손의 트윈을 문자열 검색 대신 핸들로 종료 (원래 DOTween 과 비트 차이 0; 고BPM 맵 +11~13%)
 
         // 연출 끄기 (기본 꺼짐: 켜면 화면이 달라진다)
 
