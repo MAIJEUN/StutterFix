@@ -42,3 +42,20 @@ status=-1 failed: engine Adjust/resize/count verification failed; rollback ACK r
 1. 두 카운터의 의미(누가 언제 증가시키는지: Present 발행/완료, 렌더 스레드 vs 메인)를 역어셈블로 확정하고, **두 값이 같아지는 시점**(예: 원래 Present 반환 직후 우리 Present 후크 안, Unity 가 완료 카운터를 올린 뒤의 다음 렌더 이벤트, 메인 스레드 WaitForPendingPresent 직후 등)을 찾아 그때 Adjust 를 부르게. 가드 직전 두 값을 상태 줄에 찍어 실측 가능하게(`adjGuardA/B`).
 2. 그래도 안 되면: Unity 가 정상적으로 Adjust 를 부르는 경로(창 크기 변경 처리 등)를 실제 크기 그대로 태우는 다른 방법, 또는 Release/CreateBackBufferResources 를 직접 부르는 방법(가드 없이)의 안전성 근거.
 3. 같은 결과 문서에 이어 쓰기, fixture·4종 빌드 오류 0. 게임 실행·커밋 금지.
+
+## 추가 2 (2026-11-14, Claude) — WaitSkip v6 뒤
+- WaitSkip v6(커밋 e8e6726) 뒤 **일반 Screen.SetResolution 이 정상**: AUTOTEST `screenres 1920 1080 fsw` → `screenres 2560 1440 fsw` 오류 없음. 처음 buffers3 실패(1px 왕복)의 원인은 WaitSkip v5 의 카운터 불일치였음.
+- 렌더 이벤트/OnAfterPresent 직후 Adjust 직접 호출은 여전히 거절: `adjust=-1 calls=0 adjGuardA=10896 adjGuardB=10895` (그 시점엔 A 가 B 보다 1 큼).
+### 할 일
+1. buffers3/resizeprobe 의 방아쇠를 **Unity 공식 경로 Screen.SetResolution**(원래 1px 왕복 또는 같은 크기 요청 — Adjust 까지 가는 쪽, 앞서 정적 분석 근거)으로 되돌리고, Adjust 직접 호출은 기본에서 빼라(남겨도 되지만 기본 아님). ACK·watchdog·레지스트리 복원·status=-1 실패 줄은 유지.
+2. 4종 빌드 오류 0, fixture. 게임 실행·커밋 금지. 결과는 같은 결과 문서에 이어 쓰기.
+
+## 추가 3 (2026-11-14, Claude) — SetResolution 방아쇠 실게임 (resizeprobe, BufferCount 변경 없음)
+- `resize Screen.SetResolution queued phase=apply size=2559x1440` → **ResizeBuffers 실제 호출됨**: `resizeCalls=1 resizeHR=0 resizeInputCount=2 resizeOutputCount=2 resizeFlags=2114`. desc size=2560x1440 그대로(FSW).
+- 그런데 그 뒤 **프레임이 약 500ms 씩**: 모니터 `514ms -> 게임 처리 / gpu 6.3 cpu 512.9`, `497ms ... cpu 513.3`. presents=3 (활성 후 2초 넘게). → `resize ACK timeout phase=2` → off 복원 요청 뒤 자동 시험 종료로 게임 꺼짐(복원 ACK 전).
+- 대조: presentpath 없이 같은 WaitSkip v6 에서 `screenres 1920 1080 fsw → 2560 1440 fsw` 는 정상(213.4 FPS). → **우리 후크가 걸린 상태의 resize 뒤 무언가가 프레임마다 약 500ms 를 기다린다**(타임아웃 500ms 대기로 보임: 프레임 지연 대기 객체? WaitSkip 렌더 스레드 폴링? 우리 Present 후크/렌더 이벤트 잠금?).
+- 또 desc 가 2560 그대로라 "Screen 크기 == desc 크기" 같은 ACK 조건이 FSW 에서 성립하지 않을 수 있음(그것이 phase=2 timeout 원인일 수도).
+### 할 일
+1. 500ms 대기의 정체를 정적 분석으로: Unity 의 waitable object(GetFrameLatencyWaitableObject) 대기 타임아웃 값·resize 뒤 다시 얻는지, WaitSkip v6 패치 지점(0x8E815F/0x8E8176 0ms 폴링 포함)과 resize 의 상호작용, 우리 Present/ResizeBuffers 후크·렌더 이벤트의 잠금. 근거 주소.
+2. 고쳐서 resizeprobe 가 resize 뒤에도 FPS 정상(프레임 500ms 없음)이 되게. ACK 조건은 FSW 에서 desc 가 모니터 크기로 남는 경우를 허용.
+3. 빌드 4종 오류 0, fixture. 게임 실행·커밋 금지. 같은 결과 문서에 이어 쓰기.

@@ -52,6 +52,9 @@
 
   <ItemGroup>
     <Compile Include="StutterFix.cs" />
+    <Compile Include="FillGeometry.cs" Condition="'$(Edition)' != 'Player' Or '$(AutoTestBuild)' == '1'" />
+    <Compile Include="FillCensus.cs" Condition="'$(Edition)' != 'Player' Or '$(AutoTestBuild)' == '1'" />
+    <EmbeddedResource Include="tools/fillcensus/shader-metadata.tsv" LogicalName="StutterFix.fillshaders" Condition="'$(Edition)' != 'Player' Or '$(AutoTestBuild)' == '1'" />
     <Compile Include="ScriptPath.cs" Condition="'$(AutoTestBuild)' == '1'" />
     <Compile Include="GpuExactCensus.cs" Condition="'$(AutoTestBuild)' == '1'" />
     <Compile Include="EngineKnob.cs" Condition="'$(AutoTestBuild)' == '1'" />

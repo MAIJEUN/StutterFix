@@ -603,21 +603,31 @@ namespace StutterFix
 
         static Matrix4x4 vp;
         static Vector3 VPt(Vector3 w) { var n = vp.MultiplyPoint(w); return new Vector3(n.x * 0.5f + 0.5f, n.y * 0.5f + 0.5f, 0); }
+        // Renderer.bounds is a world-space AABB. A tilted camera needs all eight
+        // corners, including both depths of the two mixed XY corners.
+        static void ProjectBounds(Bounds b, out float x0, out float y0, out float x1, out float y1)
+        {
+            var lo = b.min; var hi = b.max;
+            x0 = y0 = float.PositiveInfinity; x1 = y1 = float.NegativeInfinity;
+            for (int i = 0; i < 8; i++)
+            {
+                var p = VPt(new Vector3((i & 1) == 0 ? lo.x : hi.x,
+                    (i & 2) == 0 ? lo.y : hi.y, (i & 4) == 0 ? lo.z : hi.z));
+                x0 = Mathf.Min(x0, p.x); x1 = Mathf.Max(x1, p.x);
+                y0 = Mathf.Min(y0, p.y); y1 = Mathf.Max(y1, p.y);
+            }
+        }
         static void ViewRect(Bounds b, Item it)
         {
-            Vector3 a = VPt(b.min), c = VPt(b.max);
-            Vector3 d = VPt(new Vector3(b.min.x, b.max.y, b.center.z)), e = VPt(new Vector3(b.max.x, b.min.y, b.center.z));
-            it.X0 = Mathf.Clamp01(Mathf.Min(Mathf.Min(a.x, c.x), Mathf.Min(d.x, e.x))); it.X1 = Mathf.Clamp01(Mathf.Max(Mathf.Max(a.x, c.x), Mathf.Max(d.x, e.x)));
-            it.Y0 = Mathf.Clamp01(Mathf.Min(Mathf.Min(a.y, c.y), Mathf.Min(d.y, e.y))); it.Y1 = Mathf.Clamp01(Mathf.Max(Mathf.Max(a.y, c.y), Mathf.Max(d.y, e.y)));
+            ProjectBounds(b, out var x0, out var y0, out var x1, out var y1);
+            it.X0 = Mathf.Clamp01(x0); it.X1 = Mathf.Clamp01(x1);
+            it.Y0 = Mathf.Clamp01(y0); it.Y1 = Mathf.Clamp01(y1);
         }
 
         static bool OnScreen(Bounds b, out float magDummy)
         {
             magDummy = 0;
-            Vector3 a = VPt(b.min), c = VPt(b.max);
-            Vector3 d = VPt(new Vector3(b.min.x, b.max.y, b.center.z)), e = VPt(new Vector3(b.max.x, b.min.y, b.center.z));
-            float x0 = Mathf.Min(Mathf.Min(a.x, c.x), Mathf.Min(d.x, e.x)), x1 = Mathf.Max(Mathf.Max(a.x, c.x), Mathf.Max(d.x, e.x));
-            float y0 = Mathf.Min(Mathf.Min(a.y, c.y), Mathf.Min(d.y, e.y)), y1 = Mathf.Max(Mathf.Max(a.y, c.y), Mathf.Max(d.y, e.y));
+            ProjectBounds(b, out var x0, out var y0, out var x1, out var y1);
             return x1 >= 0 && y1 >= 0 && x0 <= 1 && y0 <= 1;
         }
 
@@ -634,6 +644,12 @@ namespace StutterFix
 
         static void PreCullBody(Camera c)
         {
+            // The configured feature belongs to playback. Hitch notices exits
+            // on its next update; never carry its hidden originals into editing.
+            // Explicit diagnostic commands can still compare a paused frame.
+            if (Main.Config != null && Main.Config.RunLod
+                && (SceneReset.Resetting || (scnEditor.instance && !scnEditor.instance.playMode)))
+            { Pause(); return; }
             if (cam != c)
             {
                 if (cam && cb != null) cam.RemoveCommandBuffer(CameraEvent.BeforeForwardAlpha, cb);

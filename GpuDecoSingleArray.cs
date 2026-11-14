@@ -10,15 +10,27 @@ namespace StutterFix
         static AssetBundle singleArrayBundle;
         static Shader singleArrayShader;
         static int[] singleArrayProof;
+        static int[] singleTileFlags;
         static bool singleArrayReference,singleArrayControlled;
         static bool singleArrayOptimize=true;
         static bool singleArrayLean;
+        static bool singleArrayFastPixel;
+        internal static void RequireSingleArrayDiagnostics()
+        {RequireLive(!singleArrayFastPixel,"singlearray fast pixel: disable/release experiment before LOD or shader diagnostics");}
         static bool singleControlDirectOnly;
         static Texture2DArray singleArrayControl;
         static Texture2D single2DControl;
         static string SingleArrayCommand(string path)
         {
             if(path=="state")return SingleArrayState();
+            if(path=="fast on"||path=="fast off")
+            {
+                RequireLive(singleArrayShader&&!gpuLivePrepared&&!gpuLiveActive,"singlearray fast requires loaded shader before preparation");
+                bool on=path=="fast on";
+                RequireLive(!on || singleArrayShader.keywordSpace.FindKeyword("SF_FAST_PIXEL").isValid,"fast pixel variant missing in bundle");
+                RequireLive(!on || (!RenderLod.Enabled && Shader.GetGlobalFloat("_SfDebugFlat")==0 && Shader.GetGlobalFloat("_SfDebugMode")==0 && Shader.GetGlobalFloat("_SfNoDiscard")==0),"fast pixel requires normal rendering, LOD and diagnostics off");
+                singleArrayFastPixel=on;return SingleArrayState();
+            }
             if(path=="lean on"||path=="lean off")
             {
                 RequireLive(singleArrayShader&&!gpuLivePrepared&&!gpuLiveActive,"singlearray lean policy requires loaded shader before preparation");
@@ -48,7 +60,7 @@ namespace StutterFix
                     BindCollapseTextures(m,s.NoDirect,s.Few);
                     if(!singleArrayReference)
                     {
-                        BindSingleArray(m,s.SingleArray);
+                        BindSingleArray(m,s.SingleArray,s.SingleTile);
                         if(singleArrayControlled&&s.SingleArray>=0&&(!singleControlDirectOnly||s.SingleArray>=DrawCollapsePolicy.ArrayBindings))
                         {
                             if(s.SingleArray>=DrawCollapsePolicy.ArrayBindings)
@@ -95,7 +107,7 @@ namespace StutterFix
         {
             // Never unload a shader from underneath an unreleased live renderer.
             if(gpuLiveActive || gpuCollapseSpans.Count!=0)return;
-            singleArrayProof=null;singleArrayShader=null;singleArrayReference=singleArrayControlled=singleControlDirectOnly=false;singleArrayOptimize=true;singleArrayLean=false;
+            singleArrayProof=singleTileFlags=null;singleArrayShader=null;singleArrayReference=singleArrayControlled=singleControlDirectOnly=false;singleArrayOptimize=true;singleArrayLean=singleArrayFastPixel=false;
             if(singleArrayControl)UnityEngine.Object.Destroy(singleArrayControl);singleArrayControl=null;
             if(single2DControl)UnityEngine.Object.Destroy(single2DControl);single2DControl=null;
             try
@@ -108,14 +120,18 @@ namespace StutterFix
         static string SingleArrayState()
         {
             // Explicit command boundaries only. Do not scan materials each frame.
-            int active=0,lean=0,mismatch=0,textureUnavailable=0;
+            int active=0,lean=0,fixedDirect=0,mismatch=0,textureUnavailable=0;
             foreach(var s in gpuCollapseSpans)
             {
                 var m=s.Material;if(!m || !singleArrayShader || m.shader!=singleArrayShader)continue;
                 bool array=m.IsKeywordEnabled("SF_SINGLE_ARRAY"),direct=m.IsKeywordEnabled("SF_SINGLE_2D"),lv=m.IsKeywordEnabled("SF_LEAN_VERTEX");
                 bool expected=singleArrayOptimize&&s.SingleArray>=0;
+                bool tileLinear=m.IsKeywordEnabled("SF_TILE_LINEAR"),tilePoint=m.IsKeywordEnabled("SF_TILE_POINT");
+                if(tileLinear||tilePoint)fixedDirect++;
+                bool expectedTile=singleArrayOptimize&&singleArrayFastPixel&&s.SingleTile>=0;
+                if((tileLinear||tilePoint)!=expectedTile || tileLinear&&tilePoint || expectedTile&&tilePoint!=(s.SingleTile==1))mismatch++;
                 if(array||direct)active++;if(lv)lean++;
-                if((array||direct)!=expected || array&&direct || lv!=(expected&&singleArrayLean)){mismatch++;continue;}
+                if((array||direct)!=expected || array&&direct || lv!=(expected&&singleArrayLean) || m.IsKeywordEnabled("SF_FAST_PIXEL")!=singleArrayFastPixel){mismatch++;continue;}
                 if(!expected || singleArrayControlled)continue;
                 bool isArray=s.SingleArray<DrawCollapsePolicy.ArrayBindings;
                 Texture texture=isArray?gpuCollapseArrays[s.SingleArray]:gpuCollapseDirect[s.SingleArray-DrawCollapsePolicy.ArrayBindings];
@@ -128,13 +144,14 @@ namespace StutterFix
             }
             return "SINGLE_ARRAY_STATE loaded="+(bool)singleArrayShader+" reference="+singleArrayReference+" control="+singleArrayControlled
             +" optimize="+singleArrayOptimize+" selected_spans="+gpuCollapseSpans.Count(s=>s.SingleArray>=0)+" direct_spans="+gpuCollapseSpans.Count(s=>s.SingleArray>=DrawCollapsePolicy.ArrayBindings)
-            +" direct_control_only="+singleControlDirectOnly+" bundle_alive="+(bool)singleArrayBundle+" lean="+singleArrayLean+" actual_specialized_spans="+active+" actual_lean_spans="+lean+" actual_material_mismatches="+mismatch+" texture_query_unavailable="+textureUnavailable;
+            +" direct_control_only="+singleControlDirectOnly+" bundle_alive="+(bool)singleArrayBundle+" lean="+singleArrayLean+" fast_pixel="+singleArrayFastPixel+" fixed_direct_spans="+gpuCollapseSpans.Count(s=>s.SingleTile>=0)+" actual_fixed_direct_spans="+fixedDirect+" actual_specialized_spans="+active+" actual_lean_spans="+lean+" actual_material_mismatches="+mismatch+" texture_query_unavailable="+textureUnavailable;
         }
         static void PrepareSingleArrayProof(GpuLiveSlice source)
         {
-            singleArrayProof=null;if(!singleArrayShader)return;
+            singleArrayProof=singleTileFlags=null;if(!singleArrayShader)return;
             RequireLive(gpuImageCollapseAddresses!=null,"singlearray missing texture registry");
             singleArrayProof=new int[source.Data.Items.Length];
+            singleTileFlags=Enumerable.Repeat(-1,source.Data.Items.Length).ToArray();
             for(int i=0;i<singleArrayProof.Length;i++)
             {
                 var proof=new SingleArrayProof();
@@ -173,10 +190,39 @@ namespace StutterFix
             }
             return proof.Binding;
         }
-        static void BindSingleArray(Material material,int binding)
+        static int SingleTileForSpan(int[] items,int binding)
+        {
+            if(!singleArrayFastPixel || !singleArrayLean || binding<DrawCollapsePolicy.ArrayBindings)return -1;
+            if(!singleArrayShader.keywordSpace.FindKeyword("SF_TILE_LINEAR").isValid)return -1;
+            var source=gpuLiveSlices[0];int flags=-1;
+            var texture=gpuCollapseDirect[binding-DrawCollapsePolicy.ArrayBindings];
+            foreach(int item in items)
+            {
+                int row=CR(item);
+                // Image actors retain the generic single-resource path, even
+                // if today's image appears constant. No future flag guesses.
+                if(GpuImageActor(gpuLiveOwnedIndices[source.MasterItems[row]]))return -1;
+                int f=(int)CollapseInfo0(new Vector4(binding,0,1,1),gpuCollapseOwnedRows[row].M,source.Data.Items[row],texture).x&~127;
+                if((f&~128)!=0 || flags>=0 && flags!=f)return -1;
+                flags=f;
+            }
+            if(flags<0)return -1;
+            foreach(int item in items)singleTileFlags[CR(item)]=flags;
+            return flags==128?1:0;
+        }
+        static void RequireSingleTileFlags(int item,Vector4 info)
+        {
+            if(singleTileFlags==null || (uint)item>=(uint)singleTileFlags.Length || singleTileFlags[item]<0)return;
+            RequireLive(((int)info.x&~127)==singleTileFlags[item],"fixed direct sampling flags changed; original GPU failure recovery required");
+        }
+        static void BindSingleArray(Material material,int binding,int tile=-1)
         {
             if(!singleArrayShader || material.shader!=singleArrayShader)
             {RequireLive(binding<0,"singlearray selected on an unmodified shader");return;}
+            material.DisableKeyword("SF_FAST_PIXEL");
+            if(singleArrayFastPixel)material.EnableKeyword("SF_FAST_PIXEL");
+            material.DisableKeyword("SF_TILE_LINEAR");material.DisableKeyword("SF_TILE_POINT");
+            if(singleArrayOptimize && singleArrayFastPixel && tile>=0)material.EnableKeyword(tile==1?"SF_TILE_POINT":"SF_TILE_LINEAR");
             material.DisableKeyword("SF_SINGLE_ARRAY");material.DisableKeyword("SF_SINGLE_2D");material.DisableKeyword("SF_LEAN_VERTEX");if(binding<0)return;
             if(singleArrayOptimize&&singleArrayLean)material.EnableKeyword("SF_LEAN_VERTEX");
             if(binding<DrawCollapsePolicy.ArrayBindings)

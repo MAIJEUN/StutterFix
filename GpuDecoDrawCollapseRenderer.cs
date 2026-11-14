@@ -63,6 +63,7 @@ namespace StutterFix
             internal bool NoDirect; internal List<int> Few;   // 재질 텍스처 묶음 정보(복사한 재질에 다시 묶을 때)
 #if AUTOTEST
             internal int SingleArray=-1;
+            internal int SingleTile=-1;
 #endif
             public void Dispose()
             {
@@ -1108,6 +1109,9 @@ namespace StutterFix
         }
         static void BuildDrawCollapseSpans()
         {
+#if AUTOTEST
+            if(singleTileFlags!=null)Array.Fill(singleTileFlags,-1);
+#endif
             long dcT0=Stopwatch.GetTimestamp();int nudgedSpans=0;
             InvalidateRecordedCollapse();
             var source=gpuLiveSlices[0];
@@ -1332,6 +1336,8 @@ namespace StutterFix
 #if AUTOTEST
                 int singleBinding=SingleArrayForSpan(items,grabSpan);
                 if(singleBinding>=0)matKey+="/single"+singleBinding;
+                int singleTile=SingleTileForSpan(items,singleBinding);
+                if(singleTile>=0)matKey+="/tile"+singleTile;
 #endif
                 if(!gpuCollapseSharedMats.TryGetValue(matKey,out var shared) || !shared)
                 {
@@ -1346,13 +1352,14 @@ namespace StutterFix
                     if(few!=null)shared.EnableKeyword(CollapseFewKeyword);
                     BindCollapseTextures(shared,noDirect,few);
 #if AUTOTEST
-                    BindSingleArray(shared,singleBinding);
+                    BindSingleArray(shared,singleBinding,singleTile);
 #endif
                     gpuCollapseSharedMats[matKey]=shared;
                 }
                 s.Material=shared;s.SharedMat=true;s.NoDirect=noDirect;s.Few=few;
 #if AUTOTEST
                 s.SingleArray=singleBinding;
+                s.SingleTile=singleTile;
 #endif
                 if(noDirect)noDirectSpans++;
                 if(few!=null)fewSpans++;
@@ -1460,7 +1467,7 @@ namespace StutterFix
                         // 재질 복사는 Properties 에 없는 텍스처·배열 값을 옮기지 않는다(Exit 에서 동점 구간 장식이 투명해짐). 다시 묶는다.
                         BindCollapseTextures(m,sp.NoDirect,sp.Few);
 #if AUTOTEST
-                        BindSingleArray(m,sp.SingleArray);
+                        BindSingleArray(m,sp.SingleArray,sp.SingleTile);
 #endif
                         sp.Material=m;sp.SharedMat=false;sp.Renderer.sharedMaterial=m;
                     }

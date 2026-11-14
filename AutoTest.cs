@@ -1006,6 +1006,7 @@ namespace StutterFix
                         Log("[flashcolor] " + col + " renderers=" + cn); return true;
                     }
                 case "decodetach": Log("[decodetach] " + DecoDetach.Command(arg)); return true;
+                case "fillcensus": return FillCensus.Step(arg);
                 case "zcull": return ZCull.Step(arg);
                 case "occlude": if (arg.Trim() == "collect") { ShapeCellsCpu.CollectOpaque = true; Log("[occlude] 다음 맵 열기부터 불투명 정보 수집"); return true; } Occlude.Command(arg); return true;
                 case "gpuhide": GpuHide.Command(arg); return true;
@@ -1023,7 +1024,11 @@ namespace StutterFix
                 case "decotexmin": GpuHide.DecoTexMin = int.Parse(arg.Trim()); Log("[decotexmin] " + GpuHide.DecoTexMin); return true;
                 case "hidegroup": { var q = arg.Split(' '); Log("[hidegroup] " + q[0] + " " + GpuHide.Toggle(q[0], q.Length > 1 && q[1] == "on")); return true; }
                 case "holdskip": HoldFix.Command(arg); return true;
-                case "waitskip": EnginePatch.WaitSkip(arg != "off"); return true;
+                case "waitskip":
+#if AUTOTEST
+                    if (arg.Trim().Equals("state", StringComparison.OrdinalIgnoreCase)) { EnginePatch.WaitSkipState(); return true; }
+#endif
+                    EnginePatch.WaitSkip(arg != "off"); return true;
                 case "screenres":
                     {
                         // 해상도 변경 재현: screenres <w> <h> [fsw|win|excl]
@@ -1043,14 +1048,14 @@ namespace StutterFix
                 case "nodirect": Log("[nodirect] " + LodProbe.NoDirect(arg.Trim() != "off")); return true;
                 case "screenfixed": DrawCollapsePolicy.ScreenFixed = arg.Trim() != "off"; Log("[screenfixed] " + DrawCollapsePolicy.ScreenFixed); return true;
                 case "repeat": DrawCollapsePolicy.Repeat = arg.Trim() != "off"; Log("[repeat] " + DrawCollapsePolicy.Repeat); return true;
-                case "sfflat": Shader.SetGlobalFloat("_SfDebugFlat", arg.Trim() == "off" ? 0f : 1f); Log("[sfflat] " + arg.Trim()); return true;
-                case "sfsimple": Log("[sfsimple] " + LodProbe.Simple(arg.Trim() != "off")); return true;
+                case "sfflat": DecoBake.RequireSingleArrayDiagnostics(); Shader.SetGlobalFloat("_SfDebugFlat", arg.Trim() == "off" ? 0f : 1f); Log("[sfflat] " + arg.Trim()); return true;
+                case "sfsimple": DecoBake.RequireSingleArrayDiagnostics(); Log("[sfsimple] " + LodProbe.Simple(arg.Trim() != "off")); return true;
                 case "coverage": Log("[coverage] " + DecoBake.CoverageProbe()); return true;
                 case "depthinst": { var a0 = arg.Trim(); DrawCollapsePolicy.DepthInstances = a0 != "off"; if (int.TryParse(a0, out int mx) && mx > 1) DrawCollapsePolicy.MaxDepthInstances = mx; Log("[depthinst] " + DrawCollapsePolicy.DepthInstances + " max=" + DrawCollapsePolicy.MaxDepthInstances); return true; }
                 case "blendgrab": DrawCollapsePolicy.BlendGrab = arg.Trim() != "off"; Log("[blendgrab] " + DrawCollapsePolicy.BlendGrab); return true;
                 case "ownprobe": Log("[ownprobe] " + DecoBake.OwnProbe(arg)); return true;
-                case "sfnodiscard": Shader.SetGlobalFloat("_SfNoDiscard", arg.Trim() == "off" ? 0f : 1f); Log("[sfnodiscard] " + arg.Trim()); return true;
-                case "sfdebug": Shader.SetGlobalFloat("_SfDebugMode", float.Parse(arg.Trim(), System.Globalization.CultureInfo.InvariantCulture)); Log("[sfdebug] " + arg.Trim()); return true;
+                case "sfnodiscard": DecoBake.RequireSingleArrayDiagnostics(); Shader.SetGlobalFloat("_SfNoDiscard", arg.Trim() == "off" ? 0f : 1f); Log("[sfnodiscard] " + arg.Trim()); return true;
+                case "sfdebug": DecoBake.RequireSingleArrayDiagnostics(); Shader.SetGlobalFloat("_SfDebugMode", float.Parse(arg.Trim(), System.Globalization.CultureInfo.InvariantCulture)); Log("[sfdebug] " + arg.Trim()); return true;
                 case "blendmodes": DrawCollapsePolicy.BlendModes = arg.Trim() != "off"; Log("[blendmodes] " + DrawCollapsePolicy.BlendModes); return true;
                 case "oversized": DrawCollapsePolicy.AllowOversized = arg.Trim() != "off"; Log("[oversized] " + DrawCollapsePolicy.AllowOversized); return true;
                 case "globaldirect": DrawCollapsePolicy.GlobalDirect = arg.Trim() != "off"; Log("[globaldirect] " + DrawCollapsePolicy.GlobalDirect); return true;
@@ -1060,6 +1065,7 @@ namespace StutterFix
                         var ra = arg.Trim();
                         if (ra == "state") { Log("[renderlod] " + DecoBake.LodState()); return true; }
                         if (ra.StartsWith("max ")) { DecoBake.RenderLod.MaxSpans = int.Parse(ra.Substring(4)); Log("[renderlod] max=" + DecoBake.RenderLod.MaxSpans); return true; }
+                        DecoBake.RequireSingleArrayDiagnostics();
                         if (ra == "off") { DecoBake.RenderLod.Enabled = false; DecoBake.LodRelease(); }
                         else { DecoBake.RenderLod.Enabled = true; if (float.TryParse(ra, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rq) && rq > 0) DecoBake.RenderLod.Quality = rq; }
                         Log("[renderlod] " + DecoBake.LodState()); return true;

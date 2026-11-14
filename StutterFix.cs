@@ -1055,6 +1055,7 @@ ParticleTextWatch.Install(harmony);
 
             Try(Occlude.Stop);
             Try(ZCull.Stop);
+            Try(FillCensus.Stop);
             Try(GpuSplit.Stop);
 
 #if DEV || AUTOTEST

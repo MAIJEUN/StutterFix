@@ -38,6 +38,7 @@ namespace StutterFix
             GpuExactCensus.Stop();
 #endif
             Count++;
+            RunLod.SongEnded(); // Restore layers/composites before game Setup and editor callbacks.
             DecoDetach.OnTransition();
 #if DEV || AUTOTEST
             TileRender.Shutdown();

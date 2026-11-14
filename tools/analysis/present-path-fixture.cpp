@@ -183,6 +183,9 @@ int main() {
     assert(sf_presentpath_stat(-1)==2 && sc.refs>1 && sc.desc.BufferCount==3);
     sc.rejectResize=false;assert(resize()==S_OK);sf_presentpath::event(0,nullptr);
     assert(sf_presentpath_stat(-1)==0 && sc.refs==1 && dev.refs==1);
+    // Our fake chain has no D3D11 device: gputime must fail closed without a vptr lease.
+    enable(9);assert(sf_presentpath_stat(-1)==-1 && sf_presentpath_stat(53)==1 && sc.refs==1 && dev.refs==1 && sc.vt==swapTable.data());
+    disable();assert(sf_presentpath_stat(-1)==0 && sf_presentpath_stat(60)==0);
     assert(swapTable==original && gfxTable[0]==reinterpret_cast<void*>(0x1234) &&
         gfxTable[1+0xbd8/8]==reinterpret_cast<void*>(fakeAfter)); // shared tables unchanged
     puts("PASS OnAfterPresent: deferred one-shot; original callback before Adjust; equal counter guard; RTTI/full table copy; detach before Adjust; cancellation; early off; count restore; overlay refusal/recovery; shared table unchanged");

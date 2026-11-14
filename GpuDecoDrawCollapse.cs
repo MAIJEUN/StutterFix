@@ -30,6 +30,9 @@ namespace StutterFix
             RequireSingleArrayAddress(item,address);
 #endif
             gpuImageCollapseTextureUpload[0]=CollapseInfo0(address,material,gpuLiveSlices.Count>0 && (uint)item<(uint)gpuLiveSlices[0].Data.Items.Length?gpuLiveSlices[0].Data.Items[item]:null,texture);
+#if AUTOTEST
+            RequireSingleTileFlags(item,gpuImageCollapseTextureUpload[0]);
+#endif
             gpuImageCollapseTextureUpload[1]=new Vector4(address.z,address.w,address.z/texture.width*.5f,address.w/texture.height*.5f);
             gpuCollapseTexture.SetData(gpuImageCollapseTextureUpload,0,item*2,2);
             UpdateShapeForTexture(item,texture);   // 형태 칸: 새 텍스처의 칸으로

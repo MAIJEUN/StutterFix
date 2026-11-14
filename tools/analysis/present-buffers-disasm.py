@@ -17,7 +17,11 @@ names = ('Screen_CUSTOM_SetResolution', 'ScreenManagerWin::SetRequestedResolutio
          'winutils::AddErrorMessage', 'ShouldResizeTargetWindow',
          'GfxDeviceD3D11Base::OnAfterPresent', 'GfxDeviceD3D11::OnAfterPresent',
          'GfxDeviceD3D11::WaitForLastPresentationAndGetTimestamp',
-         'GfxDeviceD3D11::PresentFrame', 'GfxDeviceD3D11Base::GfxDeviceD3D11Base')
+         'GfxDeviceD3D11::PresentFrame', 'GfxDeviceD3D11Base::GfxDeviceD3D11Base',
+         'DXGIWaitForHandleWithMessagePump', 'GfxDeviceVK::WaitForPresentationImpl',
+         'SwapChainWaitingContext::ReleaseResources',
+         'SwapChainWaitingContext::SetMaximumFrameLatencyForWaitableObject',
+         'SwapChainWaitingContext::WaitOnSwapChain')
 lines = []
 for a, name in symbols:
     if name not in names: continue

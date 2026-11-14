@@ -33,18 +33,18 @@ namespace StutterFix
         private static readonly byte[] MaskGrowPatched  = { 0x49, 0x8B, 0xCF, 0x8D, 0x14, 0x1B };
         private static bool maskApplied;
 
-        // ── 2) WaitSkip v5: 메인 스레드 TimeUpdate 대기 우회(0x5D0A62) + 렌더 스레드 0ms 비차단 폴링(0x8E815F+0x8E8176) ──
-        private const int FwdSkipRva = 0x5D0A62;
-        private static readonly byte[] FwdSkipBefore = { 0x74, 0x13 };
-        private static readonly byte[] FwdSkipAfter  = { 0xEB, 0x13 };
-
-        private const int WaitBranchRva = 0x8E815F;
-        private static readonly byte[] WaitBranchBefore = { 0x0F, 0x85, 0x91, 0x00, 0x00, 0x00 };
-        private static readonly byte[] WaitBranchAfter  = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
-
-        private const int WaitTimeoutRva = 0x8E8176;
-        private static readonly byte[] WaitTimeoutBefore = { 0xBA, 0xC8, 0x00, 0x00, 0x00 };
-        private static readonly byte[] WaitTimeoutAfter  = { 0xBA, 0x00, 0x00, 0x00, 0x00 };
+        // WaitSkip v6 (D3D11 only): keep the original TimeUpdate condition and
+        // pair each skipped wait with OnAfterPresent, without blocking or trampolines.
+        // 19-byte inline replacement falls through to Unity's existing wall clock path.
+        private const int WaitInlineRva = 0x5D0A64;
+        private static readonly byte[] WaitInlineBefore = {
+            0xE8,0xE7,0x05,0x13,0x00, 0x48,0x8B,0xC8, 0x48,0x8B,0x10,
+            0xFF,0x92,0x98,0x06,0x00,0x00, 0xEB,0x34 };
+        private static readonly byte[] WaitInlineAfter = {
+            0x48,0x8B,0x05,0x55,0x2C,0xCA,0x01, // mov rax,[UnityPlayer+0x22736C0]
+            0xF0,0x48,0xFF,0x80,0x68,0x5E,0x00,0x00, // lock inc [rax+0x5E68]
+            0x90,0x90,0x90,0x90 };
+        private const string WaitUnitySha256 = "7e362b4c6ecee6fb493b1872cda5a5a0caf44f3b131b3c4bad132f0d1309f436";
         private static bool waitApplied;
 
         internal static void MaskGrow(bool on)
@@ -80,33 +80,77 @@ namespace StutterFix
             if (Application.unityVersion != ExpectedUnityVersion) return;
             IntPtr mod = GetModuleHandleW("UnityPlayer.dll");
             if (mod == IntPtr.Zero) return;
-
-            IntPtr addrFwd = (IntPtr)(mod.ToInt64() + FwdSkipRva);
-            IntPtr addrBranch = (IntPtr)(mod.ToInt64() + WaitBranchRva);
-            IntPtr addrTimeout = (IntPtr)(mod.ToInt64() + WaitTimeoutRva);
-
+            IntPtr target = IntPtr.Add(mod, WaitInlineRva);
             if (on)
             {
-                if (!MatchBytes(addrFwd, FwdSkipBefore) || !MatchBytes(addrBranch, WaitBranchBefore) || !MatchBytes(addrTimeout, WaitTimeoutBefore))
+                if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Direct3D11) return;
+                // Same-version custom players must not receive this fixed-RVA patch.
+                try
                 {
-                    Main.Entry.Logger.Log("[엔진 패치] 건너뜀: WaitSkip v5 바이트 불일치");
-                    return;
+                    string path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "UnityPlayer.dll");
+                    using (var sha = System.Security.Cryptography.SHA256.Create())
+                    using (var file = System.IO.File.OpenRead(path))
+                        if (BitConverter.ToString(sha.ComputeHash(file)).Replace("-", "").ToLowerInvariant() != WaitUnitySha256)
+                        { Main.Entry.Logger.Log("[엔진 패치] 건너뜀: WaitSkip v6 UnityPlayer SHA256 불일치"); return; }
                 }
-                if (WriteBytes(addrFwd, FwdSkipAfter) && WriteBytes(addrBranch, WaitBranchAfter) && WriteBytes(addrTimeout, WaitTimeoutAfter))
-                {
-                    waitApplied = true;
-                    Main.Entry.Logger.Log("[엔진 패치] 화면 대기 건너뛰기(WaitSkip v5 0x5D0A62+0x8E815F+0x8E8176 0ms 폴링) 켬");
-                }
+                catch (Exception e)
+                { Main.Entry.Logger.Log("[엔진 패치] 건너뜀: WaitSkip v6 identity " + e.Message); return; }
+                // JE must remain original (also rejects a still-loaded v5 patch).
+                // Verify the real device, original atomic increment, and resize guard.
+                if (!MatchBytes(IntPtr.Add(mod, 0x5D0A62), new byte[] {0x74,0x13}) ||
+                    !MatchBytes(target, WaitInlineBefore) || !WaitCounterGuards(mod))
+                { Main.Entry.Logger.Log("[엔진 패치] 건너뜀: WaitSkip v6 바이트 불일치; v5 사용 중이면 게임 재시작 필요"); return; }
+                long device = ReadWaitInt64(IntPtr.Add(mod, 0x22736C0));
+                long table = device == 0 ? 0 : ReadWaitInt64((IntPtr)device);
+                if (table == 0 || ReadWaitInt64((IntPtr)(table + 0x698)) != mod.ToInt64() + 0x9306F0)
+                { Main.Entry.Logger.Log("[엔진 패치] 건너뜀: WaitSkip v6 D3D11 device 불일치"); return; }
             }
-            else
+            if (!MatchBytes(target, on ? WaitInlineBefore : WaitInlineAfter))
+            { Main.Entry.Logger.Log("[엔진 패치] WaitSkip v6 원복/적용 중단: 바이트 불일치"); return; }
+            // One contiguous write: no multi-site partially applied state.
+            if (WriteBytes(target, on ? WaitInlineAfter : WaitInlineBefore))
             {
-                WriteBytes(addrFwd, FwdSkipBefore);
-                WriteBytes(addrBranch, WaitBranchBefore);
-                WriteBytes(addrTimeout, WaitTimeoutBefore);
-                waitApplied = false;
-                Main.Entry.Logger.Log("[엔진 패치] 화면 대기 건너뛰기(WaitSkip v5) 끔");
+                waitApplied = on;
+                Main.Entry.Logger.Log("[엔진 패치] 화면 대기 건너뛰기(WaitSkip v6 D3D11 paired counter) " + (on ? "켬" : "끔"));
             }
         }
+
+        private static bool WaitCounterGuards(IntPtr mod)
+        {
+            return MatchBytes(IntPtr.Add(mod, 0x930810), new byte[] {0xF0,0x48,0xFF,0x83,0x68,0x5E,0,0}) &&
+                MatchBytes(IntPtr.Add(mod, 0x930E45), new byte[] {0xF0,0x48,0xFF,0x83,0x70,0x5E,0,0}) &&
+                MatchBytes(IntPtr.Add(mod, 0x947BB6), new byte[] {0x48,0x8B,0x05,0x03,0xBB,0x92,0x01}) &&
+                MatchBytes(IntPtr.Add(mod, 0x947BCD), new byte[] {0x4C,0x3B,0xD0,0x0F,0x85,0xE0,0x01,0,0});
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] bytes, IntPtr size, out IntPtr read);
+
+        private static long ReadWaitInt64(IntPtr address)
+        {
+            byte[] bytes = new byte[8]; IntPtr read;
+            if (address == IntPtr.Zero || !ReadProcessMemory(GetCurrentProcess(), address, bytes, (IntPtr)8, out read) || read.ToInt64() != 8)
+                return 0;
+            return BitConverter.ToInt64(bytes, 0);
+        }
+
+#if AUTOTEST
+        internal static void WaitSkipState()
+        {
+            IntPtr mod = GetModuleHandleW("UnityPlayer.dll");
+            if (mod == IntPtr.Zero || Application.unityVersion != ExpectedUnityVersion ||
+                SystemInfo.graphicsDeviceType != GraphicsDeviceType.Direct3D11 || !WaitCounterGuards(mod))
+            { Main.Entry.Logger.Log("[waitskip] state unavailable: Unity/D3D11/byte guard mismatch"); return; }
+            long device = ReadWaitInt64(IntPtr.Add(mod, 0x22736C0));
+            if (device == 0) { Main.Entry.Logger.Log("[waitskip] state unavailable: no device"); return; }
+            // Read-only sample, not a render-thread barrier; Present may advance between reads.
+            long a = ReadWaitInt64((IntPtr)(device + 0x5E68));
+            long b = ReadWaitInt64((IntPtr)(device + 0x5E70));
+            Main.Entry.Logger.Log("[waitskip] applied=" + waitApplied + " inlineOriginal=" + MatchBytes(IntPtr.Add(mod, WaitInlineRva), WaitInlineBefore) +
+                " inlinePatched=" + MatchBytes(IntPtr.Add(mod, WaitInlineRva), WaitInlineAfter) +
+                " adjGuardA=" + a + " adjGuardB=" + b + " delta=" + (a-b) + " sampled=true");
+        }
+#endif
 
         private static bool MatchBytes(IntPtr addr, byte[] expected)
         {
