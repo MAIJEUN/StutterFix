@@ -330,17 +330,22 @@ namespace StutterFix
                     && ADOBase.lm.listFloors.Count >= MinFloors && ADOBase.controller != null && ADOBase.controller.camy != null
                     && (!active || Hitch.Playing || (ReferenceEquals(ADOBase.lm.listFloors, builtList) && builtList.Count == fl.Length));   // 곡 뒤에 계속 돌 때: 같은 타일 목록일 때만 (장면이 바뀌면 멈춤)
                 if (!want) { if (active) StopAll(); return; }
-                if (!active) Build();
+                // 카메라·줌을 먼저 본다: 예전에는 Build 뒤에 보고 멈춰서, 멀리 줌아웃한 채로는 매 프레임 Build(타일 4천 개 5ms)와 StopAll(전부 켜기)을 되풀이했다
                 var cam = ADOBase.controller.camy.camobj;
                 if (cam == null) { StopAll(); return; }
                 Vector2 c = cam.transform.position;
-                float h = cam.orthographic ? cam.orthographicSize : 50f;
+                float h = cam.orthographic ? Mathf.Abs(cam.orthographicSize) : 50f;   // 맵이 줌을 음수로 두면(화면 뒤집기) 크기도 음수라 범위가 비어 멈췄다
                 float r = h * Mathf.Sqrt(1f + cam.aspect * cam.aspect);
                 r = r * 1.25f + 3f;   // 여유: 흔들림·그리기 직전 작은 움직임
                 int x0 = Mathf.FloorToInt((c.x - r) / Cell), x1 = Mathf.FloorToInt((c.x + r) / Cell);
                 int y0 = Mathf.FloorToInt((c.y - r) / Cell), y1 = Mathf.FloorToInt((c.y + r) / Cell);
                 long cellWidth=(long)x1-x0+1,cellHeight=(long)y1-y0+1;
-                if (cellWidth<=0 || cellHeight<=0 || cellWidth>200000 || cellHeight>200000 || cellWidth*cellHeight>200000) { StopAll(); return; }   // 너무 멀리 줌아웃: 하지 않음
+                if (cellWidth<=0 || cellHeight<=0 || cellWidth>200000 || cellHeight>200000 || cellWidth*cellHeight>200000) { if (active) { StopAll(); Main.Entry.Logger.Log("[화면 밖 타일] 멀리 줌아웃이라 쉼 (카메라 크기 " + h.ToString("0") + ")"); } farUntil = Time.frameCount + 30; return; }   // 너무 멀리 줌아웃: 하지 않음
+                if (!active)
+                {
+                    if (Time.frameCount < farUntil) return;   // 줌 경계에서 켰다 껐다 하지 않게 잠깐 쉰다
+                    Build();
+                }
                 Move(x0, y0, x1, y1);
                 RecolorDefer.AfterStep();
                 if (++frames % 30 == 0) Requalify();
@@ -351,6 +356,7 @@ namespace StutterFix
         private static long Key(int x, int y) { return ((long)x << 32) ^ (uint)y; }
 
         private static List<scrFloor> builtList;
+        private static int farUntil;
         private static void Build()
         {
             var sw = Stopwatch.StartNew();
