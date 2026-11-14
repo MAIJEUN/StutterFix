@@ -29,6 +29,9 @@ namespace StutterFix
     // 미리 못 푼 것(순서가 어긋난 것, 지원하지 않는 형식, 오류)은 전부 원래 방식으로 처리된다.
     public static class ImagePrefetch
     {
+        // 장식 이동 이벤트 번호: 게임 버전에 따라 번호가 밀릴 수 있어 이름으로 찾는다 (예전에는 29 로 적어 두었다)
+        private static readonly int MoveDecoType = FindEventType("MoveDecorations");
+        private static int FindEventType(string name) { try { return (int)Enum.Parse(typeof(ADOFAI.LevelEventType), name); } catch { return -1; } }
         internal static bool Enabled = true;
         internal static int MaxPendingMB = 1500;
         internal static string Last = "아직 안 함";
@@ -395,7 +398,7 @@ namespace StutterFix
                     if (Math.Max(w, h) > PredictSide) big++;
                 };
                 foreach (var ev in g.decorations) if (!PlayTweaks.SkipDecoAtLoad(ev)) look(ev);   // 노이펙 모드로 안 만들 장식은 빼고
-                if (!PlayTweaks.SkipMoveImagesAtLoad) foreach (var ev in g.events) if ((int)ev.eventType == 29) look(ev);
+                if (!PlayTweaks.SkipMoveImagesAtLoad) foreach (var ev in g.events) if ((int)ev.eventType == MoveDecoType) look(ev);
                 double needMB = bytes / 1048576.0;
                 string info = string.Format("이미지 {0}장 원본 약 {1:F0}MB, 비어 있는 VRAM 약 {2:F0}MB{4}, 3072 보다 큰 이미지 {3}장", count, needMB, freeMB, big, PcTune.Integrated ? " (내장 그래픽: RAM 의 35% 기준)" : "");
                 if (needMB > Math.Max(0, freeMB) * PredictRatio && big > 0)
@@ -572,7 +575,7 @@ namespace StutterFix
                     list.Add(it);
                 };
                 foreach (var ev in __instance.decorations) if (!PlayTweaks.SkipDecoAtLoad(ev)) add(ev);
-                if (!PlayTweaks.SkipMoveImagesAtLoad) foreach (var ev in __instance.events) if ((int)ev.eventType == 29) add(ev);
+                if (!PlayTweaks.SkipMoveImagesAtLoad) foreach (var ev in __instance.events) if ((int)ev.eventType == MoveDecoType) add(ev);
 
                 Main.Entry.Logger.Log(string.Format("[이미지] 맵 열기 전: 이미 올라와 있는 이미지 {0}장, VRAM 전체 {1:F0}MB / 게임 {2:F0}MB", cached != null ? cached.Count : -1, SystemMonitor.VramUsedMB, SystemMonitor.VramGameMB));
                 if (unloaded > 0) Main.Entry.Logger.Log("[이미지] 한도가 바뀌어 이미 올라온 이미지 " + unloaded + "장을 다시 불러옴 (긴 변 " + (sideNow > 0 ? sideNow.ToString() : "원본") + ")");
