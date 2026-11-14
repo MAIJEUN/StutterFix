@@ -2486,7 +2486,7 @@ BlendProbe.Tick();
 
         public bool EngineMaskGrow = false; // 엔진 코드 6바이트 패치: 마스크 많은 맵 Exit +11.8%
 
-        public bool EngineWaitSkip = true; // 엔진 코드 패치: 지난 화면 출력을 기다리지 않음. 2026-11-08 기본 켬(DefaultsGen 2), 화면 지연 미측정
+        public bool EngineWaitSkip = false; // (로컬: 기본 끔 - 엔진 코드 패치, 이득이 잡음 수준이라 원본 충실 우선) 엔진 코드 패치: 지난 화면 출력을 기다리지 않음. 2026-11-08 기본 켬(DefaultsGen 2), 화면 지연 미측정
         public bool FastBlend = true;       // 더하기 블렌드 장식을 화면 복사 없이 그리기
 
         public bool SkipInvisible = true;   // 투명도 0 인 이미지 장식은 그리지 않기
